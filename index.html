@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Southern Utah Road Trip - 3 Day Itinerary</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --sand: #F5F0E8;
+    --rust: #C1512D;
+    --rust-dark: #9E3E1F;
+    --rust-light: #E8694A;
+    --cream: #FFFDF7;
+    --orange: #E07B39;
+    --green: #5A8A5A;
+    --text: #2C1A0E;
+    --text-light: #6B4D38;
+    --border: #DDD5C5;
+    --hike-color: #C1512D;
+    --food-color: #E07B39;
+    --lodge-color: #5A8A5A;
+    --drive-color: #8B7355;
+    --shadow: 0 2px 12px rgba(44,26,14,0.10);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--sand);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--rust);
+    color: white;
+    padding: 18px 20px 14px;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  header h1 {
+    font-size: clamp(17px, 4vw, 24px);
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+  }
+  header p {
+    font-size: clamp(11px, 2.5vw, 13px);
+    opacity: 0.88;
+    margin-top: 3px;
+  }
+
+  /* DAY TABS */
+  .tabs {
+    display: flex;
+    background: var(--rust-dark);
+    border-bottom: 3px solid var(--rust-dark);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 12px 8px;
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.72);
+    font-size: clamp(12px, 3vw, 14px);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+  .tab-btn:hover { background: rgba(255,255,255,0.10); color: white; }
+  .tab-btn.active {
+    background: var(--sand);
+    color: var(--rust);
+    border-radius: 8px 8px 0 0;
+    margin: 4px 3px 0;
+  }
+
+  /* MAP */
+  #map {
+    width: 100%;
+    height: clamp(280px, 40vh, 420px);
+    z-index: 1;
+  }
+
+  /* MAIN CONTENT */
+  .content {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+  }
+
+  /* DAY HEADER INSIDE CONTENT */
+  .day-header {
+    margin-bottom: 18px;
+  }
+  .day-header h2 {
+    font-size: clamp(18px, 4.5vw, 24px);
+    color: var(--rust);
+    font-weight: 700;
+  }
+  .day-header p {
+    font-size: 13px;
+    color: var(--text-light);
+    margin-top: 3px;
+  }
+
+  /* TIMELINE */
+  .timeline {
+    position: relative;
+    padding-left: 40px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border);
+  }
+
+  /* TIMELINE CARD */
+  .stop-card {
+    position: relative;
+    background: var(--cream);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .stop-card.alt-stop {
+    border-style: dashed;
+    background: #FFFBF5;
+  }
+
+  /* DOT */
+  .stop-dot {
+    position: absolute;
+    left: -33px;
+    top: 16px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 800;
+    color: white;
+    border: 2px solid white;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    z-index: 1;
+  }
+  .dot-hike   { background: var(--hike-color); }
+  .dot-food   { background: var(--food-color); }
+  .dot-lodge  { background: var(--lodge-color); }
+  .dot-drive  { background: var(--drive-color); }
+
+  /* CARD TOP ROW */
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .card-time {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-light);
+    white-space: nowrap;
+    min-width: 60px;
+    padding-top: 1px;
+  }
+  .card-main { flex: 1; min-width: 0; }
+  .card-name {
+    font-size: clamp(14px, 3.5vw, 16px);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+  }
+  .card-stars {
+    font-size: 12px;
+    color: #B8860B;
+    margin-top: 2px;
+  }
+  .card-notes {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-top: 3px;
+  }
+
+  /* BADGE PILLS */
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .badge-hike   { background: rgba(193,81,45,0.13); color: var(--hike-color); }
+  .badge-food   { background: rgba(224,123,57,0.13); color: #B85E10; }
+  .badge-lodge  { background: rgba(90,138,90,0.15);  color: var(--green); }
+  .badge-drive  { background: rgba(139,115,85,0.13); color: var(--drive-color); }
+  .badge-alt    { background: rgba(100,100,200,0.10); color: #5555BB; }
+
+  /* DRIVE SEGMENT */
+  .drive-segment {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0 6px 0;
+    margin-bottom: 6px;
+    color: var(--text-light);
+    font-size: 12px;
+  }
+  .drive-segment::before {
+    content: '';
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--drive-color);
+    flex-shrink: 0;
+  }
+
+  /* PRO TIP */
+  .pro-tip {
+    background: linear-gradient(135deg, #FFF8EE 0%, #FDEFD8 100%);
+    border: 1px solid #F0C98A;
+    border-left: 4px solid var(--orange);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 24px;
+  }
+  .pro-tip-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--orange);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .pro-tip p {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.55;
+  }
+
+  /* LEGEND */
+  .map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    padding: 8px 16px;
+    background: rgba(255,253,247,0.95);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-light);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1.5px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  /* HIDDEN DAY PANELS */
+  .day-panel { display: none; }
+  .day-panel.active { display: block; }
+
+  /* LOADING */
+  .route-status {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-light);
+    padding: 5px;
+    background: rgba(255,253,247,0.9);
+  }
+
+  @media (max-width: 480px) {
+    .timeline { padding-left: 32px; }
+    .stop-dot  { left: -27px; width: 18px; height: 18px; font-size: 8px; }
+    .timeline::before { left: 10px; }
+    header { padding: 12px 12px 10px; }
+    .content { padding: 14px 12px 32px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Southern Utah National Parks Road Trip</h1>
+  <p>3 Days &bull; Lehi to Zion &bull; Bryce Canyon &bull; Capitol Reef</p>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchDay(1)">Day 1 &mdash; Zion</button>
+  <button class="tab-btn" onclick="switchDay(2)">Day 2 &mdash; Bryce</button>
+  <button class="tab-btn" onclick="switchDay(3)">Day 3 &mdash; Capitol Reef</button>
+</div>
+
+<div class="map-legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#C1512D"></span> Hike</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#E07B39"></span> Food</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#5A8A5A"></span> Lodging</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#8B7355"></span> Start / Drive</span>
+</div>
+
+<div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
+<div id="map"></div>
+
+<!-- ===================== CONTENT ===================== -->
+<div class="content">
+
+  <!-- ===== DAY 1 ===== -->
+  <div class="day-panel active" id="panel-1">
+    <div class="day-header">
+      <h2>Day 1 &mdash; Kanarra Falls &amp; Zion</h2>
+      <p>Lehi departure &bull; canyon waterfall hike &bull; Zion National Park</p>
+    </div>
+
+    <div class="timeline">
+
+      <div class="stop-card">
+        <div class="stop-dot dot-drive">1</div>
+        <div class="card-top">
+          <span class="card-time">5:30 AM</span>
+          <div class="card-main">
+            <div class="card-name">Depart Lehi, UT</div>
+            <div class="card-notes">Start of the road trip south on I-15</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-drive">Drive</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">2</div>
+        <div class="card-top">
+          <span class="card-time">9:00 AM</span>
+          <div class="card-main">
+            <div class="card-name">Kanarra Falls Hike</div>
+            <div class="card-stars">&#9733; 4.8</div>
+            <div class="card-notes">$15 permit fee &bull; 4 miles round trip &bull; slot canyon with log ladders &bull; water shoes required</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">3</div>
+        <div class="card-top">
+          <span class="card-time">12:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Fire + Smoke BBQ</div>
+            <div class="card-stars">&#9733; 4.9</div>
+            <div class="card-notes">Wednesday through Saturday only &bull; smoked brisket, ribs &bull; Kanarraville, UT</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">4</div>
+        <div class="card-top">
+          <span class="card-time">2:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Zion NP &mdash; Riverside Walk</div>
+            <div class="card-stars">&#9733; 4.7</div>
+            <div class="card-notes">Easy paved trail &bull; 2 miles RT &bull; follows the Virgin River into Zion Narrows</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">5</div>
+        <div class="card-top">
+          <span class="card-time">6:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Oscar's Cafe</div>
+            <div class="card-stars">&#9733; 4.7</div>
+            <div class="card-notes">Springdale classic &bull; New Mexican cuisine &bull; green chile eggs and burritos</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-lodge">6</div>
+        <div class="card-top">
+          <span class="card-time">8:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Best Western Plus Zion West Hotel</div>
+            <div class="card-stars">&#9733; 4.3</div>
+            <div class="card-notes">Hurricane, UT &bull; pool &bull; free breakfast &bull; 30 min from Zion</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-lodge">Lodging</span></div>
+      </div>
+
+    </div><!-- /timeline -->
+
+    <div class="pro-tip">
+      <div class="pro-tip-label">Pro Tip &mdash; Day 1</div>
+      <p>Rent water shoes and trekking poles from an outfitter in Springdale. You'll need them for The Narrows tomorrow.</p>
+    </div>
+  </div><!-- /panel-1 -->
+
+  <!-- ===== DAY 2 ===== -->
+  <div class="day-panel" id="panel-2">
+    <div class="day-header">
+      <h2>Day 2 &mdash; Zion &amp; Bryce Canyon</h2>
+      <p>The Narrows river hike &bull; drive to Bryce &bull; sunset at the rim</p>
+    </div>
+
+    <div class="timeline">
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">1</div>
+        <div class="card-top">
+          <span class="card-time">7:00 AM</span>
+          <div class="card-main">
+            <div class="card-name">The Narrows River Hike</div>
+            <div class="card-stars">&#9733; 4.9</div>
+            <div class="card-notes">Hike up the Virgin River through slot canyon walls &bull; water shoes and poles essential</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card alt-stop">
+        <div class="stop-dot dot-hike">2</div>
+        <div class="card-top">
+          <span class="card-time">7:00 AM</span>
+          <div class="card-main">
+            <div class="card-name">Angels Landing <span style="font-weight:400;font-size:12px">(alternate)</span></div>
+            <div class="card-stars">&#9733; 4.8</div>
+            <div class="card-notes">Permit required via lottery &bull; chains on the final 500-foot spine &bull; not for those with a fear of heights</div>
+          </div>
+        </div>
+        <div class="badges">
+          <span class="badge badge-hike">Hike</span>
+          <span class="badge badge-alt">Permit Required</span>
+          <span class="badge badge-alt">Alternate</span>
+        </div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">3</div>
+        <div class="card-top">
+          <span class="card-time">12:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Spotted Dog Restaurant</div>
+            <div class="card-stars">&#9733; 4.5</div>
+            <div class="card-notes">Springdale &bull; local ingredients &bull; great patio views of Zion cliffs</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">4</div>
+        <div class="card-top">
+          <span class="card-time">3:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Bryce Canyon NP &mdash; Sunset Point</div>
+            <div class="card-stars">&#9733; 4.9</div>
+            <div class="card-notes">Hoodoo formations glow orange at dusk &bull; best light after 4 PM &bull; elevation 8,012 ft</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">5</div>
+        <div class="card-top">
+          <span class="card-time">6:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Ruby's Inn Cowboy Buffet</div>
+            <div class="card-stars">&#9733; 4.0</div>
+            <div class="card-notes">Western-style all-you-can-eat &bull; carving station, prime rib &bull; right at the park entrance</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-lodge">6</div>
+        <div class="card-top">
+          <span class="card-time">8:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Best Western Plus Ruby's Inn</div>
+            <div class="card-stars">&#9733; 4.0</div>
+            <div class="card-notes">Bryce Canyon City &bull; steps from the park entrance &bull; general store on site</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-lodge">Lodging</span></div>
+      </div>
+
+    </div><!-- /timeline -->
+
+    <div class="pro-tip">
+      <div class="pro-tip-label">Pro Tip &mdash; Day 2</div>
+      <p>Bryce Canyon has some of the darkest skies in North America. Step outside after dinner. You can see the Milky Way with the naked eye.</p>
+    </div>
+  </div><!-- /panel-2 -->
+
+  <!-- ===== DAY 3 ===== -->
+  <div class="day-panel" id="panel-3">
+    <div class="day-header">
+      <h2>Day 3 &mdash; Bryce Canyon &amp; Capitol Reef</h2>
+      <p>Hoodoo trails at dawn &bull; highway 12 drive &bull; Capitol Reef arches</p>
+    </div>
+
+    <div class="timeline">
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">1</div>
+        <div class="card-top">
+          <span class="card-time">6:30 AM</span>
+          <div class="card-main">
+            <div class="card-name">Navajo Loop / Queens Garden Hike</div>
+            <div class="card-stars">&#9733; 5.0</div>
+            <div class="card-notes">3 miles &bull; descent into the amphitheater &bull; hoodoos at eye level &bull; best hike in the park</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">2</div>
+        <div class="card-top">
+          <span class="card-time">10:00 AM</span>
+          <div class="card-main">
+            <div class="card-name">Bryce Canyon Pines Restaurant</div>
+            <div class="card-stars">&#9733; 4.2</div>
+            <div class="card-notes">Homemade pies &bull; fluffy pancakes &bull; good stop before the long drive east on UT-12</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">3</div>
+        <div class="card-top">
+          <span class="card-time">12:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Capitol Reef National Park</div>
+            <div class="card-stars">&#9733; 4.7</div>
+            <div class="card-notes">Scenic Drive &bull; Waterpocket Fold &bull; often the least-crowded of Utah's Mighty 5</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Park</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">4</div>
+        <div class="card-top">
+          <span class="card-time">1:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Hickman Bridge Trail</div>
+            <div class="card-stars">&#9733; 4.7</div>
+            <div class="card-notes">2 miles RT &bull; natural bridge 133 ft wide &bull; easy to moderate</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-hike">5</div>
+        <div class="card-top">
+          <span class="card-time">3:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Cassidy Arch Trail</div>
+            <div class="card-notes">3.4 miles RT &bull; named after Butch Cassidy &bull; panoramic views over Grand Wash</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-hike">Hike</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-food">6</div>
+        <div class="card-top">
+          <span class="card-time">5:00 PM</span>
+          <div class="card-main">
+            <div class="card-name">Rim Rock Patio Restaurant</div>
+            <div class="card-stars">&#9733; 4.4</div>
+            <div class="card-notes">Torrey, UT &bull; patio dining with canyon views &bull; Utah lamb, local trout</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-food">Food</span></div>
+      </div>
+
+      <div class="stop-card">
+        <div class="stop-dot dot-drive">7</div>
+        <div class="card-top">
+          <span class="card-time">6:30 PM</span>
+          <div class="card-main">
+            <div class="card-name">Drive Back to Lehi</div>
+            <div class="card-notes">Approx 3.5 hours via US-89 and I-15 north</div>
+          </div>
+        </div>
+        <div class="badges"><span class="badge badge-drive">Drive</span></div>
+      </div>
+
+    </div><!-- /timeline -->
+
+    <div class="pro-tip">
+      <div class="pro-tip-label">Pro Tip &mdash; Day 3</div>
+      <p>Grab an America the Beautiful pass ($80) before the trip. It covers all three national parks.</p>
+    </div>
+  </div><!-- /panel-3 -->
+
+</div><!-- /content -->
+
+<script>
+// =====================================================================
+// DATA
+// =====================================================================
+const DAYS = {
+  1: {
+    title: "Day 1 - Kanarra Falls & Zion",
+    stops: [
+      { num:1, name:"Lehi, UT (Start)", lat:40.3916, lng:-111.8508, type:"drive" },
+      { num:2, name:"Kanarra Falls",    lat:37.5371, lng:-113.1755, type:"hike" },
+      { num:3, name:"Fire + Smoke BBQ", lat:37.5343, lng:-113.1845, type:"food" },
+      { num:4, name:"Zion Riverside Walk", lat:37.2001, lng:-112.9870, type:"hike" },
+      { num:5, name:"Oscar's Cafe",     lat:37.1890, lng:-113.0003, type:"food" },
+      { num:6, name:"Best Western Plus Zion West", lat:37.2118, lng:-113.2703, type:"lodge" }
+    ]
+  },
+  2: {
+    title: "Day 2 - Zion & Bryce Canyon",
+    stops: [
+      { num:1, name:"The Narrows",      lat:37.3050, lng:-112.9491, type:"hike" },
+      { num:2, name:"Angels Landing",   lat:37.2592, lng:-112.9513, type:"hike", alt:true },
+      { num:3, name:"Spotted Dog",      lat:37.1947, lng:-112.9932, type:"food" },
+      { num:4, name:"Bryce Canyon Sunset Point", lat:37.6404, lng:-112.1696, type:"hike" },
+      { num:5, name:"Ruby's Cowboy Buffet", lat:37.6737, lng:-112.1570, type:"food" },
+      { num:6, name:"Best Western Ruby's Inn", lat:37.6737, lng:-112.1575, type:"lodge" }
+    ]
+  },
+  3: {
+    title: "Day 3 - Bryce Canyon & Capitol Reef",
+    stops: [
+      { num:1, name:"Navajo Loop / Queens Garden", lat:37.6206, lng:-112.1638, type:"hike" },
+      { num:2, name:"Bryce Canyon Pines",  lat:37.7099, lng:-112.2104, type:"food" },
+      { num:3, name:"Capitol Reef NP",     lat:38.2915, lng:-111.2620, type:"hike" },
+      { num:4, name:"Hickman Bridge Trail",lat:38.2895, lng:-111.2272, type:"hike" },
+      { num:5, name:"Cassidy Arch Trail",  lat:38.2648, lng:-111.2190, type:"hike" },
+      { num:6, name:"Rim Rock Patio",      lat:38.3197, lng:-111.3814, type:"food" },
+      { num:7, name:"Drive back to Lehi",  lat:40.3916, lng:-111.8508, type:"drive" }
+    ]
+  }
+};
+
+const TYPE_COLOR = {
+  hike:  "#C1512D",
+  food:  "#E07B39",
+  lodge: "#5A8A5A",
+  drive: "#8B7355"
+};
+
+// =====================================================================
+// MAP SETUP
+// =====================================================================
+const map = L.map('map', { zoomControl: true });
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19
+}).addTo(map);
+
+let markersLayer = L.layerGroup().addTo(map);
+let routeLayer   = L.layerGroup().addTo(map);
+let currentDay   = 1;
+let routeCache   = {};
+
+// =====================================================================
+// CUSTOM SVG MARKER
+// =====================================================================
+function makeIcon(num, color, isAlt) {
+  const opacity = isAlt ? 0.65 : 1;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36">
+    <path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"
+          fill="${color}" fill-opacity="${opacity}" stroke="white" stroke-width="1.5"/>
+    <text x="15" y="16" text-anchor="middle" dominant-baseline="middle"
+          fill="white" font-size="11" font-weight="800" font-family="sans-serif">${num}</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [30, 36],
+    iconAnchor: [15, 36],
+    popupAnchor: [0, -38]
+  });
+}
+
+// =====================================================================
+// FETCH OSRM ROUTE
+// =====================================================================
+async function fetchRoute(stops) {
+  // Filter to non-alt stops only for routing
+  const routeStops = stops.filter(s => !s.alt);
+  if (routeStops.length < 2) return null;
+
+  const key = routeStops.map(s => `${s.lat},${s.lng}`).join('|');
+  if (routeCache[key]) return routeCache[key];
+
+  const coords = routeStops.map(s => `${s.lng},${s.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('OSRM error');
+    const data = await res.json();
+    if (data.code !== 'Ok') throw new Error('OSRM no route');
+    routeCache[key] = data.routes[0].geometry.coordinates;
+    return routeCache[key];
+  } catch(e) {
+    console.warn('Route fetch failed, using straight lines:', e);
+    return null;
+  }
+}
+
+// =====================================================================
+// RENDER DAY
+// =====================================================================
+async function renderDay(day) {
+  markersLayer.clearLayers();
+  routeLayer.clearLayers();
+
+  const data = DAYS[day];
+  const stops = data.stops;
+
+  // Status
+  const statusEl = document.getElementById('route-status');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Loading driving routes...';
+
+  // Add markers
+  const bounds = [];
+  stops.forEach(stop => {
+    const color = TYPE_COLOR[stop.type] || "#8B7355";
+    const icon  = makeIcon(stop.num, color, stop.alt);
+    const marker = L.marker([stop.lat, stop.lng], { icon });
+
+    let popupHtml = `<div style="font-weight:700;font-size:13px">${stop.name}</div>`;
+    if (stop.alt) popupHtml += `<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>`;
+    marker.bindPopup(popupHtml, { maxWidth: 200 });
+    markersLayer.addLayer(marker);
+    bounds.push([stop.lat, stop.lng]);
+  });
+
+  // Fit map
+  if (bounds.length > 0) {
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+
+  // Fetch and draw route
+  try {
+    const routeCoords = await fetchRoute(stops);
+    if (routeCoords) {
+      const latlngs = routeCoords.map(c => [c[1], c[0]]);
+      L.polyline(latlngs, {
+        color: '#C1512D',
+        weight: 3.5,
+        opacity: 0.75,
+        dashArray: null
+      }).addTo(routeLayer);
+      statusEl.style.display = 'none';
+    } else {
+      // Fallback: straight lines
+      const mainStops = stops.filter(s => !s.alt);
+      const latlngs = mainStops.map(s => [s.lat, s.lng]);
+      L.polyline(latlngs, {
+        color: '#C1512D',
+        weight: 2.5,
+        opacity: 0.5,
+        dashArray: '6,6'
+      }).addTo(routeLayer);
+      statusEl.textContent = 'Showing approximate route (straight lines)';
+      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+    }
+  } catch(e) {
+    statusEl.style.display = 'none';
+  }
+}
+
+// =====================================================================
+// SWITCH DAY
+// =====================================================================
+function switchDay(day) {
+  currentDay = day;
+
+  // Update tabs
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i + 1 === day);
+  });
+
+  // Update panels
+  document.querySelectorAll('.day-panel').forEach((panel, i) => {
+    panel.classList.toggle('active', i + 1 === day);
+  });
+
+  // Update map
+  renderDay(day);
+
+  // Scroll to top of content smoothly
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+renderDay(1);
+</script>
+</body>
+</html>

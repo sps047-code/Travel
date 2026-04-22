@@ -44,7 +44,7 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
 .stop-card{position:relative;background:var(--cream);border-radius:12px;padding:14px 56px 14px 16px;margin-bottom:14px;box-shadow:var(--shadow);border:1px solid var(--border)}
 .stop-card.alt-stop{border-style:dashed;background:#FFFBF5}
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.25)}
-.dot-hike{background:#C1512D}.dot-food{background:#E07B39}.dot-lodge{background:#5A8A5A}.dot-drive{background:#8B7355}
+.dot-hike{background:#C1512D}.dot-food{background:#E07B39}.dot-lodge{background:#5A8A5A}.dot-drive{background:#8B7355}.dot-flight{background:#4A7EC7}
 .card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
 .card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:#CCC;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;line-height:1;padding:0}
 .card-btn:hover{background:rgba(193,81,45,0.12);color:var(--rust)}
@@ -61,6 +61,7 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
 .badge-food{background:rgba(224,123,57,0.13);color:#B85E10}
 .badge-lodge{background:rgba(90,138,90,0.15);color:#5A8A5A}
 .badge-drive{background:rgba(139,115,85,0.13);color:#8B7355}
+.badge-flight{background:rgba(74,126,199,0.13);color:#2E63A8}
 .badge-alt{background:rgba(100,100,200,0.10);color:#5555BB}
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:10px;color:var(--text-light);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-top:4px;font-family:inherit}
 .add-stop-btn:hover{border-color:var(--rust);color:var(--rust);background:rgba(193,81,45,0.05)}
@@ -123,6 +124,7 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
   <span class="legend-item"><span class="legend-dot" style="background:#E07B39"></span>Food</span>
   <span class="legend-item"><span class="legend-dot" style="background:#5A8A5A"></span>Lodging</span>
   <span class="legend-item"><span class="legend-dot" style="background:#8B7355"></span>Drive</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#4A7EC7"></span>Flight</span>
 </div>
 <div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
 <div id="map"></div>
@@ -160,11 +162,11 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
   </div>
 </div>
 <script>
-const LS_KEY='utahTripState_v4';
+const LS_KEY='utahTripState_v5';
 const DEFAULT_STATE={days:[
 {title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before crowds thin out.",stops:[
-{name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"drive",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport"},
-{name:"Arrive Las Vegas (LAS) — Pick Up Car",lat:36.0840,lng:-115.1537,type:"drive",time:"8:00 AM",stars:null,notes:"Harry Reid International Airport • pick up rental car and head north on I-15"},
+{name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"flight",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport • confirmation BYXD5X"},
+{name:"Arrive Las Vegas (LAS) — Pick Up Car",lat:36.0840,lng:-115.1537,type:"flight",time:"8:00 AM",stars:null,notes:"Harry Reid International Airport • 2h 45m flight • pick up rental car and head north on I-15"},
 {name:"Kanarra Falls Hike",lat:37.5371,lng:-113.1755,type:"hike",time:"11:00 AM",stars:"4.8",notes:"$15 permit fee • 4 miles round trip • slot canyon with log ladders • water shoes required"},
 {name:"Fire + Smoke BBQ",lat:37.5343,lng:-113.1845,type:"food",time:"1:30 PM",stars:"4.9",notes:"Smoked brisket & ribs • Kanarraville, UT • Wed–Sat only"},
 {name:"Zion NP — Riverside Walk",lat:37.2001,lng:-112.9870,type:"hike",time:"3:30 PM",stars:"4.7",notes:"Easy paved trail • 2 miles RT • follows the Virgin River into the Narrows"},
@@ -200,7 +202,7 @@ const DEFAULT_STATE={days:[
 {name:"Valley of Fire State Park",lat:36.4607,lng:-114.5131,type:"hike",time:"1:30 PM",stars:"4.9",notes:"Nevada's oldest state park • blazing red Aztec sandstone • Elephant Rock & Fire Wave • $15 entry • 50 min from Las Vegas"},
 {name:"In-N-Out Burger (Las Vegas)",lat:36.1488,lng:-115.3264,type:"food",time:"3:30 PM",stars:"4.5",notes:"Classic road trip finale • double-double animal style"},
 {name:"Return Rental Car & Airport",lat:36.0840,lng:-115.1537,type:"drive",time:"5:00 PM",stars:null,notes:"Harry Reid International • return rental car • allow 1.5 hrs for security"},
-{name:"Fly Home — SW #4190 LAS→TUL",lat:36.0840,lng:-115.1537,type:"drive",time:"7:15 PM",stars:null,notes:"Southwest #4190 • arrives Tulsa 11:55 PM • confirmation BYXD5X"}
+{name:"Fly Home — SW #4190 LAS→TUL",lat:36.0840,lng:-115.1537,type:"flight",time:"7:15 PM",stars:null,notes:"Southwest #4190 • arrives Tulsa 11:55 PM • 2h 40m flight • confirmation BYXD5X"}
 ]}
 ]};
 
@@ -211,7 +213,7 @@ function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catc
 const map=L.map('map',{zoomControl:true});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
-const TC={hike:"#C1512D",food:"#E07B39",lodge:"#5A8A5A",drive:"#8B7355"};
+const TC={hike:"#C1512D",food:"#E07B39",lodge:"#5A8A5A",drive:"#8B7355",flight:"#4A7EC7"};
 
 function makeIcon(num,color,isAlt){
   const op=isAlt?0.6:1;
@@ -268,7 +270,7 @@ function renderTabs(){
   bar.appendChild(add);
 }
 
-function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
+function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';

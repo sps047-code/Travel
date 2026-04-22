@@ -41,12 +41,14 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
 .day-header p{font-size:13px;color:var(--text-light);margin-top:3px}
 .timeline{position:relative;padding-left:40px}
 .timeline::before{content:'';position:absolute;left:14px;top:8px;bottom:8px;width:2px;background:var(--border)}
-.stop-card{position:relative;background:var(--cream);border-radius:12px;padding:14px 40px 14px 16px;margin-bottom:14px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.stop-card{position:relative;background:var(--cream);border-radius:12px;padding:14px 56px 14px 16px;margin-bottom:14px;box-shadow:var(--shadow);border:1px solid var(--border)}
 .stop-card.alt-stop{border-style:dashed;background:#FFFBF5}
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.25)}
 .dot-hike{background:#C1512D}.dot-food{background:#E07B39}.dot-lodge{background:#5A8A5A}.dot-drive{background:#8B7355}
-.card-delete{position:absolute;top:8px;right:8px;width:26px;height:26px;background:transparent;border:none;cursor:pointer;color:#CCC;font-size:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s;line-height:1}
-.card-delete:hover{background:rgba(193,81,45,0.12);color:var(--rust)}
+.card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
+.card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:#CCC;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;line-height:1;padding:0}
+.card-btn:hover{background:rgba(193,81,45,0.12);color:var(--rust)}
+.card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
 .card-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .card-time{font-size:11px;font-weight:700;color:var(--text-light);white-space:nowrap;min-width:60px;padding-top:1px}
 .card-main{flex:1;min-width:0}
@@ -257,9 +259,14 @@ function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
   let cards='';
   day.stops.forEach((s,si)=>{
+    const isFirst=si===0,isLast=si===day.stops.length-1;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
-      '<button class="card-delete" onclick="deleteStop('+idx+','+si+')" title="Remove">&times;</button>'+
+      '<div class="card-controls">'+
+      '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
+      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
+      '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
+      '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
@@ -295,6 +302,14 @@ function removeDay(idx){
   state.days.splice(idx,1);
   if(currentDayIdx>=state.days.length)currentDayIdx=state.days.length-1;
   saveState();renderAll();renderDayMap(currentDayIdx);
+}
+
+function moveStop(dayIdx,stopIdx,dir){
+  const stops=state.days[dayIdx].stops;
+  const newIdx=stopIdx+dir;
+  if(newIdx<0||newIdx>=stops.length)return;
+  [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
+  saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
 function deleteStop(dayIdx,stopIdx){

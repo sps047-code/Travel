@@ -160,7 +160,7 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
   </div>
 </div>
 <script>
-const LS_KEY='utahTripState_v3';
+const LS_KEY='utahTripState_v4';
 const DEFAULT_STATE={days:[
 {title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before crowds thin out.",stops:[
 {name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"drive",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport"},
@@ -188,19 +188,18 @@ const DEFAULT_STATE={days:[
 {name:"Rim Rock Patio Restaurant",lat:38.3197,lng:-111.3814,type:"food",time:"5:30 PM",stars:"4.4",notes:"Torrey, UT • patio dining with canyon views • Utah lamb, local trout"},
 {name:"Drive toward Las Vegas",lat:37.6404,lng:-112.1696,type:"drive",time:"7:00 PM",stars:null,notes:"Head west on UT-12 then south on US-89 — overnight in Bryce area or push to Cedar City"}
 ]},
-{title:"Day 4 — Valley of Fire & Las Vegas",subtitle:"Tue Jun 9 • Scenic detour through Nevada • arrive Las Vegas",tip:"Valley of Fire is best in the golden hour before 10 AM and after 4 PM. The red sandstone glows intensely — bring more water than you think you need.",stops:[
-{name:"Valley of Fire State Park",lat:36.4607,lng:-114.5131,type:"hike",time:"9:00 AM",stars:"4.9",notes:"Nevada's oldest state park • blazing red Aztec sandstone • Elephant Rock, Fire Wave trail • $15 entry fee"},
-{name:"Fire Wave Trail",lat:36.4486,lng:-114.5250,type:"hike",time:"9:30 AM",stars:"4.8",notes:"1.5 miles RT • stunning layered red & pink sandstone formations"},
-{name:"Red Rock Canyon NCA",lat:36.1353,lng:-115.4273,type:"hike",time:"1:30 PM",stars:"4.8",notes:"National Conservation Area • 13-mile scenic drive • sandstone peaks • 15 min from the Las Vegas Strip"},
-{name:"In-N-Out Burger (Charleston)",lat:36.1488,lng:-115.3264,type:"food",time:"3:30 PM",stars:"4.5",notes:"Classic Nevada pit stop • double-double animal style"},
-{name:"Check In — Las Vegas Hotel",lat:36.1126,lng:-115.1767,type:"lodge",time:"5:00 PM",stars:null,notes:"The Strip • book in advance — Jun weekends sell out fast"},
-{name:"Dinner on the Strip",lat:36.1069,lng:-115.1731,type:"food",time:"7:30 PM",stars:null,notes:"Bellagio, Aria, or Park MGM dining — reserve ahead"}
+{title:"Day 4 — Drive to Lehi & Wedding",subtitle:"Tue Jun 9 • Capitol Reef → Provo Canyon → Wedding in Lehi",tip:"Provo Canyon is stunning on the drive north — pull over at Bridal Veil Falls for a quick stretch. Leave Torrey by 9 AM to arrive Lehi comfortably before 6 PM.",stops:[
+{name:"Depart Torrey / Capitol Reef",lat:38.3197,lng:-111.3814,type:"drive",time:"9:00 AM",stars:null,notes:"Head north on UT-24 then US-89 toward I-15 — about 3 hrs to Lehi"},
+{name:"Bridal Veil Falls — Provo Canyon",lat:40.3228,lng:-111.5770,type:"hike",time:"11:30 AM",stars:"4.6",notes:"Quick 20-min stop • stunning 607-ft waterfall • short easy walk from the parking area"},
+{name:"Lunch — Communal Restaurant",lat:40.2338,lng:-111.6585,type:"food",time:"12:30 PM",stars:"4.6",notes:"Provo • farm-to-table • great stop to freshen up before the wedding"},
+{name:"Wedding — Lehi, UT",lat:40.3916,lng:-111.8508,type:"hike",time:"6:00 PM",stars:null,notes:"Lehi, Utah • congratulations to the happy couple!"},
+{name:"Overnight — Lehi / American Fork",lat:40.3780,lng:-111.7979,type:"lodge",time:"9:00 PM",stars:null,notes:"Stay near Lehi — need to drive to Las Vegas tomorrow for 7:15 PM flight"}
 ]},
-{title:"Day 5 — Las Vegas & Fly Home",subtitle:"Wed Jun 10 • Explore Las Vegas • SW #4190 • LAS→TUL 7:15 PM",tip:"Southwest #4190 departs at 7:15 PM. Leave your hotel by 4:30 PM at the latest — Harry Reid Airport gets crowded on weekday evenings.",stops:[
-{name:"Fremont Street Experience",lat:36.1699,lng:-115.1426,type:"hike",time:"10:00 AM",stars:"4.5",notes:"Old downtown Las Vegas • free LED canopy light show • vintage neon signs • less touristy than the Strip"},
-{name:"Bellagio Fountains",lat:36.1126,lng:-115.1740,type:"hike",time:"12:00 PM",stars:"4.8",notes:"Free to watch • shows every 30 min afternoons • iconic Strip landmark"},
-{name:"Lunch — Eggslut (Cosmopolitan)",lat:36.1093,lng:-115.1716,type:"food",time:"1:00 PM",stars:"4.6",notes:"Cosmopolitan hotel • famous egg sandwiches • expect a line but worth it"},
-{name:"Depart for Airport",lat:36.0840,lng:-115.1537,type:"drive",time:"4:30 PM",stars:null,notes:"Allow 30 min drive + 1.5 hrs for security • return rental car first"},
+{title:"Day 5 — Drive to LAS & Fly Home",subtitle:"Wed Jun 10 • Lehi → Valley of Fire → Las Vegas • SW #4190 7:15 PM",tip:"Leave Lehi by 10 AM. Valley of Fire is perfectly on the way — stunning 45-min detour. Be at Harry Reid Airport by 5:30 PM for your 7:15 PM departure.",stops:[
+{name:"Depart Lehi — Drive to Las Vegas",lat:40.3916,lng:-111.8508,type:"drive",time:"10:00 AM",stars:null,notes:"South on I-15 • about 4 hours to Las Vegas • perfect road trip finale"},
+{name:"Valley of Fire State Park",lat:36.4607,lng:-114.5131,type:"hike",time:"1:30 PM",stars:"4.9",notes:"Nevada's oldest state park • blazing red Aztec sandstone • Elephant Rock & Fire Wave • $15 entry • 50 min from Las Vegas"},
+{name:"In-N-Out Burger (Las Vegas)",lat:36.1488,lng:-115.3264,type:"food",time:"3:30 PM",stars:"4.5",notes:"Classic road trip finale • double-double animal style"},
+{name:"Return Rental Car & Airport",lat:36.0840,lng:-115.1537,type:"drive",time:"5:00 PM",stars:null,notes:"Harry Reid International • return rental car • allow 1.5 hrs for security"},
 {name:"Fly Home — SW #4190 LAS→TUL",lat:36.0840,lng:-115.1537,type:"drive",time:"7:15 PM",stars:null,notes:"Southwest #4190 • arrives Tulsa 11:55 PM • confirmation BYXD5X"}
 ]}
 ]};

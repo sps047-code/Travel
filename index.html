@@ -162,7 +162,7 @@ header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
   </div>
 </div>
 <script>
-const LS_KEY='utahTripState_v5';
+const LS_KEY='utahTripState_v6';
 const DEFAULT_STATE={days:[
 {title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before crowds thin out.",stops:[
 {name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"flight",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport • confirmation BYXD5X"},
@@ -188,7 +188,7 @@ const DEFAULT_STATE={days:[
 {name:"Hickman Bridge Trail",lat:38.2895,lng:-111.2272,type:"hike",time:"1:30 PM",stars:"4.7",notes:"2 miles RT • natural bridge 133 ft wide • easy to moderate"},
 {name:"Cassidy Arch Trail",lat:38.2648,lng:-111.2190,type:"hike",time:"3:00 PM",stars:null,notes:"3.4 miles RT • named after Butch Cassidy • panoramic views over Grand Wash"},
 {name:"Rim Rock Patio Restaurant",lat:38.3197,lng:-111.3814,type:"food",time:"5:30 PM",stars:"4.4",notes:"Torrey, UT • patio dining with canyon views • Utah lamb, local trout"},
-{name:"Drive toward Las Vegas",lat:37.6404,lng:-112.1696,type:"drive",time:"7:00 PM",stars:null,notes:"Head west on UT-12 then south on US-89 — overnight in Bryce area or push to Cedar City"}
+{name:"Overnight — Torrey, UT",lat:38.3000,lng:-111.4100,type:"lodge",time:"7:30 PM",stars:null,notes:"Stay in Torrey near Capitol Reef — Skyridge Inn or Capitol Reef Resort • quiet town, stunning red rock views"}
 ]},
 {title:"Day 4 — Drive to Lehi & Wedding",subtitle:"Tue Jun 9 • Capitol Reef → Provo Canyon → Wedding in Lehi",tip:"Provo Canyon is stunning on the drive north — pull over at Bridal Veil Falls for a quick stretch. Leave Torrey by 9 AM to arrive Lehi comfortably before 6 PM.",stops:[
 {name:"Depart Torrey / Capitol Reef",lat:38.3197,lng:-111.3814,type:"drive",time:"9:00 AM",stars:null,notes:"Head north on UT-24 then US-89 toward I-15 — about 3 hrs to Lehi"},
@@ -220,8 +220,20 @@ function makeIcon(num,color,isAlt){
   return L.divIcon({html:`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z" fill="${color}" fill-opacity="${op}" stroke="white" stroke-width="1.5"/><text x="15" y="16" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="11" font-weight="800" font-family="sans-serif">${num}</text></svg>`,className:'',iconSize:[30,36],iconAnchor:[15,36],popupAnchor:[0,-38]});
 }
 
+function bezierArc(p1,p2,steps=80){
+  const [la1,lo1]=p1,[la2,lo2]=p2;
+  const mla=(la1+la2)/2,mlo=(lo1+lo2)/2;
+  const dla=la2-la1,dlo=lo2-lo1;
+  const dist=Math.sqrt(dla*dla+dlo*dlo);
+  const curve=dist*0.4;
+  const cla=mla+(-dlo/dist*curve),clo=mlo+(dla/dist*curve);
+  const pts=[];
+  for(let i=0;i<=steps;i++){const t=i/steps;pts.push([(1-t)*(1-t)*la1+2*(1-t)*t*cla+t*t*la2,(1-t)*(1-t)*lo1+2*(1-t)*t*clo+t*t*lo2]);}
+  return pts;
+}
+
 async function fetchRoute(stops){
-  const rs=stops.filter(s=>!s.alt&&s.lat&&s.lng);
+  const rs=stops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight');
   if(rs.length<2)return null;
   const key=rs.map(s=>s.lat+','+s.lng).join('|');
   if(routeCache[key])return routeCache[key];
@@ -246,12 +258,19 @@ async function renderDayMap(idx){
     markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
+  // Draw curved arcs for consecutive flight stops
+  for(let i=0;i<day.stops.length-1;i++){
+    const a=day.stops[i],b=day.stops[i+1];
+    if(a.type==='flight'&&b.type==='flight'&&a.lat&&b.lat){
+      L.polyline(bezierArc([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
+    }
+  }
   try{
     const rc=await fetchRoute(day.stops);
     if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
     else{
-      const ml=day.stops.filter(s=>!s.alt&&s.lat).map(s=>[s.lat,s.lng]);
-      L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
+      const ml=day.stops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
+      if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
       st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
     }
   }catch(e){st.style.display='none'}

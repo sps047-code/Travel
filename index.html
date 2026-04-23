@@ -233,7 +233,12 @@ function bezierArc(p1,p2,steps=80){
 }
 
 async function fetchRoute(stops){
-  const rs=stops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight');
+  // Include a flight stop only if it's an arrival (next stop is non-flight) — driving starts from there
+  const rs=stops.filter((s,i)=>{
+    if(s.alt||!s.lat||!s.lng)return false;
+    if(s.type==='flight'){const nx=stops[i+1];return !nx||nx.type!=='flight';}
+    return true;
+  });
   if(rs.length<2)return null;
   const key=rs.map(s=>s.lat+','+s.lng).join('|');
   if(routeCache[key])return routeCache[key];

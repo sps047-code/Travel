@@ -3,436 +3,84 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Southern Utah Road Trip Itinerary</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<title>My Trips</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --sand:#F5F0E8;--rust:#C1512D;--rust-dark:#9E3E1F;--rust-light:#E8694A;
+  --sand:#F5F0E8;--rust:#C1512D;--rust-dark:#9E3E1F;
   --cream:#FFFDF7;--orange:#E07B39;--green:#5A8A5A;
   --text:#2C1A0E;--text-light:#6B4D38;--border:#DDD5C5;
-  --shadow:0 2px 12px rgba(44,26,14,0.10);
+  --shadow:0 2px 16px rgba(44,26,14,0.12);
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--sand);color:var(--text);min-height:100vh}
-header{background:var(--rust);color:white;padding:18px 20px 14px;text-align:center;position:sticky;top:0;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
-header h1{font-size:clamp(17px,4vw,24px);font-weight:700;letter-spacing:0.3px;line-height:1.2}
-header p{font-size:clamp(11px,2.5vw,13px);opacity:0.88;margin-top:3px}
-.tabs{display:flex;align-items:stretch;background:var(--rust-dark);overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tabs::-webkit-scrollbar{height:0}
-.tab-item{display:flex;align-items:stretch;flex-shrink:0;position:relative}
-.tab-btn{padding:12px 14px;background:transparent;border:none;color:rgba(255,255,255,0.72);font-size:clamp(11px,2.8vw,14px);font-weight:600;cursor:pointer;transition:all 0.2s;white-space:nowrap}
-.tab-btn:hover{color:white;background:rgba(255,255,255,0.10)}
-.tab-item.active .tab-btn{background:var(--sand);color:var(--rust);border-radius:8px 8px 0 0;margin:4px 0 0}
-.tab-remove{background:transparent;border:none;color:rgba(255,255,255,0.45);font-size:15px;cursor:pointer;padding:0 8px 0 0;display:flex;align-items:center;transition:color 0.2s}
-.tab-item.active .tab-remove{color:rgba(193,81,45,0.5)}
-.tab-remove:hover{color:white!important}
-.tab-add{background:transparent;border:none;color:rgba(255,255,255,0.72);font-size:22px;cursor:pointer;padding:8px 14px;display:flex;align-items:center;flex-shrink:0;transition:all 0.2s;line-height:1}
-.tab-add:hover{color:white;background:rgba(255,255,255,0.15)}
-#map{width:100%;height:clamp(280px,40vh,420px);z-index:1}
-.map-legend{display:flex;flex-wrap:wrap;gap:10px 18px;padding:8px 16px;background:rgba(255,253,247,0.95);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-light)}
-.legend-item{display:flex;align-items:center;gap:5px}
-.legend-dot{width:12px;height:12px;border-radius:50%;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
-.route-status{text-align:center;font-size:11px;color:var(--text-light);padding:5px;background:rgba(255,253,247,0.9)}
-.content{max-width:780px;margin:0 auto;padding:20px 16px 40px}
-.day-panel{display:none}.day-panel.active{display:block}
-.day-header{margin-bottom:18px}
-.day-header h2{font-size:clamp(18px,4.5vw,24px);color:var(--rust);font-weight:700}
-.day-header p{font-size:13px;color:var(--text-light);margin-top:3px}
-.timeline{position:relative;padding-left:40px}
-.timeline::before{content:'';position:absolute;left:14px;top:8px;bottom:8px;width:2px;background:var(--border)}
-.stop-card{position:relative;background:var(--cream);border-radius:12px;padding:14px 56px 14px 16px;margin-bottom:14px;box-shadow:var(--shadow);border:1px solid var(--border)}
-.stop-card.alt-stop{border-style:dashed;background:#FFFBF5}
-.stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.25)}
-.dot-hike{background:#C1512D}.dot-food{background:#E07B39}.dot-lodge{background:#5A8A5A}.dot-drive{background:#8B7355}.dot-flight{background:#4A7EC7}
-.card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
-.card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:#CCC;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;line-height:1;padding:0}
-.card-btn:hover{background:rgba(193,81,45,0.12);color:var(--rust)}
-.card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
-.card-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.card-time{font-size:11px;font-weight:700;color:var(--text-light);white-space:nowrap;min-width:60px;padding-top:1px}
-.card-main{flex:1;min-width:0}
-.card-name{font-size:clamp(14px,3.5vw,16px);font-weight:700;color:var(--text);line-height:1.25}
-.card-stars{font-size:12px;color:#B8860B;margin-top:2px}
-.card-notes{font-size:12px;color:var(--text-light);margin-top:3px;line-height:1.5}
-.badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase}
-.badge-hike{background:rgba(193,81,45,0.13);color:#C1512D}
-.badge-food{background:rgba(224,123,57,0.13);color:#B85E10}
-.badge-lodge{background:rgba(90,138,90,0.15);color:#5A8A5A}
-.badge-drive{background:rgba(139,115,85,0.13);color:#8B7355}
-.badge-flight{background:rgba(74,126,199,0.13);color:#2E63A8}
-.badge-alt{background:rgba(100,100,200,0.10);color:#5555BB}
-.add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:10px;color:var(--text-light);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-top:4px;font-family:inherit}
-.add-stop-btn:hover{border-color:var(--rust);color:var(--rust);background:rgba(193,81,45,0.05)}
-.pro-tip{background:linear-gradient(135deg,#FFF8EE 0%,#FDEFD8 100%);border:1px solid #F0C98A;border-left:4px solid var(--orange);border-radius:10px;padding:14px 16px;margin-top:24px}
-.pro-tip-label{font-size:10px;font-weight:800;color:var(--orange);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px}
-.pro-tip p{font-size:13px;color:var(--text);line-height:1.55}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(44,26,14,0.55);z-index:9000;align-items:center;justify-content:center;padding:16px}
-.modal-overlay.open{display:flex}
-.modal{background:var(--cream);border-radius:16px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(44,26,14,0.3);position:relative}
-.modal-title{font-size:18px;font-weight:700;color:var(--rust);margin-bottom:18px}
-.modal-close{position:absolute;top:14px;right:14px;background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--text-light);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background 0.2s}
-.modal-close:hover{background:rgba(193,81,45,0.1);color:var(--rust)}
-.search-wrap{position:relative;margin-bottom:8px}
-.search-input{width:100%;padding:11px 40px 11px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px;background:white;color:var(--text);outline:none;transition:border-color 0.2s;font-family:inherit}
-.search-input:focus{border-color:var(--rust)}
-.search-spinner{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px;display:none}
-.search-spinner.active{display:block;animation:spin 0.8s linear infinite}
-@keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
-.search-results{border:1px solid var(--border);border-radius:10px;background:white;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow);display:none}
-.search-results.open{display:block}
-.search-result-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid #F0EBE0;transition:background 0.15s}
-.search-result-item:last-child{border-bottom:none}
-.search-result-item:hover{background:#FFF5EE}
-.result-name{font-size:13px;font-weight:600;color:var(--text)}
-.result-addr{font-size:11px;color:var(--text-light);margin-top:2px}
-.no-results{padding:12px 14px;font-size:13px;color:var(--text-light);text-align:center}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.form-group{display:flex;flex-direction:column;gap:5px}
-.form-group.full{grid-column:1/-1}
-.form-label{font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:0.4px}
-.form-input,.form-select,.form-textarea{padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;background:white;color:var(--text);outline:none;transition:border-color 0.2s;font-family:inherit}
-.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--rust)}
-.form-textarea{resize:vertical;min-height:60px}
-.check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-light);cursor:pointer}
-.check-row input{width:16px;height:16px;accent-color:var(--rust)}
-.modal-actions{display:flex;gap:10px;margin-top:20px}
-.btn-primary{flex:1;padding:12px;background:var(--rust);color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.2s;font-family:inherit}
-.btn-primary:hover{background:var(--rust-dark)}
-.btn-cancel{padding:12px 20px;background:transparent;color:var(--text-light);border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;font-family:inherit}
-.btn-cancel:hover{border-color:var(--rust);color:var(--rust)}
-@media(max-width:480px){
-  .timeline{padding-left:32px}
-  .stop-dot{left:-27px;width:18px;height:18px;font-size:8px}
-  .timeline::before{left:10px}
-  header{padding:12px 12px 10px}
-  .content{padding:14px 12px 32px}
-  .form-grid{grid-template-columns:1fr}
-  .modal{padding:18px}
-}
+header{background:var(--rust);color:white;padding:22px 20px 18px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+header h1{font-size:clamp(20px,5vw,28px);font-weight:700;letter-spacing:0.3px}
+header p{font-size:clamp(12px,2.5vw,14px);opacity:0.88;margin-top:4px}
+.page{max-width:860px;margin:0 auto;padding:32px 16px 60px}
+.section-title{font-size:13px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px}
+.trips-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+.trip-card{background:var(--cream);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;transition:transform 0.2s,box-shadow 0.2s;text-decoration:none;color:inherit;display:flex;flex-direction:column}
+.trip-card:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(44,26,14,0.16)}
+.trip-card-banner{height:8px;background:linear-gradient(90deg,var(--rust),var(--orange))}
+.trip-card-banner.green{background:linear-gradient(90deg,#3A7A3A,#5A8A5A)}
+.trip-card-banner.blue{background:linear-gradient(90deg,#2E63A8,#4A7EC7)}
+.trip-card-body{padding:18px 18px 16px;flex:1;display:flex;flex-direction:column;gap:10px}
+.trip-card-title{font-size:clamp(15px,3.5vw,17px);font-weight:700;color:var(--text);line-height:1.3}
+.trip-card-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.trip-meta-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--text-light);background:var(--sand);padding:3px 10px;border-radius:20px;border:1px solid var(--border)}
+.trip-destinations{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.dest-tag{font-size:11px;font-weight:600;color:var(--rust);background:rgba(193,81,45,0.10);padding:3px 9px;border-radius:20px}
+.trip-card-footer{padding:0 18px 18px}
+.view-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:11px;background:var(--rust);color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;transition:background 0.2s;font-family:inherit}
+.view-btn:hover{background:var(--rust-dark)}
+.add-card{background:transparent;border:2px dashed var(--border);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:40px 20px;cursor:pointer;transition:all 0.2s;text-decoration:none;color:var(--text-light);min-height:200px}
+.add-card:hover{border-color:var(--rust);color:var(--rust);background:rgba(193,81,45,0.04)}
+.add-icon{width:44px;height:44px;border-radius:50%;background:rgba(193,81,45,0.10);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--rust);transition:background 0.2s}
+.add-card:hover .add-icon{background:rgba(193,81,45,0.18)}
+.add-label{font-size:14px;font-weight:600}
+.add-sub{font-size:12px;opacity:0.75;text-align:center}
+@media(max-width:480px){.page{padding:20px 12px 48px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>Las Vegas &amp; Southern Utah Road Trip</h1>
-  <p id="trip-subtitle">5 Days &bull; Jun 6&ndash;10 &bull; Zion &bull; Bryce Canyon &bull; Capitol Reef &bull; Las Vegas</p>
+  <h1>My Trips</h1>
+  <p>Your personal travel itineraries</p>
 </header>
-<div class="tabs" id="tabs-bar"></div>
-<div class="map-legend">
-  <span class="legend-item"><span class="legend-dot" style="background:#C1512D"></span>Hike</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#E07B39"></span>Food</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#5A8A5A"></span>Lodging</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#8B7355"></span>Drive</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#4A7EC7"></span>Flight</span>
-</div>
-<div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
-<div id="map"></div>
-<div class="content" id="content-area"></div>
-<div class="modal-overlay" id="modal-overlay">
-  <div class="modal">
-    <div class="modal-title">Add a Stop</div>
-    <button class="modal-close" onclick="closeModal()">&#215;</button>
-    <div class="search-wrap">
-      <input type="text" class="search-input" id="place-search" placeholder="Search for a place..." autocomplete="off"/>
-      <span class="search-spinner" id="search-spinner">&#8635;</span>
-    </div>
-    <div class="search-results" id="search-results"></div>
-    <div class="form-grid">
-      <div class="form-group full"><label class="form-label">Name</label><input type="text" class="form-input" id="f-name" placeholder="Stop name"/></div>
-      <div class="form-group"><label class="form-label">Time</label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM"/></div>
-      <div class="form-group"><label class="form-label">Type</label>
-        <select class="form-select" id="f-type">
-          <option value="hike">Hike / Park</option>
-          <option value="food">Food</option>
-          <option value="lodge">Lodging</option>
-          <option value="drive">Drive</option>
-        </select>
+<div class="page">
+  <div class="section-title">Upcoming &amp; Recent Trips</div>
+  <div class="trips-grid">
+
+    <!-- Las Vegas & Utah Trip -->
+    <a class="trip-card" href="las-vegas-utah.html">
+      <div class="trip-card-banner"></div>
+      <div class="trip-card-body">
+        <div class="trip-card-title">Las Vegas &amp; Southern Utah Road Trip</div>
+        <div class="trip-card-meta">
+          <span class="trip-meta-pill">&#9679; Jun 6&ndash;10, 2026</span>
+          <span class="trip-meta-pill">5 Days</span>
+        </div>
+        <div class="trip-destinations">
+          <span class="dest-tag">Zion NP</span>
+          <span class="dest-tag">Bryce Canyon</span>
+          <span class="dest-tag">Capitol Reef</span>
+          <span class="dest-tag">Las Vegas</span>
+          <span class="dest-tag">Valley of Fire</span>
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Stars</label><input type="text" class="form-input" id="f-stars" placeholder="e.g. 4.5"/></div>
-      <div class="form-group"><label class="form-label">Lat</label><input type="text" class="form-input" id="f-lat" placeholder="Latitude"/></div>
-      <div class="form-group"><label class="form-label">Lng</label><input type="text" class="form-input" id="f-lng" placeholder="Longitude"/></div>
-      <div class="form-group full"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Optional notes..."></textarea></div>
-      <div class="form-group full"><label class="check-row"><input type="checkbox" id="f-alt"/> Mark as alternate / optional stop</label></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary" onclick="saveStop()">Add Stop</button>
-    </div>
+      <div class="trip-card-footer">
+        <span class="view-btn">View Itinerary &#8594;</span>
+      </div>
+    </a>
+
+    <!-- Add New Trip -->
+    <a class="add-card" href="#" onclick="alert('Create a new trip by duplicating the template. Coming soon!');return false">
+      <div class="add-icon">+</div>
+      <div class="add-label">Add a New Trip</div>
+      <div class="add-sub">Plan your next adventure</div>
+    </a>
+
   </div>
 </div>
-<script>
-const LS_KEY='utahTripState_v6';
-const DEFAULT_STATE={days:[
-{title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before crowds thin out.",stops:[
-{name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"flight",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport • confirmation BYXD5X"},
-{name:"Arrive Las Vegas (LAS) — Pick Up Car",lat:36.0840,lng:-115.1537,type:"flight",time:"8:00 AM",stars:null,notes:"Harry Reid International Airport • 2h 45m flight • pick up rental car and head north on I-15"},
-{name:"Kanarra Falls Hike",lat:37.5371,lng:-113.1755,type:"hike",time:"11:00 AM",stars:"4.8",notes:"$15 permit fee • 4 miles round trip • slot canyon with log ladders • water shoes required"},
-{name:"Fire + Smoke BBQ",lat:37.5343,lng:-113.1845,type:"food",time:"1:30 PM",stars:"4.9",notes:"Smoked brisket & ribs • Kanarraville, UT • Wed–Sat only"},
-{name:"Zion NP — Riverside Walk",lat:37.2001,lng:-112.9870,type:"hike",time:"3:30 PM",stars:"4.7",notes:"Easy paved trail • 2 miles RT • follows the Virgin River into the Narrows"},
-{name:"Oscar's Cafe",lat:37.1890,lng:-113.0003,type:"food",time:"6:30 PM",stars:"4.7",notes:"Springdale classic • New Mexican cuisine • green chile eggs and burritos"},
-{name:"Best Western Plus Zion West Hotel",lat:37.2118,lng:-113.2703,type:"lodge",time:"8:00 PM",stars:"4.3",notes:"Hurricane, UT • pool • free breakfast • 30 min from Zion"}
-]},
-{title:"Day 2 — Zion & Bryce Canyon",subtitle:"Sun Jun 7 • The Narrows river hike • drive to Bryce • sunset at the rim",tip:"Bryce Canyon has some of the darkest skies in North America. Step outside after dinner — you can see the Milky Way with the naked eye.",stops:[
-{name:"The Narrows River Hike",lat:37.3050,lng:-112.9491,type:"hike",time:"7:00 AM",stars:"4.9",notes:"Hike up the Virgin River through slot canyon walls • water shoes and trekking poles essential"},
-{name:"Angels Landing (alternate)",lat:37.2592,lng:-112.9513,type:"hike",time:"7:00 AM",stars:"4.8",alt:true,notes:"Permit required via lottery • chains on the final 500-foot spine • not for those with a fear of heights"},
-{name:"Spotted Dog Restaurant",lat:37.1947,lng:-112.9932,type:"food",time:"12:30 PM",stars:"4.5",notes:"Springdale • local ingredients • great patio views of Zion cliffs"},
-{name:"Bryce Canyon NP — Sunset Point",lat:37.6404,lng:-112.1696,type:"hike",time:"4:00 PM",stars:"4.9",notes:"Hoodoo formations glow orange at dusk • best light after 4 PM • elevation 8,012 ft"},
-{name:"Ruby's Inn Cowboy Buffet",lat:37.6737,lng:-112.1570,type:"food",time:"6:30 PM",stars:"4.0",notes:"Western-style all-you-can-eat • carving station, prime rib • right at the park entrance"},
-{name:"Best Western Plus Ruby's Inn",lat:37.6737,lng:-112.1575,type:"lodge",time:"8:00 PM",stars:"4.0",notes:"Bryce Canyon City • steps from the park entrance • general store on site"}
-]},
-{title:"Day 3 — Bryce Canyon & Capitol Reef",subtitle:"Mon Jun 8 • Hoodoo trails at dawn • highway 12 drive • Capitol Reef arches",tip:"Grab an America the Beautiful pass ($80) before the trip. It covers all three national parks — Zion, Bryce, and Capitol Reef.",stops:[
-{name:"Navajo Loop / Queens Garden Hike",lat:37.6206,lng:-112.1638,type:"hike",time:"6:30 AM",stars:"5.0",notes:"3 miles • descent into the amphitheater • hoodoos at eye level • best hike in the park"},
-{name:"Bryce Canyon Pines Restaurant",lat:37.7099,lng:-112.2104,type:"food",time:"10:00 AM",stars:"4.2",notes:"Homemade pies • fluffy pancakes • great stop before the long drive east on UT-12"},
-{name:"Capitol Reef National Park",lat:38.2915,lng:-111.2620,type:"hike",time:"12:30 PM",stars:"4.7",notes:"Scenic Drive • Waterpocket Fold • least-crowded of Utah's Mighty 5"},
-{name:"Hickman Bridge Trail",lat:38.2895,lng:-111.2272,type:"hike",time:"1:30 PM",stars:"4.7",notes:"2 miles RT • natural bridge 133 ft wide • easy to moderate"},
-{name:"Cassidy Arch Trail",lat:38.2648,lng:-111.2190,type:"hike",time:"3:00 PM",stars:null,notes:"3.4 miles RT • named after Butch Cassidy • panoramic views over Grand Wash"},
-{name:"Rim Rock Patio Restaurant",lat:38.3197,lng:-111.3814,type:"food",time:"5:30 PM",stars:"4.4",notes:"Torrey, UT • patio dining with canyon views • Utah lamb, local trout"},
-{name:"Overnight — Torrey, UT",lat:38.3000,lng:-111.4100,type:"lodge",time:"7:30 PM",stars:null,notes:"Stay in Torrey near Capitol Reef — Skyridge Inn or Capitol Reef Resort • quiet town, stunning red rock views"}
-]},
-{title:"Day 4 — Drive to Lehi & Wedding",subtitle:"Tue Jun 9 • Capitol Reef → Provo Canyon → Wedding in Lehi",tip:"Provo Canyon is stunning on the drive north — pull over at Bridal Veil Falls for a quick stretch. Leave Torrey by 9 AM to arrive Lehi comfortably before 6 PM.",stops:[
-{name:"Depart Torrey / Capitol Reef",lat:38.3197,lng:-111.3814,type:"drive",time:"9:00 AM",stars:null,notes:"Head north on UT-24 then US-89 toward I-15 — about 3 hrs to Lehi"},
-{name:"Bridal Veil Falls — Provo Canyon",lat:40.3228,lng:-111.5770,type:"hike",time:"11:30 AM",stars:"4.6",notes:"Quick 20-min stop • stunning 607-ft waterfall • short easy walk from the parking area"},
-{name:"Lunch — Communal Restaurant",lat:40.2338,lng:-111.6585,type:"food",time:"12:30 PM",stars:"4.6",notes:"Provo • farm-to-table • great stop to freshen up before the wedding"},
-{name:"Wedding — Lehi, UT",lat:40.3916,lng:-111.8508,type:"hike",time:"6:00 PM",stars:null,notes:"Lehi, Utah • congratulations to the happy couple!"},
-{name:"Overnight — Lehi / American Fork",lat:40.3780,lng:-111.7979,type:"lodge",time:"9:00 PM",stars:null,notes:"Stay near Lehi — need to drive to Las Vegas tomorrow for 7:15 PM flight"}
-]},
-{title:"Day 5 — Drive to LAS & Fly Home",subtitle:"Wed Jun 10 • Lehi → Valley of Fire → Las Vegas • SW #4190 7:15 PM",tip:"Leave Lehi by 10 AM. Valley of Fire is perfectly on the way — stunning 45-min detour. Be at Harry Reid Airport by 5:30 PM for your 7:15 PM departure.",stops:[
-{name:"Depart Lehi — Drive to Las Vegas",lat:40.3916,lng:-111.8508,type:"drive",time:"10:00 AM",stars:null,notes:"South on I-15 • about 4 hours to Las Vegas • perfect road trip finale"},
-{name:"Valley of Fire State Park",lat:36.4607,lng:-114.5131,type:"hike",time:"1:30 PM",stars:"4.9",notes:"Nevada's oldest state park • blazing red Aztec sandstone • Elephant Rock & Fire Wave • $15 entry • 50 min from Las Vegas"},
-{name:"In-N-Out Burger (Las Vegas)",lat:36.1488,lng:-115.3264,type:"food",time:"3:30 PM",stars:"4.5",notes:"Classic road trip finale • double-double animal style"},
-{name:"Return Rental Car & Airport",lat:36.0840,lng:-115.1537,type:"drive",time:"5:00 PM",stars:null,notes:"Harry Reid International • return rental car • allow 1.5 hrs for security"},
-{name:"Fly Home — SW #4190 LAS→TUL",lat:36.0840,lng:-115.1537,type:"flight",time:"7:15 PM",stars:null,notes:"Southwest #4190 • arrives Tulsa 11:55 PM • 2h 40m flight • confirmation BYXD5X"}
-]}
-]};
-
-let state,currentDayIdx=0,addingToDay=0;
-function loadState(){try{const s=localStorage.getItem(LS_KEY);state=s?JSON.parse(s):JSON.parse(JSON.stringify(DEFAULT_STATE))}catch(e){state=JSON.parse(JSON.stringify(DEFAULT_STATE))}}
-function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}}
-
-const map=L.map('map',{zoomControl:true});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
-let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
-const TC={hike:"#C1512D",food:"#E07B39",lodge:"#5A8A5A",drive:"#8B7355",flight:"#4A7EC7"};
-
-function makeIcon(num,color,isAlt){
-  const op=isAlt?0.6:1;
-  return L.divIcon({html:`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z" fill="${color}" fill-opacity="${op}" stroke="white" stroke-width="1.5"/><text x="15" y="16" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="11" font-weight="800" font-family="sans-serif">${num}</text></svg>`,className:'',iconSize:[30,36],iconAnchor:[15,36],popupAnchor:[0,-38]});
-}
-
-function bezierArc(p1,p2,steps=80){
-  const [la1,lo1]=p1,[la2,lo2]=p2;
-  const mla=(la1+la2)/2,mlo=(lo1+lo2)/2;
-  const dla=la2-la1,dlo=lo2-lo1;
-  const dist=Math.sqrt(dla*dla+dlo*dlo);
-  const curve=dist*0.4;
-  const cla=mla+(-dlo/dist*curve),clo=mlo+(dla/dist*curve);
-  const pts=[];
-  for(let i=0;i<=steps;i++){const t=i/steps;pts.push([(1-t)*(1-t)*la1+2*(1-t)*t*cla+t*t*la2,(1-t)*(1-t)*lo1+2*(1-t)*t*clo+t*t*lo2]);}
-  return pts;
-}
-
-async function fetchRoute(stops){
-  // Include a flight stop only if it's an arrival (next stop is non-flight) — driving starts from there
-  const rs=stops.filter((s,i)=>{
-    if(s.alt||!s.lat||!s.lng)return false;
-    if(s.type==='flight'){const nx=stops[i+1];return !nx||nx.type!=='flight';}
-    return true;
-  });
-  if(rs.length<2)return null;
-  const key=rs.map(s=>s.lat+','+s.lng).join('|');
-  if(routeCache[key])return routeCache[key];
-  try{
-    const url='https://router.project-osrm.org/route/v1/driving/'+rs.map(s=>s.lng+','+s.lat).join(';')+'?overview=full&geometries=geojson';
-    const r=await fetch(url);if(!r.ok)throw 0;
-    const d=await r.json();if(d.code!=='Ok')throw 0;
-    routeCache[key]=d.routes[0].geometry.coordinates;return routeCache[key];
-  }catch(e){return null}
-}
-
-async function renderDayMap(idx){
-  markersLayer.clearLayers();routeLayer.clearLayers();
-  const day=state.days[idx];if(!day)return;
-  const st=document.getElementById('route-status');
-  st.style.display='block';st.textContent='Loading driving routes...';
-  const bounds=[];
-  day.stops.forEach((s,i)=>{
-    if(!s.lat||!s.lng)return;
-    const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
-    m.bindPopup('<div style="font-weight:700;font-size:13px">'+s.name+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
-    markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
-  });
-  if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
-  // Draw curved arcs for consecutive flight stops
-  for(let i=0;i<day.stops.length-1;i++){
-    const a=day.stops[i],b=day.stops[i+1];
-    if(a.type==='flight'&&b.type==='flight'&&a.lat&&b.lat){
-      L.polyline(bezierArc([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
-    }
-  }
-  try{
-    const rc=await fetchRoute(day.stops);
-    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
-    else{
-      const ml=day.stops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
-      if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
-      st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
-    }
-  }catch(e){st.style.display='none'}
-}
-
-function renderTabs(){
-  const bar=document.getElementById('tabs-bar');bar.innerHTML='';
-  state.days.forEach((d,i)=>{
-    const item=document.createElement('div');
-    item.className='tab-item'+(i===currentDayIdx?' active':'');
-    item.innerHTML='<button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-remove" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
-    bar.appendChild(item);
-  });
-  const add=document.createElement('button');
-  add.className='tab-add';add.title='Add day';add.innerHTML='+';add.onclick=addDay;
-  bar.appendChild(add);
-}
-
-function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-
-function renderPanel(idx){
-  const day=state.days[idx];if(!day)return'';
-  let cards='';
-  day.stops.forEach((s,si)=>{
-    const isFirst=si===0,isLast=si===day.stops.length-1;
-    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
-      '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
-      '<div class="card-controls">'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
-      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
-      '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+'</span><div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
-      (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
-      (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div></div>';
-  });
-  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
-    '<div class="timeline">'+cards+
-    '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
-    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
-    (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+
-    '</div>';
-}
-
-function renderAll(){
-  renderTabs();
-  document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
-  document.getElementById('trip-subtitle').textContent=state.days.length+' Day'+(state.days.length!==1?'s':'')+' • Southern Utah National Parks';
-}
-
-function switchDay(idx){currentDayIdx=idx;renderAll();renderDayMap(idx);window.scrollTo({top:0,behavior:'smooth'})}
-
-function addDay(){
-  const n=state.days.length+1;
-  state.days.push({title:'Day '+n+' — New Day',subtitle:'Add stops below to build your itinerary',tip:'',stops:[]});
-  saveState();switchDay(state.days.length-1);
-}
-
-function removeDay(idx){
-  if(state.days.length<=1){alert('You must have at least one day.');return}
-  if(!confirm('Remove Day '+(idx+1)+'? This cannot be undone.'))return;
-  state.days.splice(idx,1);
-  if(currentDayIdx>=state.days.length)currentDayIdx=state.days.length-1;
-  saveState();renderAll();renderDayMap(currentDayIdx);
-}
-
-function moveStop(dayIdx,stopIdx,dir){
-  const stops=state.days[dayIdx].stops;
-  const newIdx=stopIdx+dir;
-  if(newIdx<0||newIdx>=stops.length)return;
-  [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
-}
-
-function deleteStop(dayIdx,stopIdx){
-  if(!confirm('Remove "'+state.days[dayIdx].stops[stopIdx].name+'"?'))return;
-  state.days[dayIdx].stops.splice(stopIdx,1);
-  saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
-}
-
-function openAddStopModal(dayIdx){
-  addingToDay=dayIdx;
-  ['place-search','f-name','f-time','f-stars','f-lat','f-lng','f-notes'].forEach(id=>{document.getElementById(id).value=''});
-  document.getElementById('f-type').value='hike';
-  document.getElementById('f-alt').checked=false;
-  document.getElementById('search-results').innerHTML='';
-  document.getElementById('search-results').classList.remove('open');
-  document.getElementById('modal-overlay').classList.add('open');
-  setTimeout(()=>document.getElementById('place-search').focus(),100);
-}
-
-function closeModal(){document.getElementById('modal-overlay').classList.remove('open')}
-document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal()});
-
-let searchTimer=null;
-document.getElementById('place-search').addEventListener('input',function(){
-  clearTimeout(searchTimer);
-  const q=this.value.trim();
-  if(q.length<3){document.getElementById('search-results').classList.remove('open');return}
-  document.getElementById('search-spinner').classList.add('active');
-  searchTimer=setTimeout(()=>doSearch(q),600);
-});
-
-async function doSearch(q){
-  const el=document.getElementById('search-results'),sp=document.getElementById('search-spinner');
-  try{
-    const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(q)+'&format=json&limit=6&addressdetails=1',{headers:{'Accept-Language':'en'}});
-    const data=await r.json();sp.classList.remove('active');
-    if(!data||!data.length){el.innerHTML='<div class="no-results">No results. Try a different search or enter details manually.</div>';el.classList.add('open');return}
-    el.dataset.results=JSON.stringify(data);
-    el.innerHTML=data.map((r,i)=>{
-      const name=r.name||r.display_name.split(',')[0];
-      const addr=r.display_name.split(',').slice(1,3).join(',').trim();
-      return'<div class="search-result-item" onclick="pickResult('+i+')"><div class="result-name">'+name+'</div><div class="result-addr">'+addr+'</div></div>';
-    }).join('');
-    el.classList.add('open');
-  }catch(e){sp.classList.remove('active');el.innerHTML='<div class="no-results">Search unavailable. Enter details manually.</div>';el.classList.add('open')}
-}
-
-function pickResult(i){
-  const data=JSON.parse(document.getElementById('search-results').dataset.results||'[]');
-  const r=data[i];if(!r)return;
-  const name=r.name||r.display_name.split(',')[0];
-  document.getElementById('f-name').value=name;
-  document.getElementById('f-lat').value=parseFloat(r.lat).toFixed(5);
-  document.getElementById('f-lng').value=parseFloat(r.lon).toFixed(5);
-  document.getElementById('place-search').value=name;
-  const cls=(r.class||'').toLowerCase(),typ=(r.type||'').toLowerCase();
-  let t='hike';
-  if(['restaurant','cafe','bar','fast_food','food_court','pub','bakery'].includes(typ)||['restaurant','cafe','bar','fast_food'].includes(typ))t='food';
-  else if(['hotel','motel','hostel','guest_house','chalet','camp_site'].includes(typ))t='lodge';
-  else if(cls==='highway'||['motorway','residential','trunk'].includes(typ))t='drive';
-  document.getElementById('f-type').value=t;
-  document.getElementById('search-results').classList.remove('open');
-}
-
-function saveStop(){
-  const name=document.getElementById('f-name').value.trim();
-  const lat=parseFloat(document.getElementById('f-lat').value);
-  const lng=parseFloat(document.getElementById('f-lng').value);
-  if(!name){alert('Please enter a stop name.');return}
-  if(isNaN(lat)||isNaN(lng)){alert('Please select a search result or enter valid coordinates.');return}
-  state.days[addingToDay].stops.push({
-    name,lat,lng,
-    type:document.getElementById('f-type').value,
-    time:document.getElementById('f-time').value.trim(),
-    stars:document.getElementById('f-stars').value.trim()||null,
-    notes:document.getElementById('f-notes').value.trim(),
-    alt:document.getElementById('f-alt').checked
-  });
-  saveState();closeModal();renderAll();if(addingToDay===currentDayIdx)renderDayMap(currentDayIdx);
-}
-
-loadState();renderAll();renderDayMap(0);
-</script>
 </body>
 </html>

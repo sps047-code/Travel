@@ -153,7 +153,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   </div>
 </header>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08)"><div class="tabs" id="tabs-inner"></div></div>
-<div class="map-wrap">
 <div class="map-legend">
   <span class="legend-item"><span class="legend-dot" style="background:var(--ruby)"></span>Hike</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span>Food</span>
@@ -163,7 +162,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 </div>
 <div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
 <div id="map"></div>
-</div>
 <div class="content" id="content-area"></div>
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
@@ -472,8 +470,7 @@ function saveStop(){
   saveState();closeModal();renderAll();if(addingToDay===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
-loadState();renderAll();
-setTimeout(()=>{map.invalidateSize();renderDayMap(0);},150);
+loadState();renderAll();renderDayMap(0);
 </script>
 </body>
 </html>

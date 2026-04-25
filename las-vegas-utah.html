@@ -46,6 +46,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .tab-remove:hover{color:rgba(253,252,250,0.8)!important}
 .tab-add{background:transparent;border:none;color:rgba(253,252,250,0.45);font-size:20px;cursor:pointer;padding:8px 14px;display:flex;align-items:center;flex-shrink:0;transition:all 0.2s;line-height:1}
 .tab-add:hover{color:#FDFCFA}
+.tab-move{background:transparent;border:none;color:rgba(253,252,250,0.25);font-size:11px;cursor:pointer;padding:2px 6px;display:flex;align-items:center;transition:color 0.2s;line-height:1}
+.tab-move:hover{color:rgba(253,252,250,0.8)}
+.tab-move[disabled]{opacity:0.12;cursor:default;pointer-events:none}
+.lodge-next-btn{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:4px 10px;background:var(--pine-tint);color:var(--pine);border:1px solid var(--pine-border);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.lodge-next-btn:hover{background:var(--pine);color:white}
 .map-wrap{border-radius:var(--radius-lg);border:2px solid var(--border);box-shadow:0 4px 24px rgba(26,35,50,0.10);margin:0}
 .map-legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:8px 16px;background:var(--paper);border-bottom:1px solid var(--border);font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--muted)}
 #map{width:100%;height:clamp(250px,38vh,390px);z-index:1}
@@ -196,10 +201,17 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="copy-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">Copy Stop to Day</div>
+    <button class="modal-close" onclick="closeCopyModal()">&#215;</button>
+    <div id="copy-day-btns" style="max-height:55vh;overflow-y:auto;margin-top:4px"></div>
+  </div>
+</div>
 <script>
 const LS_KEY='utahTripState_v6';
 const DEFAULT_STATE={days:[
-{title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before crowds thin out.",stops:[
+{title:"Day 1 — Fly In & Zion",subtitle:"Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",tip:"Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before the crowds build up.",stops:[
 {name:"Depart Tulsa (TUL) — SW #3983",lat:36.1984,lng:-95.8881,type:"flight",time:"7:15 AM",stars:null,notes:"Southwest Airlines #3983 • Tulsa International Airport • confirmation BYXD5X"},
 {name:"Arrive Las Vegas (LAS) — Pick Up Car",lat:36.0840,lng:-115.1537,type:"flight",time:"8:00 AM",stars:null,notes:"Harry Reid International Airport • 2h 45m flight • pick up rental car and head north on I-15"},
 {name:"Kanarra Falls Hike",lat:37.5371,lng:-113.1755,type:"hike",time:"11:00 AM",stars:"4.8",notes:"$15 permit fee • 4 miles round trip • slot canyon with log ladders • water shoes required"},
@@ -321,7 +333,7 @@ function renderTabs(){
     const accentClass=['ruby','pine','river'][i%3];
     const item=document.createElement('div');
     item.className='tab-item'+(i===currentDayIdx?' active active-'+accentClass:'');
-    item.innerHTML='<button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-remove" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
+    item.innerHTML='<button class="tab-move" onclick="moveDay('+i+',-1)" '+(i===0?'disabled':'')+'>&#8592;</button><button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-move" onclick="moveDay('+i+',1)" '+(i===state.days.length-1?'disabled':'')+'>&#8594;</button><button class="tab-remove" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
     bar.appendChild(item);
   });
   const add=document.createElement('button');
@@ -342,12 +354,15 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
+      '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div></div>';
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
+      (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
+      '</div>';
   });
   return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
@@ -380,6 +395,43 @@ function removeDay(idx){
   saveState();renderAll();renderDayMap(currentDayIdx);
 }
 
+function moveDay(idx,dir){
+  const ni=idx+dir;
+  if(ni<0||ni>=state.days.length)return;
+  [state.days[idx],state.days[ni]]=[state.days[ni],state.days[idx]];
+  if(currentDayIdx===idx)currentDayIdx=ni;
+  else if(currentDayIdx===ni)currentDayIdx=idx;
+  saveState();renderAll();renderDayMap(currentDayIdx);
+}
+
+let copyingFrom={dayIdx:0,stopIdx:0};
+function openCopyModal(dayIdx,stopIdx){
+  copyingFrom={dayIdx,stopIdx};
+  const stop=state.days[dayIdx].stops[stopIdx];
+  const isLastLodge=stop.type==='lodge'&&stopIdx===state.days[dayIdx].stops.length-1;
+  const btns=document.getElementById('copy-day-btns');
+  btns.innerHTML=state.days.map((d,i)=>{
+    if(i===dayIdx)return'';
+    const title=d.title.replace(/^Day \d+ — /,'');
+    const startBtn=isLastLodge&&i===dayIdx+1
+      ?'<button class="btn-primary" style="font-size:12px;padding:9px 14px;background:var(--pine);margin-bottom:6px;width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
+      :'';
+    return'<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Day '+(i+1)+' — '+title+'</div>'+
+      startBtn+
+      '<button class="btn-cancel" style="font-size:12px;padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
+      '</div>';
+  }).join('');
+  document.getElementById('copy-modal').classList.add('open');
+}
+function closeCopyModal(){document.getElementById('copy-modal').classList.remove('open')}
+function doCopy(toDayIdx,atStart){
+  const stop=JSON.parse(JSON.stringify(state.days[copyingFrom.dayIdx].stops[copyingFrom.stopIdx]));
+  if(atStart)state.days[toDayIdx].stops.unshift(stop);
+  else state.days[toDayIdx].stops.push(stop);
+  saveState();closeCopyModal();renderAll();renderDayMap(currentDayIdx);
+}
+
 function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
@@ -407,6 +459,7 @@ function openAddStopModal(dayIdx){
 
 function closeModal(){document.getElementById('modal-overlay').classList.remove('open')}
 document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal()});
+document.getElementById('copy-modal').addEventListener('click',function(e){if(e.target===this)closeCopyModal()});
 
 let searchTimer=null;
 document.getElementById('place-search').addEventListener('input',function(){

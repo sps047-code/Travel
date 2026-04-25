@@ -246,7 +246,7 @@ let state,currentDayIdx=0,addingToDay=0;
 function loadState(){try{const s=localStorage.getItem(LS_KEY);state=s?JSON.parse(s):JSON.parse(JSON.stringify(DEFAULT_STATE))}catch(e){state=JSON.parse(JSON.stringify(DEFAULT_STATE))}}
 function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}}
 
-const map=L.map('map',{zoomControl:true});
+const map=L.map('map',{zoomControl:true,center:[37.5,-111.5],zoom:7});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7"};
@@ -288,6 +288,7 @@ async function fetchRoute(stops){
 
 async function renderDayMap(idx){
   markersLayer.clearLayers();routeLayer.clearLayers();
+  map.invalidateSize();
   const day=state.days[idx];if(!day)return;
   const st=document.getElementById('route-status');
   st.style.display='block';st.textContent='Loading driving routes...';

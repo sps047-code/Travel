@@ -288,7 +288,6 @@ async function fetchRoute(stops){
 
 async function renderDayMap(idx){
   markersLayer.clearLayers();routeLayer.clearLayers();
-  map.invalidateSize();
   const day=state.days[idx];if(!day)return;
   const st=document.getElementById('route-status');
   st.style.display='block';st.textContent='Loading driving routes...';
@@ -297,7 +296,9 @@ async function renderDayMap(idx){
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
     m.bindPopup('<div style="font-weight:700;font-size:13px">'+s.name+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
-    markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
+    markersLayer.addLayer(m);
+    // exclude flight stops from bounds so map focuses on driving area
+    if(s.type!=='flight')bounds.push([s.lat,s.lng]);
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   // Draw curved arcs for consecutive flight stops
@@ -470,7 +471,8 @@ function saveStop(){
   saveState();closeModal();renderAll();if(addingToDay===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
-loadState();renderAll();renderDayMap(0);
+loadState();renderAll();
+setTimeout(()=>{map.invalidateSize();renderDayMap(0);},150);
 </script>
 </body>
 </html>

@@ -245,7 +245,7 @@ let state,currentDayIdx=0,addingToDay=0;
 function loadState(){try{const s=localStorage.getItem(LS_KEY);state=s?JSON.parse(s):JSON.parse(JSON.stringify(DEFAULT_STATE))}catch(e){state=JSON.parse(JSON.stringify(DEFAULT_STATE))}}
 function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}}
 
-const map=L.map('map',{zoomControl:true});
+const map=L.map('map',{zoomControl:true,center:[37.5,-112.5],zoom:7});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7"};
@@ -361,7 +361,7 @@ function renderPanel(idx){
 function renderAll(){
   renderTabs();
   document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
-  document.getElementById('trip-subtitle').textContent=state.days.length+' Day'+(state.days.length!==1?'s':'')+' • Southern Utah National Parks';
+  const sub=document.getElementById('trip-subtitle');if(sub)sub.textContent=state.days.length+' Day'+(state.days.length!==1?'s':'')+' • Southern Utah National Parks';
 }
 
 function switchDay(idx){currentDayIdx=idx;renderAll();renderDayMap(idx);window.scrollTo({top:0,behavior:'smooth'})}

@@ -247,7 +247,7 @@ function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catc
 
 const map=L.map('map',{zoomControl:true,center:[37.5,-111.5],zoom:7});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
-let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
+let activeLayers=[],routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7"};
 
 function makeIcon(num,color,isAlt){
@@ -286,34 +286,35 @@ async function fetchRoute(stops){
 }
 
 async function renderDayMap(idx){
-  markersLayer.clearLayers();routeLayer.clearLayers();
+  activeLayers.forEach(l=>map.removeLayer(l));activeLayers=[];
   const day=state.days[idx];if(!day)return;
   const st=document.getElementById('route-status');
   st.style.display='block';st.textContent='Loading driving routes...';
   const bounds=[];
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
-    const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
+    const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)}).addTo(map);
     m.bindPopup('<div style="font-weight:700;font-size:13px">'+s.name+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
-    markersLayer.addLayer(m);
-    // exclude flight stops from bounds so map focuses on driving area
+    activeLayers.push(m);
     if(s.type!=='flight')bounds.push([s.lat,s.lng]);
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
-  // Draw curved arcs for consecutive flight stops
   for(let i=0;i<day.stops.length-1;i++){
     const a=day.stops[i],b=day.stops[i+1];
     if(a.type==='flight'&&b.type==='flight'&&a.lat&&b.lat){
-      L.polyline(bezierArc([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
+      const arc=L.polyline(bezierArc([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(map);
+      activeLayers.push(arc);
     }
   }
   try{
     const rc=await fetchRoute(day.stops);
-    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
-    else{
+    if(rc){
+      const rl=L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C23B3B',weight:4,opacity:0.85}).addTo(map);
+      activeLayers.push(rl);st.style.display='none';
+    }else{
       const ml=day.stops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
-      if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
-      st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
+      if(ml.length>1){const fl=L.polyline(ml,{color:'#C23B3B',weight:3,opacity:0.6,dashArray:'8,6'}).addTo(map);activeLayers.push(fl);}
+      st.textContent='Approximate route';setTimeout(()=>{st.style.display='none'},3000);
     }
   }catch(e){st.style.display='none'}
 }

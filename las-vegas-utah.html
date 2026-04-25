@@ -46,9 +46,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .tab-remove:hover{color:rgba(253,252,250,0.8)!important}
 .tab-add{background:transparent;border:none;color:rgba(253,252,250,0.45);font-size:20px;cursor:pointer;padding:8px 14px;display:flex;align-items:center;flex-shrink:0;transition:all 0.2s;line-height:1}
 .tab-add:hover{color:#FDFCFA}
-.map-wrap{border-radius:var(--radius-lg);border:2px solid var(--border);box-shadow:0 4px 24px rgba(26,35,50,0.10);margin:0;overflow:visible}
-.map-legend{border-radius:var(--radius-lg) var(--radius-lg) 0 0;overflow:hidden}
-#map{width:100%;height:clamp(250px,38vh,390px);border-radius:0 0 var(--radius-lg) var(--radius-lg)}
+.map-wrap{border-radius:var(--radius-lg);border:2px solid var(--border);box-shadow:0 4px 24px rgba(26,35,50,0.10);margin:0;-webkit-transform:translateZ(0);transform:translateZ(0)}
+.map-legend{border-radius:calc(var(--radius-lg) - 2px) calc(var(--radius-lg) - 2px) 0 0;overflow:hidden}
+#map{width:100%;height:clamp(250px,38vh,390px)}
 .map-legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:8px 16px;background:var(--paper);border-bottom:1px solid var(--border);font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--muted)}
 .legend-item{display:flex;align-items:center;gap:5px}
 .legend-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--paper);box-shadow:0 1px 3px rgba(0,0,0,0.18)}

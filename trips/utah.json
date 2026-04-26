@@ -1,0 +1,72 @@
+{
+  "title": "Las Vegas & Southern Utah Road Trip",
+  "mapCenter": [37.5, -112.5],
+  "mapZoom": 7,
+  "days": [
+    {
+      "title": "Day 1 — Fly In & Zion",
+      "subtitle": "Sat Jun 6 • Southwest #3983 • TUL→LAS • Kanarra Falls • Zion NP",
+      "tip": "Pick up your rental car at Las Vegas airport right after landing. Drive straight to Kanarraville (2.5 hrs) to hit Kanarra Falls before the crowds build up.",
+      "stops": [
+        {"name": "Depart Tulsa (TUL) — SW #3983", "lat": 36.1984, "lng": -95.8881, "type": "flight", "time": "7:15 AM", "stars": null, "notes": "Southwest Airlines #3983 • Tulsa International Airport • confirmation BYXD5X"},
+        {"name": "Arrive Las Vegas (LAS) — Pick Up Car", "lat": 36.0840, "lng": -115.1537, "type": "flight", "time": "8:00 AM", "stars": null, "notes": "Harry Reid International Airport • 2h 45m flight • pick up rental car and head north on I-15"},
+        {"name": "Kanarra Falls Hike", "lat": 37.5371, "lng": -113.1755, "type": "hike", "time": "11:00 AM", "stars": "4.8", "notes": "$15 permit fee • 4 miles round trip • slot canyon with log ladders • water shoes required"},
+        {"name": "Fire + Smoke BBQ", "lat": 37.5343, "lng": -113.1845, "type": "food", "time": "1:30 PM", "stars": "4.9", "notes": "Smoked brisket & ribs • Kanarraville, UT • Wed–Sat only"},
+        {"name": "Zion NP — Riverside Walk", "lat": 37.2001, "lng": -112.9870, "type": "hike", "time": "3:30 PM", "stars": "4.7", "notes": "Easy paved trail • 2 miles RT • follows the Virgin River into the Narrows"},
+        {"name": "Oscar's Cafe", "lat": 37.1890, "lng": -113.0003, "type": "food", "time": "6:30 PM", "stars": "4.7", "notes": "Springdale classic • New Mexican cuisine • green chile eggs and burritos"},
+        {"name": "Best Western Plus Zion West Hotel", "lat": 37.2118, "lng": -113.2703, "type": "lodge", "time": "8:00 PM", "stars": "4.3", "notes": "Hurricane, UT • pool • free breakfast • 30 min from Zion"}
+      ]
+    },
+    {
+      "title": "Day 2 — Zion & Bryce Canyon",
+      "subtitle": "Sun Jun 7 • The Narrows river hike • drive to Bryce • sunset at the rim",
+      "tip": "Bryce Canyon has some of the darkest skies in North America. Step outside after dinner — you can see the Milky Way with the naked eye.",
+      "stops": [
+        {"name": "The Narrows River Hike", "lat": 37.3050, "lng": -112.9491, "type": "hike", "time": "7:00 AM", "stars": "4.9", "notes": "Hike up the Virgin River through slot canyon walls • water shoes and trekking poles essential"},
+        {"name": "Angels Landing (alternate)", "lat": 37.2592, "lng": -112.9513, "type": "hike", "time": "7:00 AM", "stars": "4.8", "alt": true, "notes": "Permit required via lottery • chains on the final 500-foot spine • not for those with a fear of heights"},
+        {"name": "Spotted Dog Restaurant", "lat": 37.1947, "lng": -112.9932, "type": "food", "time": "12:30 PM", "stars": "4.5", "notes": "Springdale • local ingredients • great patio views of Zion cliffs"},
+        {"name": "Bryce Canyon NP — Sunset Point", "lat": 37.6404, "lng": -112.1696, "type": "hike", "time": "4:00 PM", "stars": "4.9", "notes": "Hoodoo formations glow orange at dusk • best light after 4 PM • elevation 8,012 ft"},
+        {"name": "Ruby's Inn Cowboy Buffet", "lat": 37.6737, "lng": -112.1570, "type": "food", "time": "6:30 PM", "stars": "4.0", "notes": "Western-style all-you-can-eat • carving station, prime rib • right at the park entrance"},
+        {"name": "Best Western Plus Ruby's Inn", "lat": 37.6737, "lng": -112.1575, "type": "lodge", "time": "8:00 PM", "stars": "4.0", "notes": "Bryce Canyon City • steps from the park entrance • general store on site"}
+      ]
+    },
+    {
+      "title": "Day 3 — Bryce Canyon & Capitol Reef",
+      "subtitle": "Mon Jun 8 • Hoodoo trails at dawn • highway 12 drive • Capitol Reef arches",
+      "tip": "Grab an America the Beautiful pass ($80) before the trip. It covers all three national parks — Zion, Bryce, and Capitol Reef.",
+      "stops": [
+        {"name": "Navajo Loop / Queens Garden Hike", "lat": 37.6206, "lng": -112.1638, "type": "hike", "time": "6:30 AM", "stars": "5.0", "notes": "3 miles • descent into the amphitheater • hoodoos at eye level • best hike in the park"},
+        {"name": "Bryce Canyon Pines Restaurant", "lat": 37.7099, "lng": -112.2104, "type": "food", "time": "10:00 AM", "stars": "4.2", "notes": "Homemade pies • fluffy pancakes • great stop before the long drive east on UT-12"},
+        {"name": "Capitol Reef National Park", "lat": 38.2915, "lng": -111.2620, "type": "hike", "time": "12:30 PM", "stars": "4.7", "notes": "Scenic Drive • Waterpocket Fold • least-crowded of Utah's Mighty 5"},
+        {"name": "Hickman Bridge Trail", "lat": 38.2895, "lng": -111.2272, "type": "hike", "time": "1:30 PM", "stars": "4.7", "notes": "2 miles RT • natural bridge 133 ft wide • easy to moderate"},
+        {"name": "Cassidy Arch Trail", "lat": 38.2648, "lng": -111.2190, "type": "hike", "time": "3:00 PM", "stars": null, "notes": "3.4 miles RT • named after Butch Cassidy • panoramic views over Grand Wash"},
+        {"name": "Rim Rock Patio Restaurant", "lat": 38.3197, "lng": -111.3814, "type": "food", "time": "5:30 PM", "stars": "4.4", "notes": "Torrey, UT • patio dining with canyon views • Utah lamb, local trout"},
+        {"name": "Overnight — Torrey, UT", "lat": 38.3000, "lng": -111.4100, "type": "lodge", "time": "7:30 PM", "stars": null, "notes": "Stay in Torrey near Capitol Reef — Skyridge Inn or Capitol Reef Resort • quiet town, stunning red rock views"}
+      ]
+    },
+    {
+      "title": "Day 4 — Drive to Lehi & Wedding",
+      "subtitle": "Tue Jun 9 • Capitol Reef → Provo Canyon → Wedding in Lehi",
+      "tip": "Provo Canyon is stunning on the drive north — pull over at Bridal Veil Falls for a quick stretch. Leave Torrey by 9 AM to arrive Lehi comfortably before 6 PM.",
+      "stops": [
+        {"name": "Depart Torrey / Capitol Reef", "lat": 38.3197, "lng": -111.3814, "type": "drive", "time": "9:00 AM", "stars": null, "notes": "Head north on UT-24 then US-89 toward I-15 — about 3 hrs to Lehi"},
+        {"name": "Bridal Veil Falls — Provo Canyon", "lat": 40.3228, "lng": -111.5770, "type": "hike", "time": "11:30 AM", "stars": "4.6", "notes": "Quick 20-min stop • stunning 607-ft waterfall • short easy walk from the parking area"},
+        {"name": "Lunch — Communal Restaurant", "lat": 40.2338, "lng": -111.6585, "type": "food", "time": "12:30 PM", "stars": "4.6", "notes": "Provo • farm-to-table • great stop to freshen up before the wedding"},
+        {"name": "Wedding — Lehi, UT", "lat": 40.3916, "lng": -111.8508, "type": "hike", "time": "6:00 PM", "stars": null, "notes": "Lehi, Utah • congratulations to the happy couple!"},
+        {"name": "Overnight — Lehi / American Fork", "lat": 40.3780, "lng": -111.7979, "type": "lodge", "time": "9:00 PM", "stars": null, "notes": "Stay near Lehi — need to drive to Las Vegas tomorrow for 7:15 PM flight"}
+      ]
+    },
+    {
+      "title": "Day 5 — Drive to LAS & Fly Home",
+      "subtitle": "Wed Jun 10 • Lehi → Valley of Fire → Las Vegas • SW #4190 7:15 PM",
+      "tip": "Leave Lehi by 10 AM. Valley of Fire is perfectly on the way — stunning 45-min detour. Be at Harry Reid Airport by 5:30 PM for your 7:15 PM departure.",
+      "stops": [
+        {"name": "Depart Lehi — Drive to Las Vegas", "lat": 40.3916, "lng": -111.8508, "type": "drive", "time": "10:00 AM", "stars": null, "notes": "South on I-15 • about 4 hours to Las Vegas • perfect road trip finale"},
+        {"name": "Valley of Fire State Park", "lat": 36.4607, "lng": -114.5131, "type": "hike", "time": "1:30 PM", "stars": "4.9", "notes": "Nevada's oldest state park • blazing red Aztec sandstone • Elephant Rock & Fire Wave • $15 entry • 50 min from Las Vegas"},
+        {"name": "In-N-Out Burger (Las Vegas)", "lat": 36.1488, "lng": -115.3264, "type": "food", "time": "3:30 PM", "stars": "4.5", "notes": "Classic road trip finale • double-double animal style"},
+        {"name": "Return Rental Car & Airport", "lat": 36.0840, "lng": -115.1537, "type": "drive", "time": "5:00 PM", "stars": null, "notes": "Harry Reid International • return rental car • allow 1.5 hrs for security"},
+        {"name": "Fly Home — SW #4190 LAS→TUL", "lat": 36.0840, "lng": -115.1537, "type": "flight", "time": "7:15 PM", "stars": null, "notes": "Southwest #4190 • arrives Tulsa 11:55 PM • 2h 40m flight • confirmation BYXD5X"}
+      ]
+    }
+  ]
+}

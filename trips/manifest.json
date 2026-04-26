@@ -1,0 +1,16 @@
+[
+  {
+    "id": "utah",
+    "title": "Las Vegas & Southern Utah Road Trip",
+    "dates": "Jun 6–10, 2026",
+    "days": 5,
+    "destinations": ["Zion NP", "Bryce Canyon", "Capitol Reef", "Las Vegas", "Valley of Fire"]
+  },
+  {
+    "id": "ny-fall",
+    "title": "New York Fall Foliage",
+    "dates": "Oct 9–15, 2026",
+    "days": 7,
+    "destinations": ["New York City", "Hudson Valley", "Catskills", "Bethel Woods"]
+  }
+]

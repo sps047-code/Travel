@@ -1,0 +1,88 @@
+{
+  "title": "New York Fall Foliage",
+  "mapCenter": [41.2, -74.3],
+  "mapZoom": 8,
+  "days": [
+    {
+      "title": "Day 1 — Arrive in Manhattan",
+      "subtitle": "Fri Oct 9 • Lotte New York Palace • Le Bernardin dinner",
+      "tip": "Request the Tower section at check-in — views over St. Patrick's Cathedral and midtown are worth asking for. Book Le Bernardin 3–4 weeks ahead; it fills fast and does not take walk-ins.",
+      "stops": [
+        {"name": "Check In — Lotte New York Palace", "lat": 40.7557, "lng": -73.9741, "type": "lodge", "time": "3:00 PM", "stars": "4.8", "notes": "455 Madison Ave, New York • request Tower section • views over St. Patrick's Cathedral • (212) 888-7000"},
+        {"name": "Afternoon Walk — Rockefeller Center", "lat": 40.7587, "lng": -73.9787, "type": "hike", "time": "4:30 PM", "stars": null, "notes": "Leisurely orientation • no agenda • stroll Madison Ave or Rockefeller Center promenade • decompress after travel"},
+        {"name": "Le Bernardin", "lat": 40.7614, "lng": -73.9814, "type": "food", "time": "7:30 PM", "stars": "4.9", "notes": "155 W 51st St • ⭐⭐⭐ Michelin • four-course prix-fixe • $185–$220/person before wine • business casual • (212) 554-1515"}
+      ]
+    },
+    {
+      "title": "Day 2 — MoMA, Broadway & The Modern",
+      "subtitle": "Sat Oct 10 • Museum of Modern Art • The Modern lunch • The Great Gatsby",
+      "tip": "Pre-order Broadway drinks online to skip the bar line at intermission. The Modern's bar room is less formal than the dining room — great if you couldn't book the main room far enough ahead.",
+      "stops": [
+        {"name": "Museum of Modern Art (MoMA)", "lat": 40.7614, "lng": -73.9776, "type": "hike", "time": "10:30 AM", "stars": "4.7", "notes": "11 W 53rd St • 90 min to 2 hrs • Matisse & Picasso galleries, sculpture garden, photography floor • elevator throughout • moma.org"},
+        {"name": "The Modern", "lat": 40.7614, "lng": -73.9776, "type": "food", "time": "12:30 PM", "stars": "4.6", "notes": "9 W 53rd St (inside MoMA) • ⭐ Michelin • 3-course prix-fixe overlooks sculpture garden • $85–$110/person before wine • (212) 333-1220"},
+        {"name": "Broadway — The Great Gatsby", "lat": 40.7632, "lng": -73.9833, "type": "hike", "time": "7:00 PM", "stars": "4.7", "notes": "Broadway Theatre • 1681 Broadway • orchestra center rows D–L or front mezzanine center • arrive 20 min early"},
+        {"name": "Trouble's Trust — Hotel Bar", "lat": 40.7557, "lng": -73.9741, "type": "food", "time": "10:00 PM", "stars": null, "alt": true, "notes": "Lotte New York Palace cocktail bar • comfortable and uncrowded late on a weeknight • light bites available"}
+      ]
+    },
+    {
+      "title": "Day 3 — Central Park & Scarpetta",
+      "subtitle": "Sun Oct 11 • Central Park peak fall color • Fifth Ave • Italian dinner",
+      "tip": "Mid-to-late October is peak color in Central Park — the Mall, the Pond, and Bow Bridge are the highlights. A carriage at the 59th St entrance does the standard loop in about 45 minutes.",
+      "stops": [
+        {"name": "Central Park — Grand Army Plaza", "lat": 40.7644, "lng": -73.9730, "type": "hike", "time": "9:30 AM", "stars": "4.9", "notes": "59th St / Grand Army Plaza entrance • Bow Bridge & the Pond at peak fall color • carriage ride or flat walk toward Bethesda Fountain"},
+        {"name": "Fifth Ave & Madison Ave", "lat": 40.7622, "lng": -73.9726, "type": "hike", "time": "12:00 PM", "stars": null, "notes": "Afternoon open by design • browse Fifth Ave or Madison Ave boutiques at your pace"},
+        {"name": "The Whitby Hotel — Afternoon Tea", "lat": 40.7622, "lng": -73.9769, "type": "food", "time": "3:00 PM", "stars": "4.6", "alt": true, "notes": "18 W 56th St • beautifully designed interior • afternoon tea served daily • excellent pre-dinner option"},
+        {"name": "Scarpetta", "lat": 40.7430, "lng": -73.9887, "type": "food", "time": "7:30 PM", "stars": "4.6", "notes": "88 Madison Ave • signature spaghetti with tomato & basil • duck and foie gras ravioli • branzino • $75–$110/person before wine • (212) 691-0555"}
+      ]
+    },
+    {
+      "title": "Day 4 — Drive North: Hudson Valley",
+      "subtitle": "Mon Oct 12 • Poughkeepsie • Walkway Over the Hudson • Wildflower Farms",
+      "tip": "Leave Manhattan by 9:00–9:30 AM to clear midtown before traffic builds. The Walkway elevator is on the Poughkeepsie side — no stairs required.",
+      "stops": [
+        {"name": "Depart NYC — Pick Up Rental Car", "lat": 40.7557, "lng": -73.9741, "type": "drive", "time": "9:00 AM", "stars": null, "notes": "Check out of Lotte New York Palace • head north on Henry Hudson Pkwy to Taconic State Pkwy • ~1.5–2 hrs to Poughkeepsie"},
+        {"name": "Walkway Over the Hudson", "lat": 41.7213, "lng": -73.9343, "type": "hike", "time": "11:00 AM", "stars": "4.8", "notes": "61 Parker Ave, Poughkeepsie • 212 ft above the Hudson River • fully paved & level • 2.6 miles round trip (turn back any time) • panoramic fall color • free • elevator access"},
+        {"name": "The River Station — Lunch", "lat": 41.7071, "lng": -73.9268, "type": "food", "time": "1:00 PM", "stars": "4.2", "alt": true, "notes": "1 Water St, Poughkeepsie • casual Hudson River views • 5 min from Walkway parking"},
+        {"name": "Wildflower Farms — Check In", "lat": 41.6889, "lng": -74.1558, "type": "lodge", "time": "4:00 PM", "stars": "4.9", "notes": "2702 Main St, Gardiner, NY • farmhouse cottages at foot of Shawangunks • request mountain-view cottage • spa, heated pool, farm paths • (855) 472-3188"},
+        {"name": "Clay at Wildflower Farms — Dinner", "lat": 41.6889, "lng": -74.1558, "type": "food", "time": "7:00 PM", "stars": "4.8", "notes": "On property • farm-to-table • wood-roasted dishes exceptional • $70–$95/person before wine • notify at check-in"}
+      ]
+    },
+    {
+      "title": "Day 5 — Minnewaska & Farm Rest",
+      "subtitle": "Tue Oct 13 • Lake Minnewaska • Wildflower Farms afternoon • Clay dinner",
+      "tip": "Arrive at Minnewaska by 9:30 AM on weekends — the parking lot fills by mid-morning. Bring layers; at ridge elevation the temperature runs 5–10°F cooler than the valley.",
+      "stops": [
+        {"name": "Minnewaska State Park Preserve", "lat": 41.7299, "lng": -74.2343, "type": "hike", "time": "9:30 AM", "stars": "4.9", "notes": "Route 44-55, Kerhonkson • $10 parking • carriage road loop ~2.5 miles around Lake Minnewaska • wide compacted gravel • fall color reflecting on the sky lake • extraordinary in October"},
+        {"name": "Lunch — New Paltz or On Property", "lat": 41.7462, "lng": -74.0840, "type": "food", "time": "12:30 PM", "stars": null, "notes": "New Paltz Main St, 10 min away • Duo Bistro or Rock and Rye Tavern • or return to Clay at Wildflower Farms for a lighter lunch"},
+        {"name": "Wildflower Farms — Spa & Afternoon", "lat": 41.6889, "lng": -74.1558, "type": "hike", "time": "3:00 PM", "stars": null, "notes": "Walk the farm paths • use the spa • sit on your cottage porch with mountain views • rest afternoon by design"},
+        {"name": "Mohonk Preserve — Optional Walk", "lat": 41.7688, "lng": -74.1565, "type": "hike", "time": "4:00 PM", "stars": "4.8", "alt": true, "notes": "Adjacent to Minnewaska • visitor center & shorter loop trails for a late-afternoon second outing"},
+        {"name": "Clay at Wildflower Farms — Dinner", "lat": 41.6889, "lng": -74.1558, "type": "food", "time": "7:00 PM", "stars": "4.8", "notes": "Second evening • try different dishes • menu rotates • kitchen creative enough to justify two visits"}
+      ]
+    },
+    {
+      "title": "Day 6 — Catskills & Kingston",
+      "subtitle": "Wed Oct 14 • Kaaterskill Falls • Mountain Top Arboretum • Hotel Kinsley",
+      "tip": "The elevation at Mountain Top Arboretum (2,500 ft) means fall color there runs 1–2 weeks ahead of the valley. If timing the trip for peak color, this may be your most vibrant stop.",
+      "stops": [
+        {"name": "Depart Wildflower Farms", "lat": 41.6889, "lng": -74.1558, "type": "drive", "time": "9:00 AM", "stars": null, "notes": "Check out • drive north into the Catskills • ~50 miles, 1 hour to Kaaterskill"},
+        {"name": "Kaaterskill Falls", "lat": 42.1814, "lng": -74.0617, "type": "hike", "time": "10:00 AM", "stars": "4.8", "notes": "Laurel House Rd parking, Haines Falls • tallest waterfall in NY • short flat walk from parking (<0.5 mi) • hemlock gorge in full color • wear grip shoes • free • allow 45–60 min"},
+        {"name": "Mountain Top Arboretum", "lat": 42.1950, "lng": -74.1289, "type": "hike", "time": "11:30 AM", "stars": "4.7", "notes": "4 Maude Adams Rd, Tannersville • 2,500 ft elevation • 178 acres • flat wide trails • hemlock groves, native meadows, wetland boardwalk • free admission • allow 45–60 min"},
+        {"name": "The Prospect Restaurant", "lat": 42.1989, "lng": -74.1201, "type": "food", "time": "1:00 PM", "stars": "4.1", "alt": true, "notes": "5471 Main St, Tannersville • 3 min from arboretum • casual option before driving to Kingston"},
+        {"name": "Hotel Kinsley — Check In", "lat": 41.9276, "lng": -74.0059, "type": "lodge", "time": "4:00 PM", "stars": "4.7", "notes": "301 Wall St, Kingston, NY • historic Uptown Stockade District • boutique hotel • (845) 768-3620"},
+        {"name": "Dinner — Stockade District", "lat": 41.9276, "lng": -74.0059, "type": "food", "time": "7:00 PM", "stars": null, "notes": "Walk from hotel: Ca' Mea (135 Fair St, rustic Italian BYOB, one of Kingston's best) • Parish (5 Broadway, seasonal American, great cocktails) • or Hotel Kinsley restaurant on site"}
+      ]
+    },
+    {
+      "title": "Day 7 — Bethel Woods, Hudson & Home",
+      "subtitle": "Thu Oct 15 • Museum at Bethel Woods • feast & floret lunch • return to NYC",
+      "tip": "Leave Hudson by 2:00–2:30 PM to beat the late-afternoon Taconic traffic. Hudson to Midtown is about 2 to 2.5 hours in normal conditions — depart on time.",
+      "stops": [
+        {"name": "Depart Kingston — Drive to Bethel", "lat": 41.9276, "lng": -74.0059, "type": "drive", "time": "9:00 AM", "stars": null, "notes": "Check out of Hotel Kinsley • drive west through Sullivan County • ~45 miles, 55 min to Bethel Woods"},
+        {"name": "Museum at Bethel Woods", "lat": 41.6962, "lng": -74.8778, "type": "hike", "time": "10:00 AM", "stars": "4.7", "notes": "200 Hurd Rd, Bethel, NY • original 1969 Woodstock site • outstanding museum on '60s cultural history • open 10 AM–5 PM • $20 admission • allow 90 min–2 hrs • walk the path to the original concert field"},
+        {"name": "Drive to Hudson, NY", "lat": 42.2527, "lng": -73.7955, "type": "drive", "time": "12:15 PM", "stars": null, "notes": "~55 miles, 1 hr 10 min east on NY-17 to I-87 north"},
+        {"name": "feast & floret", "lat": 42.2527, "lng": -73.7955, "type": "food", "time": "1:30 PM", "stars": "4.8", "notes": "13 S 3rd St, Hudson, NY • open-fire kitchen • exceptional pasta • escarole salad, mushroom pasta, braised short rib over polenta • $45–$65/person lunch • browse Warren St antiques after"},
+        {"name": "Return to New York City", "lat": 40.7557, "lng": -73.9741, "type": "drive", "time": "2:30 PM", "stars": null, "notes": "Hudson to Midtown ~115 miles, 2–2.5 hrs • depart by 2:00–2:30 PM to avoid Taconic traffic • south on I-87 to Henry Hudson Pkwy"}
+      ]
+    }
+  ]
+}

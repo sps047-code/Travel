@@ -75,52 +75,39 @@ header{
 </header>
 <div class="page">
   <div class="section-title">Upcoming &amp; Recent Trips</div>
-  <div class="trips-grid">
-    <a class="trip-card" href="las-vegas-utah.html">
-      <div class="trip-card-banner"></div>
-      <div class="trip-card-body">
-        <div class="trip-card-title">Las Vegas &amp; Southern Utah Road Trip</div>
-        <div class="trip-card-meta">
-          <span class="trip-meta-pill">Jun 6&ndash;10, 2026</span>
-          <span class="trip-meta-pill">5 Days</span>
-        </div>
-        <div class="trip-destinations">
-          <span class="dest-tag">Zion NP</span>
-          <span class="dest-tag">Bryce Canyon</span>
-          <span class="dest-tag">Capitol Reef</span>
-          <span class="dest-tag">Las Vegas</span>
-          <span class="dest-tag">Valley of Fire</span>
-        </div>
-      </div>
-      <div class="trip-card-footer">
-        <span class="view-btn">View Itinerary &rarr;</span>
-      </div>
-    </a>
-    <a class="trip-card" href="ny-fall-foliage.html">
-      <div class="trip-card-banner"></div>
-      <div class="trip-card-body">
-        <div class="trip-card-title">Fall Foliage &mdash; NYC, Hudson Valley &amp; Catskills</div>
-        <div class="trip-card-meta">
-          <span class="trip-meta-pill">Mid&ndash;Late Oct 2026</span>
-          <span class="trip-meta-pill">7 Days</span>
-        </div>
-        <div class="trip-destinations">
-          <span class="dest-tag">New York City</span>
-          <span class="dest-tag">Hudson Valley</span>
-          <span class="dest-tag">Catskills</span>
-          <span class="dest-tag">Kingston</span>
-        </div>
-      </div>
-      <div class="trip-card-footer">
-        <span class="view-btn">View Itinerary &rarr;</span>
-      </div>
-    </a>
-    <a class="add-card" href="#" onclick="alert('Coming soon!');return false">
-      <div class="add-icon">+</div>
-      <div class="add-label">Add a New Trip</div>
-      <div class="add-sub">Plan your next adventure</div>
-    </a>
+  <div class="trips-grid" id="trips-grid">
+    <div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px">Loading trips...</div>
   </div>
 </div>
+<script>
+async function loadTrips(){
+  const grid=document.getElementById('trips-grid');
+  try{
+    const r=await fetch('trips/manifest.json');
+    const trips=await r.json();
+    grid.innerHTML=trips.map(t=>`
+      <a class="trip-card" href="trip.html?id=${t.id}">
+        <div class="trip-card-banner"></div>
+        <div class="trip-card-body">
+          <div class="trip-card-title">${t.title}</div>
+          <div class="trip-card-meta">
+            <span class="trip-meta-pill">${t.dates}</span>
+            <span class="trip-meta-pill">${t.days} Days</span>
+          </div>
+          <div class="trip-destinations">${t.destinations.map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
+        </div>
+        <div class="trip-card-footer"><span class="view-btn">View Itinerary &rarr;</span></div>
+      </a>`).join('')+`
+      <a class="add-card" href="#" onclick="alert('Coming soon!');return false">
+        <div class="add-icon">+</div>
+        <div class="add-label">Add a New Trip</div>
+        <div class="add-sub">Plan your next adventure</div>
+      </a>`;
+  }catch(e){
+    grid.innerHTML='<div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px">Could not load trips.</div>';
+  }
+}
+loadTrips();
+</script>
 </body>
 </html>

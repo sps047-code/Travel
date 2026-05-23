@@ -229,7 +229,7 @@ function legLabel(a,b){
   const dist=haversine(a.lat,a.lng,b.lat,b.lng);
   if(dist<0.3)return'';
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
-  const isFlight=a.type==='flight'||b.type==='flight';
+  const isFlight=b.type==='flight';
   const mins=Math.round(dist/(isFlight?8:1.15));
   const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
   return mi+' mi · '+tStr+(isFlight?' flight':' drive');

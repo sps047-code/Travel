@@ -1,0 +1,156 @@
+{
+  "title": "London & Scotland Family Trip",
+  "mapCenter": [54.5, -3.2],
+  "mapZoom": 6,
+  "days": [
+    {
+      "title": "Day 1 — Land & Hit the Ground Running",
+      "subtitle": "Thu Jul 30 • Hazlitt's, Soho • Tower of London · Churchill War Rooms",
+      "tip": "Buy Gatwick Express tickets at the platform or on the Gatwick Express app — no need to queue at a machine. Bags can be left at Hazlitt's before official check-in time.",
+      "stops": [
+        {"name": "Gatwick Express — Gatwick to Victoria", "lat": 51.4952, "lng": -0.1441, "type": "train", "time": "10:00 AM", "stars": null, "notes": "Gatwick South Terminal > London Victoria | 30 min | £22.50pp | every 15 min | buy at platform"},
+        {"name": "Hazlitt's — Drop Bags", "lat": 51.5133, "lng": -0.1329, "type": "lodge", "time": "10:45 AM", "stars": "4.7", "notes": "6 Frith Street, Soho | hazlitts.co.uk | check in after 3 PM | drop bags before then | 10 min walk from Oxford St tube"},
+        {"name": "Tower of London", "lat": 51.5081, "lng": -0.0759, "type": "hike", "time": "11:30 AM", "stars": "4.7", "notes": "Crown Jewels, White Tower, Beefeater tour | 2.5 hrs min | Thu 9 AM–5:30 PM last entry 5 PM | pre-booked timed entry"},
+        {"name": "Tower Bridge Interior", "lat": 51.5055, "lng": -0.0754, "type": "hike", "time": "2:00 PM", "stars": "4.6", "notes": "Glass walkway 42 m above the Thames | 45 min | 9:30 AM daily last entry 5 PM | pre-booked"},
+        {"name": "Borough Market", "lat": 51.5055, "lng": -0.0905, "type": "food", "time": "3:00 PM", "stars": "4.7", "notes": "Late lunch among London's best market stalls | open daily | 8 Southwark St SE1 1TL | 45 min"},
+        {"name": "Churchill War Rooms", "lat": 51.5022, "lng": -0.1281, "type": "hike", "time": "4:00 PM", "stars": "4.8", "notes": "WWII underground bunker | Clive Steps, King Charles St SW1A 2AQ | pre-booked timed entry | 9:30 AM–6 PM last entry 5 PM | 1.5–2 hrs"},
+        {"name": "Westminster Walk — Parliament & Big Ben", "lat": 51.4994, "lng": -0.1247, "type": "hike", "time": "6:00 PM", "stars": null, "notes": "Parliament Square, Westminster Bridge, Westminster Abbey exterior, St. James's Park | 5 min from War Rooms | free | 1 hr leisurely"},
+        {"name": "Flat Iron Soho — Dinner", "lat": 51.5131, "lng": -0.1386, "type": "food", "time": "8:00 PM", "stars": "4.5", "notes": "17–18 Beak Street W1F 9RW | £15/plate steak | no reservations | queue outside | arrive 7:45 PM"},
+        {"name": "Piccadilly Circus + Covent Garden", "lat": 51.5101, "lng": -0.1340, "type": "hike", "time": "9:30 PM", "stars": null, "notes": "Piccadilly Circus · Leicester Square · Chinatown walk | 30–40 min | then Covent Garden evening | free"}
+      ]
+    },
+    {
+      "title": "Day 2 — British Museum & Greenwich",
+      "subtitle": "Fri Jul 31 • British Museum · Dishoom · Thames Clipper · Cutty Sark · Royal Observatory",
+      "tip": "Arrive at British Museum by 10 AM — the Rosetta Stone room gets very crowded by noon. The Thames Clipper (Uber Boat) is a great alternative to the tube and gives river views.",
+      "stops": [
+        {"name": "British Museum", "lat": 51.5194, "lng": -0.1270, "type": "hike", "time": "10:00 AM", "stars": "4.7", "notes": "Rosetta Stone, Elgin Marbles, Egyptian mummies | free | 10 AM–5 PM Fri until 8:30 PM | Great Russell St WC1B 3DG | 3 hrs min"},
+        {"name": "Dishoom Covent Garden — Lunch", "lat": 51.5124, "lng": -0.1239, "type": "food", "time": "1:00 PM", "stars": "4.8", "notes": "12 Upper St Martin's Lane WC2H 9FB | Bombay café | black dal, bacon naan, house black tea | arrive before queue builds | 45 min"},
+        {"name": "Thames Clipper — Embankment to Greenwich", "lat": 51.4844, "lng": -0.0097, "type": "train", "time": "2:30 PM", "stars": null, "notes": "Embankment Pier > Greenwich Pier | 40 min | ~£9pp | Uber Boat app | scenic Thames journey"},
+        {"name": "Cutty Sark", "lat": 51.4826, "lng": -0.0094, "type": "hike", "time": "3:30 PM", "stars": "4.6", "notes": "Last tea clipper ship | King William Walk, Greenwich SE10 9HT | 10 AM–5 PM last entry 4:15 PM | 1 hr"},
+        {"name": "Royal Observatory + Prime Meridian", "lat": 51.4769, "lng": -0.0006, "type": "hike", "time": "4:45 PM", "stars": "4.7", "notes": "Stand on the meridian line | Blackheath Ave, Greenwich SE10 8XJ | 10 AM–6 PM last entry 5 PM | 1 hr | hillside location — great views"},
+        {"name": "Goddard's Pie House — Dinner", "lat": 51.4786, "lng": -0.0094, "type": "food", "time": "8:00 PM", "stars": "4.4", "notes": "22 King William Walk SE10 9HU | classic pies, mash, liquor sauce | walk-in | affordable | 45 min"},
+        {"name": "Greenwich at Night", "lat": 51.4826, "lng": -0.0094, "type": "hike", "time": "9:30 PM", "stars": null, "alt": true, "notes": "Cutty Sark illuminated + Old Royal Naval College courtyard at night | free | 20–30 min | then DLR or taxi to Soho"}
+      ]
+    },
+    {
+      "title": "Day 3 — St. Paul's, V&A & The Shard",
+      "subtitle": "Sat Aug 1 • St. Paul's · V&A · Sky Garden · The Shard",
+      "tip": "Pre-book all tickets today: St. Paul's, Sky Garden (free but capacity-controlled), and The Shard. The Shard is busiest at sunset — a pre-booked slot around 8 PM avoids waits.",
+      "stops": [
+        {"name": "St. Paul's Cathedral", "lat": 51.5138, "lng": -0.0984, "type": "hike", "time": "9:00 AM", "stars": "4.8", "notes": "Whispering Gallery + dome climb | St Paul's Churchyard EC4M 8AD | Sat 8:30 AM–4:30 PM last entry 4 PM | 1.5 hrs | pre-booked"},
+        {"name": "Millennium Bridge & South Bank Walk", "lat": 51.5096, "lng": -0.0985, "type": "hike", "time": "10:30 AM", "stars": null, "notes": "Cross Millennium Bridge | Tate Modern, National Theatre, Southbank Centre west toward Waterloo | free | 1.5 hrs leisurely"},
+        {"name": "Victoria & Albert Museum", "lat": 51.4966, "lng": -0.1722, "type": "hike", "time": "1:00 PM", "stars": "4.8", "notes": "145 galleries | Cromwell Road SW7 2RL | free | 10 AM–5:45 PM Fri until 10 PM | fashion, jewellery, architecture, sculpture | 1.5 hrs"},
+        {"name": "Portobello Road Market — Lunch", "lat": 51.5147, "lng": -0.2076, "type": "food", "time": "2:30 PM", "stars": "4.5", "notes": "Notting Hill | 15 min walk NW from V&A | market stalls, cafes, street food | Sat is busiest and best | 1 hr"},
+        {"name": "Hyde Park + Serpentine Pavilion", "lat": 51.5058, "lng": -0.1657, "type": "hike", "time": "3:30 PM", "stars": null, "notes": "10 min walk east from Portobello | Serpentine Pavilion open Jun–Oct | free | leisurely afternoon stroll | 1 hr"},
+        {"name": "Sky Garden", "lat": 51.5114, "lng": -0.0832, "type": "hike", "time": "5:00 PM", "stars": "4.6", "notes": "20 Fenchurch St EC3M 8AF | free | 35th floor 360° views over London | pre-booked required | skygarden.london | 1.5 hrs"},
+        {"name": "Flat Iron Square — Dinner", "lat": 51.5047, "lng": -0.0923, "type": "food", "time": "7:00 PM", "stars": "4.5", "notes": "Railway arches, Southwark St SE1 | multiple vendors | street food, craft beer | walk-in | casual"},
+        {"name": "The Shard Observation Deck", "lat": 51.5044, "lng": -0.0864, "type": "hike", "time": "8:00 PM", "stars": "4.6", "notes": "32 London Bridge St SE1 9SG | 244 m | pre-booked | open until 10 PM last entry 9 PM | theviewfromtheshard.com | 1 hr"}
+      ]
+    },
+    {
+      "title": "Day 4 — Hampton Court & Windsor Castle",
+      "subtitle": "Sun Aug 2 • Hampton Court Palace · Windsor Castle · Windsor Great Park",
+      "tip": "Buy South Western Railway tickets at Waterloo — they're cheaper than on the train and the self-service machines are quick. Windsor Castle closes early afternoon on ceremonial days, so arrive by 10 AM at Hampton Court to stay on schedule.",
+      "stops": [
+        {"name": "Train — Waterloo to Hampton Court", "lat": 51.4037, "lng": -0.3385, "type": "train", "time": "8:30 AM", "stars": null, "notes": "London Waterloo > Hampton Court Station | 35 min direct | South Western Railway | buy at Waterloo | depart 8:30 AM"},
+        {"name": "Hampton Court Palace", "lat": 51.4037, "lng": -0.3385, "type": "hike", "time": "10:00 AM", "stars": "4.8", "notes": "Great Hall, Tudor kitchens, astronomical clock, famous maze | Sun 10 AM–5:30 PM last admission 4:30 PM | 2.5 hrs | pre-booked"},
+        {"name": "Tiltyard Cafe — Lunch", "lat": 51.4040, "lng": -0.3380, "type": "food", "time": "12:30 PM", "stars": "4.2", "notes": "On the palace grounds | Tiltyard, Hampton Court | casual | open during palace hours | 45 min"},
+        {"name": "Train — Hampton Court to Windsor", "lat": 51.4839, "lng": -0.6036, "type": "train", "time": "1:30 PM", "stars": null, "notes": "Hampton Court > Windsor & Eton Riverside via Clapham Junction | 1.5 hrs | South Western Railway"},
+        {"name": "Windsor Castle", "lat": 51.4839, "lng": -0.6036, "type": "hike", "time": "3:00 PM", "stars": "4.8", "notes": "St. George's Chapel, State Apartments | Windsor SL4 1NJ | Sat/Sun 10 AM–5:15 PM last admission 4 PM | 2 hrs | pre-booked"},
+        {"name": "Windsor Great Park — The Long Walk", "lat": 51.4590, "lng": -0.6270, "type": "hike", "time": "5:30 PM", "stars": "4.7", "notes": "3-mile tree-lined avenue from castle gates to Copper Horse statue | free | spectacular views back to Windsor | 30–45 min walk"},
+        {"name": "Train — Windsor to London Waterloo", "lat": 51.5031, "lng": -0.1132, "type": "train", "time": "6:30 PM", "stars": null, "notes": "Windsor & Eton Riverside > London Waterloo via Clapham Junction | 40 min | South Western Railway"},
+        {"name": "Ottolenghi Notting Hill — Dinner", "lat": 51.5141, "lng": -0.1985, "type": "food", "time": "8:00 PM", "stars": "4.7", "notes": "63 Ledbury Rd W11 2AD | Mediterranean sharing plates | pre-booked | walk from Notting Hill Gate tube | £60–80pp"}
+      ]
+    },
+    {
+      "title": "Day 5 — Train to Edinburgh",
+      "subtitle": "Mon Aug 3 • LNER Kings Cross → Edinburgh · Royal Mile · Greyfriars · Camera Obscura",
+      "tip": "The LNER Azuma is very comfortable — seats have power and tables. Arrive Kings Cross 30 min early. Edinburgh Waverley is a 2-minute walk to The Scotsman Hotel.",
+      "stops": [
+        {"name": "LNER — Kings Cross to Edinburgh Waverley", "lat": 55.9524, "lng": -3.1893, "type": "train", "time": "9:00 AM", "stars": null, "notes": "London Kings Cross N1C 4QP > Edinburgh Waverley | ~4.5 hrs direct Azuma | 4 assigned seats | lner.co.uk from £41.40pp | depart ~09:00 target arr 1:30 PM"},
+        {"name": "Check In — The Scotsman Hotel", "lat": 55.9507, "lng": -3.1876, "type": "lodge", "time": "1:30 PM", "stars": "4.8", "notes": "20 North Bridge EH1 1YT | thescotsmanhotel.co.uk | former newspaper HQ | 2 min walk from Waverley platform | rooftop bar"},
+        {"name": "Royal Mile — Top to Bottom", "lat": 55.9498, "lng": -3.1896, "type": "hike", "time": "2:30 PM", "stars": null, "notes": "Castle gates to Holyrood | every close and wynd | free | 1.5 hrs | Scotland's most historic street"},
+        {"name": "Greyfriars Kirkyard", "lat": 55.9464, "lng": -3.1927, "type": "hike", "time": "3:00 PM", "stars": "4.7", "notes": "Kirkyard adjacent to Greyfriars Kirk | Candlemaker Row EH1 2QQ | home of Greyfriars Bobby | burial ground | free | 45 min"},
+        {"name": "Edinburgh Castle Esplanade at Dusk", "lat": 55.9486, "lng": -3.1999, "type": "hike", "time": "4:00 PM", "stars": null, "notes": "Exterior views from esplanade | free | no early closure tonight | good photo spot at dusk"},
+        {"name": "Grassmarket Historic Square", "lat": 55.9470, "lng": -3.1963, "type": "hike", "time": "6:00 PM", "stars": null, "notes": "Grassmarket EH1 2JR | historic market square | pub-lined | lively evening atmosphere | 30 min walk"},
+        {"name": "Makars Gourmet Mash Bar — Dinner", "lat": 55.9470, "lng": -3.1952, "type": "food", "time": "7:00 PM", "stars": "4.4", "notes": "2 The Vennel EH1 2HU | haggis, stovies, cullen skink | casual, no reservations | classic Scottish comfort food"},
+        {"name": "Camera Obscura Evening Session", "lat": 55.9492, "lng": -3.1975, "type": "hike", "time": "9:00 PM", "stars": "4.5", "notes": "Castlehill, top of Royal Mile EH1 2ND | pre-booked | open until 10 PM in summer | five floors of optical illusions + rooftop Victorian camera | camera-obscura.co.uk"}
+      ]
+    },
+    {
+      "title": "Day 6 — Edinburgh Deep Dive",
+      "subtitle": "Tue Aug 4 • Edinburgh Castle · Arthur's Seat · Holyrood Palace · Car Pickup",
+      "tip": "Edinburgh Castle is steep — wear comfortable shoes. Arthur's Seat takes about 45 minutes up; the panoramic views over Edinburgh and the Firth of Forth are extraordinary on a clear day.",
+      "stops": [
+        {"name": "Edinburgh Castle", "lat": 55.9486, "lng": -3.1999, "type": "hike", "time": "9:30 AM", "stars": "4.7", "notes": "Crown Jewels, Stone of Destiny, Great Hall, One O'Clock Gun | Castlehill EH1 2NG | 9:30 AM–6 PM last entry 5 PM | 2.5 hrs | pre-booked timed entry"},
+        {"name": "The Lookout — Lunch", "lat": 55.9548, "lng": -3.1751, "type": "food", "time": "12:30 PM", "stars": "4.5", "notes": "Calton Hill | contemporary Scottish | Calton Hill EH7 5AA | great views from the terrace | 1 hr"},
+        {"name": "Scottish Parliament Building", "lat": 55.9497, "lng": -3.1757, "type": "hike", "time": "2:00 PM", "stars": "4.4", "notes": "Horse Wynd EH99 1SP | self-guided visit (guided tours Mon/Fri/Sat only) | open Mon–Sat | no booking needed | Enric Miralles architecture | 1 hr"},
+        {"name": "Arthur's Seat — Summit Hike", "lat": 55.9444, "lng": -3.1610, "type": "hike", "time": "3:30 PM", "stars": "4.9", "notes": "Holyrood Park EH8 8HG | 251 m extinct volcano | 45 min hike | 360° views over Edinburgh and Firth of Forth | wear layers | free"},
+        {"name": "Holyrood Palace", "lat": 55.9520, "lng": -3.1726, "type": "hike", "time": "5:30 PM", "stars": "4.5", "notes": "Royal residence | Canongate EH8 8DX | 1 hr | state apartments and historic rooms | pre-booked"},
+        {"name": "Ondine — Dinner", "lat": 55.9489, "lng": -3.1911, "type": "food", "time": "7:30 PM", "stars": "4.7", "notes": "2 George IV Bridge EH1 1AD | seafood | oyster bar, fish & chips, langoustines | walk-ins early evening | £40–60pp"},
+        {"name": "Pick Up Rental Car — SIXT Omni Centre", "lat": 55.9529, "lng": -3.1831, "type": "drive", "time": "9:00 PM", "stars": null, "notes": "Greenside Row EH7 4BE | 0.3 mi walk from hotel | pre-booked full-size SUV | min age 25 | named driver required | sixt.com"}
+      ]
+    },
+    {
+      "title": "Day 7 — Highlands Day Trip",
+      "subtitle": "Wed Aug 5 • Eilean Donan Castle · Glencoe Valley · Timberyard dinner",
+      "tip": "Leave by 6:30 AM to beat A82 traffic from Fort William (backs up from 9 AM). A9 speed cameras are strictly enforced — set cruise control. Eilean Donan is door tickets only, no pre-booking; arrive early to avoid queues.",
+      "stops": [
+        {"name": "Drive — Edinburgh to Eilean Donan Castle", "lat": 57.2748, "lng": -5.5161, "type": "drive", "time": "6:30 AM", "stars": null, "notes": "~170 mi | allow 3.5–4 hrs | A9 north then A82 | speed cameras enforced | A82 traffic from 9 AM — depart early"},
+        {"name": "Eilean Donan Castle", "lat": 57.2748, "lng": -5.5161, "type": "hike", "time": "9:30 AM", "stars": "4.8", "notes": "Dornie IV40 8DX | 1.5 hrs | Aug 9 AM–6 PM last admission 5 PM | door tickets only — no pre-booking | arrive early | iconic Scotland loch-side castle"},
+        {"name": "Drive — Eilean Donan to Glencoe", "lat": 56.6802, "lng": -5.0954, "type": "drive", "time": "11:30 AM", "stars": null, "notes": "~65 mi | allow 2 hrs | single-track sections near Fort William | A87 east then A82 south"},
+        {"name": "Clachaig Inn — Lunch", "lat": 56.6850, "lng": -5.0730, "type": "food", "time": "1:00 PM", "stars": "4.6", "notes": "Glencoe PH49 4HX | pub since 1658 | hearty Scottish pub food | real ales | walk-in | a legendary Highland institution"},
+        {"name": "Glencoe Valley — Three Sisters Walk", "lat": 56.6802, "lng": -5.0954, "type": "hike", "time": "2:30 PM", "stars": "4.9", "notes": "A82, Glencoe PH49 4HX | valley floor or hike above | magnificent glaciated valley | Three Sisters ridge | free | 1.5 hrs"},
+        {"name": "Drive — Glencoe to Edinburgh", "lat": 55.9490, "lng": -3.2007, "type": "drive", "time": "4:30 PM", "stars": null, "notes": "~100 mi | allow 3 hrs | A82 north to Tyndrum then M9 | clears after Tyndrum | park at hotel or NCP Calton Road"},
+        {"name": "Timberyard — Dinner", "lat": 55.9490, "lng": -3.2007, "type": "food", "time": "8:30 PM", "stars": "4.8", "notes": "10 Lady Lawson St EH3 9DS | 1 Michelin star | Nordic-Scottish tasting menu | pre-booked well in advance | seasonal produce | outstanding"}
+      ]
+    },
+    {
+      "title": "Day 8 — Jacobite Steam Train & the Tattoo",
+      "subtitle": "Thu Aug 6 • Fort William · Glenfinnan Viaduct · Jacobite · Military Tattoo",
+      "tip": "Book the Jacobite well in advance — it sells out months ahead. Bring waterproofs and warm layers for the Tattoo; the castle esplanade is exposed and the evenings are cool. Road closures near the castle from about 5 PM on Tattoo nights — walk back to the hotel.",
+      "stops": [
+        {"name": "Drive — Edinburgh to Fort William", "lat": 56.8198, "lng": -5.1052, "type": "drive", "time": "7:00 AM", "stars": null, "notes": "~100 mi | allow 2.5 hrs | A9 speed cameras enforced | arrive Fort William by 9:30 AM"},
+        {"name": "Fort William — Arrive & Brief Walk", "lat": 56.8198, "lng": -5.1052, "type": "hike", "time": "9:30 AM", "stars": null, "notes": "Fort William | Ben Nevis visible on clear day (1,345 m) | brief stretch before train | 30 min"},
+        {"name": "Jacobite Steam Train — Fort William to Mallaig", "lat": 56.8198, "lng": -5.1052, "type": "train", "time": "10:15 AM", "stars": "4.9", "notes": "Fort William Station PH33 6TQ | pre-booked | May–Oct only | westcoastrailways.co.uk | Harry Potter viaduct route | 2 hrs to Mallaig"},
+        {"name": "Glenfinnan Viaduct", "lat": 56.8719, "lng": -5.4300, "type": "hike", "time": "10:45 AM", "stars": "4.9", "notes": "21 arches, built 1898 | 30-second crossing on the Jacobite | iconic Scottish engineering | views of Loch Shiel"},
+        {"name": "Mallaig — Seafood Lunch Off the Boats", "lat": 57.0068, "lng": -5.8290, "type": "food", "time": "12:25 PM", "stars": "4.6", "notes": "Mallaig PH41 4PH | 1.5 hrs in port | fresh langoustines and crab off the fishing boats | Fishmarket Restaurant or quayside vendors"},
+        {"name": "Jacobite Return — Mallaig to Fort William", "lat": 56.8198, "lng": -5.1052, "type": "train", "time": "2:10 PM", "stars": null, "notes": "Mallaig > Fort William | 2 hrs return | depart 14:10 | arr ~16:10"},
+        {"name": "Drive — Fort William to Edinburgh", "lat": 55.9490, "lng": -3.1992, "type": "drive", "time": "4:10 PM", "stars": null, "notes": "~100 mi | allow 2.5–3 hrs | A82 to Crianlarich then M9 | aim to arrive Edinburgh by 7 PM"},
+        {"name": "Cannonball Restaurant — Early Dinner", "lat": 55.9490, "lng": -3.1992, "type": "food", "time": "7:00 PM", "stars": "4.5", "notes": "354 Castlehill EH1 2NE | castle gates | whisky bar & Scottish cuisine | eat before 8:30 PM | great pre-Tattoo dinner spot"},
+        {"name": "Royal Edinburgh Military Tattoo", "lat": 55.9486, "lng": -3.1999, "type": "hike", "time": "9:30 PM", "stars": "4.9", "notes": "Edinburgh Castle Esplanade EH1 2NG | 800 performers | pipe & drum bands, RAF flypast, pyrotechnics | 90 min | arrive 45 min early | warm layers + waterproofs | edintattoo.co.uk"}
+      ]
+    },
+    {
+      "title": "Day 9 — Stirling, St. Andrews & Train South",
+      "subtitle": "Fri Aug 7 • Stirling Castle · Wallace Monument · St. Andrews · LNER to London",
+      "tip": "The Enterprise drop box at Waverley is available after hours — confirm your LNER seat is the same coach as the outbound. Edinburgh Waverley to London Kings Cross in 4.5 hrs on the direct Azuma.",
+      "stops": [
+        {"name": "Drive — Edinburgh to Stirling Castle", "lat": 56.1241, "lng": -3.9471, "type": "drive", "time": "8:00 AM", "stars": null, "notes": "~35 mi | 45 min via M9 | depart Edinburgh 8 AM to arrive Stirling 8:45 AM"},
+        {"name": "Stirling Castle", "lat": 56.1241, "lng": -3.9471, "type": "hike", "time": "9:30 AM", "stars": "4.8", "notes": "Castle Wynd, Stirling FK8 1EJ | Great Hall, Stirling Heads tapestries | 2 hrs | 9:30 AM–6 PM last entry 5 PM | pre-booked (saves £2)"},
+        {"name": "Wallace Monument", "lat": 56.1436, "lng": -3.9218, "type": "hike", "time": "11:30 AM", "stars": "4.6", "notes": "Abbey Craig, Stirling FK9 5LF | Braveheart connections | Bannockburn battlefield views | 45 min"},
+        {"name": "Drive — Stirling to St. Andrews", "lat": 56.3398, "lng": -2.7954, "type": "drive", "time": "1:00 PM", "stars": null, "notes": "~35 mi | 1 hr via M90 and A91"},
+        {"name": "Cromars — Lunch", "lat": 56.3398, "lng": -2.7931, "type": "food", "time": "2:00 PM", "stars": "4.6", "notes": "1 Union Street, St Andrews KY16 9PH | legendary fish & chips | takeaway | eat walking | 10 min"},
+        {"name": "St. Andrews Cathedral & Castle Ruins", "lat": 56.3409, "lng": -2.7895, "type": "hike", "time": "2:15 PM", "stars": "4.7", "notes": "North St, St Andrews KY16 9QL | cliff walk, North Sea views | cathedral ruins, castle ruins | 50 min | no queuing"},
+        {"name": "Walk the Old Course — 18th Fairway", "lat": 56.3413, "lng": -2.8028, "type": "hike", "time": "3:05 PM", "stars": null, "notes": "Public path along 18th fairway | Swilcan Bridge photo stop | 20 min | free | walk the world's most famous golf course"},
+        {"name": "Drive — St. Andrews to Edinburgh Waverley", "lat": 55.9497, "lng": -3.1883, "type": "drive", "time": "3:30 PM", "stars": null, "notes": "~55 mi | allow 1.25 hrs | A91 to M90 | A91 backs up Fri afternoons — allow extra time | must reach Waverley by 4:30 PM"},
+        {"name": "Return Rental Car — Enterprise Waverley", "lat": 55.9497, "lng": -3.1883, "type": "drive", "time": "4:30 PM", "stars": null, "notes": "New Street Car Park EH8 8BH | 3 min walk to platform | after-hours drop box available"},
+        {"name": "LNER — Edinburgh Waverley to Kings Cross", "lat": 51.5319, "lng": -0.1236, "type": "train", "time": "5:00 PM", "stars": null, "notes": "Edinburgh Waverley > London Kings Cross | Fri Aug 7 17:00 dep | arr ~21:30 | direct Azuma | 4 assigned seats same coach | lner.co.uk"},
+        {"name": "Check In — The Ned", "lat": 51.5134, "lng": -0.0887, "type": "lodge", "time": "10:00 PM", "stars": "4.8", "notes": "27 Poultry EC2R 8AJ | thened.com | former Midland Bank | rooftop pool | stunning banking hall bar | taxi from Kings Cross ~£12–15"},
+        {"name": "Night Walk — Embankment & St. Paul's", "lat": 51.5074, "lng": -0.1223, "type": "hike", "time": "10:30 PM", "stars": null, "notes": "Victoria Embankment + St. Paul's lit up at night | 30–40 min | free | walk east along Embankment to Blackfriars Bridge"}
+      ]
+    },
+    {
+      "title": "Day 10 — Departure",
+      "subtitle": "Sat Aug 8 • Breakfast at The Ned · Gatwick Express · Fly home",
+      "tip": "Allow 90 minutes at Gatwick after arriving — the South Terminal security and long walks to gates can be slow on summer Saturdays.",
+      "stops": [
+        {"name": "Checkout — The Ned", "lat": 51.5134, "lng": -0.0887, "type": "lodge", "time": "9:00 AM", "stars": "4.8", "notes": "27 Poultry EC2R 8AJ | leave bags with concierge | breakfast in the magnificent banking hall"},
+        {"name": "Taxi/Tube — The Ned to London Victoria", "lat": 51.4952, "lng": -0.1441, "type": "drive", "time": "9:30 AM", "stars": null, "notes": "Taxi ~£15–20 / 20–30 min | or tube Bank > Victoria (Central line) 15 min | Victoria Station SW1V 1JU"},
+        {"name": "Gatwick Express — Victoria to Gatwick", "lat": 51.1537, "lng": -0.1821, "type": "train", "time": "10:00 AM", "stars": null, "notes": "London Victoria > Gatwick South Terminal | 30 min | £22.50pp | every 15 min | buy at Victoria or on app"},
+        {"name": "Fly — Gatwick to Orlando MCO", "lat": 51.1537, "lng": -0.1821, "type": "flight", "time": "2:00 PM", "stars": null, "notes": "LGW > MCO | depart 14:00 | allow 90 min for check-in, security, gate walk | Gatwick South Terminal"}
+      ]
+    }
+  ]
+}

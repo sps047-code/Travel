@@ -16,6 +16,7 @@
   --river:#2B6CB0;--river-tint:rgba(43,108,176,0.10);--river-border:rgba(43,108,176,0.22);
   --ink:#1A2332;--ink-soft:#2C3A4E;--muted:#6E6558;--border:#E2DDD6;--mist:#F6F4F0;--paper:#FDFCFA;
   --amber:#C47B20;--amber-tint:rgba(196,123,32,0.10);
+  --slate:#4A6572;--slate-tint:rgba(74,101,114,0.12);
   --font-display:'Cormorant Garamond',Georgia,serif;
   --font-ui:'Outfit',system-ui,sans-serif;
   --radius-sm:8px;--radius-md:12px;--radius-lg:16px;--radius-xl:20px;
@@ -67,7 +68,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .stop-card:hover{box-shadow:0 4px 18px rgba(26,35,50,0.10);transform:translateY(-1px)}
 .stop-card.alt-stop{border-style:dashed;background:#FDFEFF}
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
-.dot-hike{background:var(--ruby)}.dot-food{background:var(--amber)}.dot-lodge{background:var(--pine)}.dot-drive{background:var(--river)}.dot-flight{background:#7B5EA7}
+.dot-hike{background:var(--ruby)}.dot-food{background:var(--amber)}.dot-lodge{background:var(--pine)}.dot-drive{background:var(--river)}.dot-flight{background:#7B5EA7}.dot-train{background:var(--slate)}
 .card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
 .card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:var(--border);font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
@@ -85,6 +86,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .badge-lodge{background:var(--pine-tint);color:var(--pine)}
 .badge-drive{background:var(--river-tint);color:var(--river)}
 .badge-flight{background:rgba(123,94,167,0.12);color:#7B5EA7}
+.badge-train{background:var(--slate-tint);color:var(--slate)}
 .badge-alt{background:rgba(43,108,176,0.10);color:var(--river)}
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:4px}
 .add-stop-btn:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
@@ -163,6 +165,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   <span class="legend-item"><span class="legend-dot" style="background:var(--pine)"></span>Lodging</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--river)"></span>Drive</span>
   <span class="legend-item"><span class="legend-dot" style="background:#7B5EA7"></span>Flight</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--slate)"></span>Train</span>
 </div>
 <div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
 <div id="map"></div>
@@ -186,6 +189,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
           <option value="lodge">Lodging</option>
           <option value="drive">Drive</option>
           <option value="flight">Flight</option>
+          <option value="train">Train</option>
         </select>
       </div>
       <div class="form-group"><label class="form-label">Stars</label><input type="text" class="form-input" id="f-stars" placeholder="e.g. 4.5"/></div>
@@ -216,7 +220,7 @@ function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catc
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
-const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7"};
+const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572"};
 
 function haversine(la1,lo1,la2,lo2){
   const R=3959,r=Math.PI/180;
@@ -230,9 +234,12 @@ function legLabel(a,b){
   if(dist<0.3)return'';
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
   const isFlight=a.type==='flight'&&b.type==='flight';
-  const mins=Math.round(dist/(isFlight?8:1.15));
+  const isTrain=a.type==='train'&&b.type==='train';
+  const speed=isFlight?8:isTrain?1.8:1.15;
+  const mins=Math.round(dist/speed);
   const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
-  return mi+' mi · '+tStr+(isFlight?' flight':' drive');
+  const mode=isFlight?' flight':isTrain?' train':' drive';
+  return mi+' mi · '+tStr+mode;
 }
 
 function makeIcon(num,color,isAlt){
@@ -313,7 +320,7 @@ function renderTabs(){
   bar.appendChild(add);
 }
 
-function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
+function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';

@@ -123,6 +123,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .result-name{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--ink)}
 .result-addr{font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-top:2px}
 .no-results{padding:12px 14px;font-family:var(--font-ui);font-size:13px;color:var(--muted);text-align:center}
+.photo-upload-area{border:2px dashed var(--border);border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;transition:border-color 0.2s;min-height:44px;display:flex;align-items:center;justify-content:center}
+.photo-upload-area:hover{border-color:var(--ruby)}
+.photo-upload-area.has-photo{border-style:solid;border-color:var(--border)}
+.photo-upload-placeholder{font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:10px 14px;text-align:center}
+.photo-upload-preview{width:100%;height:140px;object-fit:cover;display:block}
+.photo-remove-btn{font-family:var(--font-ui);font-size:11px;color:var(--ruby);background:none;border:none;cursor:pointer;padding:4px 0 0;text-align:left;display:none}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .form-group{display:flex;flex-direction:column;gap:5px}
 .form-group.full{grid-column:1/-1}
@@ -203,6 +209,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="form-group"><label class="form-label">Lat</label><input type="text" class="form-input" id="f-lat" placeholder="Latitude"/></div>
       <div class="form-group"><label class="form-label">Lng</label><input type="text" class="form-input" id="f-lng" placeholder="Longitude"/></div>
       <div class="form-group full"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Optional notes..."></textarea></div>
+      <div class="form-group full">
+        <label class="form-label">Photo (optional)</label>
+        <input type="file" id="f-photo" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)"/>
+        <div class="photo-upload-area" id="photo-upload-area" onclick="document.getElementById('f-photo').click()">
+          <div class="photo-upload-placeholder" id="photo-placeholder">&#128247; Click to upload a photo</div>
+          <img id="f-photo-preview" class="photo-upload-preview" style="display:none" alt=""/>
+        </div>
+        <button type="button" class="photo-remove-btn" id="photo-remove-btn" onclick="removePhoto(event)">&#215; Remove photo</button>
+      </div>
       <div class="form-group full"><label class="check-row"><input type="checkbox" id="f-alt"/> Mark as alternate / optional stop</label></div>
     </div>
     <div class="modal-actions">
@@ -228,6 +243,43 @@ const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572"};
+
+/* ---- Photo upload helpers ---- */
+let pendingPhoto=null; // null=no change, dataURL=new image
+function showPhotoPreview(src){
+  const area=document.getElementById('photo-upload-area');
+  const preview=document.getElementById('f-photo-preview');
+  const placeholder=document.getElementById('photo-placeholder');
+  const removeBtn=document.getElementById('photo-remove-btn');
+  if(src){
+    preview.src=src;preview.style.display='block';
+    placeholder.style.display='none';area.classList.add('has-photo');
+    removeBtn.style.display='block';
+  }else{
+    preview.style.display='none';placeholder.style.display='block';
+    area.classList.remove('has-photo');removeBtn.style.display='none';
+  }
+}
+function removePhoto(e){if(e)e.stopPropagation();pendingPhoto='';showPhotoPreview(null);document.getElementById('f-photo').value='';}
+async function handlePhotoUpload(input){
+  const file=input.files[0];if(!file)return;
+  const dataUrl=await new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const scale=Math.min(1,500/img.width);
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',0.80));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  pendingPhoto=dataUrl;showPhotoPreview(dataUrl);
+}
 
 /* ---- Timezone support ---- */
 const TZ_LS='tz_cache_v1';
@@ -441,12 +493,17 @@ async function fetchStopImage(name){
 }
 
 async function loadStopImages(){
-  const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({name:s.name,di,si})));
-  for(const {name,di,si} of allStops){
-    const url=await fetchStopImage(name);
+  const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({stop:s,di,si})));
+  for(const {stop,di,si} of allStops){
     const el=document.getElementById('stopimg-'+di+'-'+si);
-    if(url&&el&&!el.classList.contains('loaded')){
-      el.innerHTML='<img class="stop-img" src="'+url+'" alt="'+name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
+    if(!el||el.classList.contains('loaded'))continue;
+    if(stop.customImage){
+      el.innerHTML='<img class="stop-img" src="'+stop.customImage+'" alt="'+stop.name+'"/>';
+      el.classList.add('loaded');continue;
+    }
+    const url=await fetchStopImage(stop.name);
+    if(url&&!el.classList.contains('loaded')){
+      el.innerHTML='<img class="stop-img" src="'+url+'" alt="'+stop.name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
       el.classList.add('loaded');
     }
   }
@@ -536,6 +593,7 @@ function openAddStopModal(dayIdx){
   document.getElementById('f-alt').checked=false;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
+  pendingPhoto=null;showPhotoPreview(null);document.getElementById('f-photo').value='';
   setModalMode(false);
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('place-search').focus(),100);
@@ -554,6 +612,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
+  pendingPhoto=s.customImage||null;showPhotoPreview(pendingPhoto);document.getElementById('f-photo').value='';
   setModalMode(true);
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('f-name').focus(),100);
@@ -615,7 +674,9 @@ function saveStop(){
   if(isNaN(lat)||isNaN(lng)){alert('Please select a search result or enter valid coordinates.');return}
   if(Math.abs(lat)>90&&Math.abs(lng)<=90){[lat,lng]=[lng,lat];}
   if(Math.abs(lat)>90||Math.abs(lng)>180){alert('Coordinates appear invalid. Lat must be -90 to 90, Lng must be -180 to 180.');return}
-  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),alt:document.getElementById('f-alt').checked};
+  const existingPhoto=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx].customImage:null;
+  const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
+  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),alt:document.getElementById('f-alt').checked,customImage};
   const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
   if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
   else{state.days[addingToDay].stops.push(stop);}

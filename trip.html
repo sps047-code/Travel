@@ -74,7 +74,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
 .card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
 .card-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.card-time{font-family:var(--font-ui);font-size:10.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);white-space:nowrap;min-width:60px;padding-top:1px}
+.card-time{font-family:var(--font-ui);font-size:10.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);white-space:nowrap;min-width:60px;padding-top:1px;display:flex;flex-direction:column;gap:2px}
+.card-tz{font-size:9px;font-weight:700;letter-spacing:0.10em;color:var(--river);opacity:0.85}
+.tz-change{color:var(--river);font-size:10.5px;margin-top:1px}
 .card-main{flex:1;min-width:0}
 .card-name{font-family:var(--font-display);font-size:clamp(14px,3.5vw,16px);font-weight:600;color:var(--ink);line-height:1.25;letter-spacing:0.01em}
 .card-stars{font-family:var(--font-ui);font-size:12px;color:var(--amber);margin-top:2px}
@@ -222,6 +224,41 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572"};
 
+/* ---- Timezone support ---- */
+const TZ_LS='tz_cache_v1';
+let tzData={};
+try{tzData=JSON.parse(localStorage.getItem(TZ_LS)||'{}')}catch(e){}
+function tzKey(lat,lng){return(+lat).toFixed(1)+','+(+lng).toFixed(1)}
+function tzAbbr(ianaZone){
+  try{return new Intl.DateTimeFormat('en-US',{timeZone:ianaZone,timeZoneName:'short'}).formatToParts(new Date()).find(p=>p.type==='timeZoneName')?.value||''}catch(e){return''}
+}
+async function getTimezone(lat,lng){
+  const k=tzKey(lat,lng);
+  if(tzData[k])return tzData[k];
+  try{
+    const r=await fetch('https://api.bigdatacloud.net/data/timezone-by-location?latitude='+lat+'&longitude='+lng);
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(!d.timeZone)return null;
+    const result={tz:d.timeZone,abbr:tzAbbr(d.timeZone)};
+    tzData[k]=result;
+    try{localStorage.setItem(TZ_LS,JSON.stringify(tzData))}catch(e){}
+    return result;
+  }catch(e){return null}
+}
+async function loadTimezones(){
+  const stops=state.days.flatMap(d=>d.stops).filter(s=>s.lat&&s.lng);
+  const unique=[...new Map(stops.map(s=>[tzKey(s.lat,s.lng),s])).values()];
+  await Promise.all(unique.map(s=>getTimezone(s.lat,s.lng)));
+  renderAll();
+}
+function stopTz(s){return s.lat&&s.lng?tzData[tzKey(s.lat,s.lng)]:null}
+function tzChangeLabel(a,b){
+  const ta=stopTz(a),tb=stopTz(b);
+  if(!ta||!tb||ta.tz===tb.tz)return'';
+  return(ta.abbr||ta.tz.split('/').pop())+' → '+(tb.abbr||tb.tz.split('/').pop());
+}
+
 function haversine(la1,lo1,la2,lo2){
   const R=3959,r=Math.PI/180;
   const dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
@@ -336,14 +373,23 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+'</span><div class="card-main">'+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '</div>';
-    if(!isLast){const leg=legLabel(s,day.stops[si+1]);if(leg)cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+leg+'</div>';}
+    if(!isLast){
+      const next=day.stops[si+1];
+      const leg=legLabel(s,next);
+      const tzc=tzChangeLabel(s,next);
+      if(leg||tzc){
+        cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+
+          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+
+          '</div>';
+      }
+    }
   });
   return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
@@ -531,7 +577,7 @@ async function init(){
   }catch(e){state={days:[],title:'Trip'};}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
-  renderAll();renderDayMap(0);
+  renderAll();renderDayMap(0);loadTimezones();
 }
 init();
 </script>

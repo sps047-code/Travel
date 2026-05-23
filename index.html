@@ -19,13 +19,7 @@
   --radius-sm:8px;--radius-md:12px;--radius-lg:16px;--radius-xl:20px;
 }
 body{font-family:var(--font-ui);background:var(--mist);color:var(--ink);min-height:100vh}
-header{
-  background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10) 0%,transparent 70%),
-             radial-gradient(ellipse 45% 55% at 85% 30%,rgba(43,108,176,0.10) 0%,transparent 70%),
-             var(--ink);
-  padding:20px 24px 16px;
-  box-shadow:0 2px 12px rgba(26,35,50,0.25);
-}
+header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10) 0%,transparent 70%),radial-gradient(ellipse 45% 55% at 85% 30%,rgba(43,108,176,0.10) 0%,transparent 70%),var(--ink);padding:20px 24px 16px;box-shadow:0 2px 12px rgba(26,35,50,0.25)}
 .header-inner{max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:12px}
 .leaf-logo-svg{animation:leafDrop 0.42s cubic-bezier(0.34,1.4,0.64,1) forwards;flex-shrink:0;object-fit:contain;mix-blend-mode:lighten}
@@ -53,26 +47,28 @@ header{
 .trip-card-footer{padding:0 18px 18px}
 .view-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:11px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:background 0.2s;letter-spacing:0.02em}
 .view-btn:hover{background:var(--ink-soft)}
-.add-card{background:transparent;border:2px dashed var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:44px 20px;cursor:pointer;transition:all 0.2s;color:var(--muted);min-height:200px;font-family:inherit;width:100%}
+.add-card{background:transparent;border:2px dashed var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:36px 20px;cursor:pointer;transition:all 0.2s;color:var(--muted);min-height:180px;font-family:inherit;width:100%}
 .add-card:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
-.add-icon{width:44px;height:44px;border-radius:50%;background:rgba(194,59,59,0.08);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--ruby);transition:background 0.2s}
+.add-card.river:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
+.add-icon{width:44px;height:44px;border-radius:50%;background:rgba(194,59,59,0.08);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--ruby);transition:background 0.2s}
+.add-card.river .add-icon{background:rgba(43,108,176,0.08);color:var(--river)}
 .add-card:hover .add-icon{background:rgba(194,59,59,0.18)}
+.add-card.river:hover .add-icon{background:rgba(43,108,176,0.18)}
 .add-label{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:0.01em}
-.add-sub{font-family:var(--font-ui);font-size:12px;opacity:0.7;text-align:center}
+.add-sub{font-family:var(--font-ui);font-size:12px;opacity:0.7;text-align:center;line-height:1.4}
 
-/* === AI Trip Wizard === */
-.wizard-overlay{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.68);z-index:9000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
-.wizard-overlay.open{display:flex}
-.wizard-card{background:var(--paper);border-radius:var(--radius-xl);padding:36px 40px 32px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 16px 60px rgba(26,35,50,0.35);position:relative;animation:wizIn 0.24s cubic-bezier(0.34,1.2,0.64,1)}
+/* === Shared modal/wizard styles === */
+.overlay{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.68);z-index:9000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
+.overlay.open{display:flex}
+.modal-card{background:var(--paper);border-radius:var(--radius-xl);padding:36px 40px 32px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 16px 60px rgba(26,35,50,0.35);position:relative;animation:wizIn 0.24s cubic-bezier(0.34,1.2,0.64,1)}
 @keyframes wizIn{from{opacity:0;transform:scale(0.95) translateY(14px)}to{opacity:1;transform:scale(1) translateY(0)}}
-.wizard-close{position:absolute;top:16px;right:18px;background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--muted);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s}
-.wizard-close:hover{background:var(--ruby-tint);color:var(--ruby)}
+.modal-close{position:absolute;top:16px;right:18px;background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--muted);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s}
+.modal-close:hover{background:var(--ruby-tint);color:var(--ruby)}
 .wiz-progress{display:flex;align-items:center;gap:7px;margin-bottom:30px}
 .wiz-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:all 0.28s}
 .wiz-dot.active{background:var(--ruby);transform:scale(1.35)}
 .wiz-dot.done{background:var(--pine)}
-.wiz-step{display:none}
-.wiz-step.active{display:block}
+.wiz-step{display:none}.wiz-step.active{display:block}
 .wiz-emoji{font-size:38px;margin-bottom:10px;line-height:1;display:block}
 .wiz-question{font-family:var(--font-display);font-size:clamp(20px,4.5vw,26px);font-weight:600;color:var(--ink);letter-spacing:0.01em;line-height:1.25;margin-bottom:20px}
 .wiz-sublabel{font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin:22px 0 11px}
@@ -104,13 +100,20 @@ header{
 .api-key-sub a:hover{text-decoration:underline}
 .wiz-error{background:rgba(194,59,59,0.09);border:1.5px solid rgba(194,59,59,0.28);border-radius:var(--radius-md);padding:13px 16px;margin-top:18px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);line-height:1.5;display:none}
 .wiz-error.visible{display:block}
-.wiz-nav{display:flex;gap:10px;margin-top:30px;align-items:center}
-.wiz-back-btn{padding:12px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap}
-.wiz-back-btn:hover{border-color:var(--ruby);color:var(--ruby)}
-.wiz-next-btn{flex:1;padding:13px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.2s;letter-spacing:0.02em}
-.wiz-next-btn:hover{background:var(--ink-soft)}
-.wiz-next-btn.generate{background:var(--ruby)}
-.wiz-next-btn.generate:hover{background:#A83232}
+.wiz-nav{display:flex;gap:10px;margin-top:28px;align-items:center}
+.btn-back{padding:12px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+.btn-back:hover{border-color:var(--ruby);color:var(--ruby)}
+.btn-primary{flex:1;padding:13px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.2s;letter-spacing:0.02em}
+.btn-primary:hover{background:var(--ink-soft)}
+.btn-primary.generate{background:var(--ruby)}
+.btn-primary.generate:hover{background:#A83232}
+.btn-primary.river{background:var(--river)}
+.btn-primary.river:hover{background:#1E5A9A}
+
+/* Import-specific */
+.upload-label{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.2s;margin-bottom:12px}
+.upload-label:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
+.upload-label.has-file{border-color:var(--pine);color:var(--pine);background:var(--pine-tint)}
 
 /* === Loading Overlay === */
 .ai-loading{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.94);z-index:9100;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px}
@@ -121,21 +124,11 @@ header{
 .loading-sub{font-family:var(--font-ui);font-size:14px;color:rgba(253,252,250,0.50);transition:opacity 0.45s;text-align:center;min-height:22px}
 .loading-dots{display:flex;gap:9px}
 .loading-dot{width:9px;height:9px;border-radius:50%;background:rgba(253,252,250,0.28);animation:dotPop 1.5s ease-in-out infinite}
-.loading-dot:nth-child(2){animation-delay:0.2s}
-.loading-dot:nth-child(3){animation-delay:0.4s}
+.loading-dot:nth-child(2){animation-delay:0.2s}.loading-dot:nth-child(3){animation-delay:0.4s}
 @keyframes dotPop{0%,80%,100%{transform:scale(0.7);opacity:0.35}40%{transform:scale(1.1);opacity:1}}
 
-@media(max-width:560px){
-  .wizard-card{padding:28px 22px 26px;border-radius:var(--radius-lg)}
-  .wiz-question{font-size:20px}
-  .wiz-date-row{grid-template-columns:1fr;gap:8px}
-  .wiz-date-sep{display:none}
-}
-@media(max-width:480px){
-  header{padding:14px 14px 12px}
-  .page{padding:20px 12px 48px}
-  .api-settings-btn{display:none}
-}
+@media(max-width:560px){.modal-card{padding:28px 22px 26px;border-radius:var(--radius-lg)}.wiz-question{font-size:20px}.wiz-date-row{grid-template-columns:1fr;gap:8px}.wiz-date-sep{display:none}}
+@media(max-width:480px){header{padding:14px 14px 12px}.page{padding:20px 12px 48px}.api-settings-btn{display:none}}
 </style>
 </head>
 <body>
@@ -149,7 +142,7 @@ header{
       </div>
     </div>
     <div class="header-right">
-      <button class="api-settings-btn" onclick="openApiKeySettings()">&#9881; API Key</button>
+      <button class="api-settings-btn" onclick="openKeySettings()">&#9881; API Key</button>
       <span class="brand-tagline-text">Searles Family Trips</span>
     </div>
   </div>
@@ -162,24 +155,18 @@ header{
   </div>
 </div>
 
-<!-- AI Trip Wizard -->
-<div class="wizard-overlay" id="wizard-overlay">
-  <div class="wizard-card">
-    <button class="wizard-close" onclick="closeWizard()" title="Close">&times;</button>
-
+<!-- ====== AI TRIP WIZARD ====== -->
+<div class="overlay" id="wizard-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeWizard()">&times;</button>
     <div class="wiz-progress">
-      <div class="wiz-dot active"></div>
-      <div class="wiz-dot"></div>
-      <div class="wiz-dot"></div>
-      <div class="wiz-dot"></div>
-      <div class="wiz-dot"></div>
+      <div class="wiz-dot active"></div><div class="wiz-dot"></div><div class="wiz-dot"></div><div class="wiz-dot"></div><div class="wiz-dot"></div>
     </div>
 
-    <!-- Step 1: Destination + Dates -->
     <div class="wiz-step active" id="wstep-1">
       <span class="wiz-emoji">&#127758;</span>
       <div class="wiz-question">Where are you headed?</div>
-      <input type="text" class="wiz-input" id="w-dest" placeholder="Utah's national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
+      <input type="text" class="wiz-input" id="w-dest" placeholder="Utah&#8217;s national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
       <div class="wiz-sublabel">When are you going?</div>
       <div class="wiz-date-row">
         <input type="date" class="wiz-input-date" id="w-start"/>
@@ -188,7 +175,6 @@ header{
       </div>
     </div>
 
-    <!-- Step 2: Days + Who -->
     <div class="wiz-step" id="wstep-2">
       <span class="wiz-emoji">&#128197;</span>
       <div class="wiz-question">How long is the trip?</div>
@@ -207,7 +193,6 @@ header{
       </div>
     </div>
 
-    <!-- Step 3: Activities (multi-select) -->
     <div class="wiz-step" id="wstep-3">
       <span class="wiz-emoji">&#127752;</span>
       <div class="wiz-question">What do you love? Pick all that apply.</div>
@@ -223,40 +208,75 @@ header{
       </div>
     </div>
 
-    <!-- Step 4: Pace + Budget -->
     <div class="wiz-step" id="wstep-4">
       <span class="wiz-emoji">&#9889;</span>
       <div class="wiz-question">What&#8217;s your travel style?</div>
       <div class="wiz-sublabel">Pace</div>
       <div class="chip-row" id="pace-chips">
-        <button class="chip" data-group="pace" data-val="relaxed, 2-3 stops per day, lots of downtime">&#128524; Easy-going</button>
+        <button class="chip" data-group="pace" data-val="relaxed, 2-3 stops per day">&#128524; Easy-going</button>
         <button class="chip" data-group="pace" data-val="balanced, 4-5 stops per day">&#9878;&#65039; Balanced</button>
-        <button class="chip" data-group="pace" data-val="adventure mode, pack in as much as possible, 6-8 stops per day">&#127939; Adventure mode</button>
+        <button class="chip" data-group="pace" data-val="adventure mode, 6-8 stops per day">&#127939; Adventure mode</button>
       </div>
       <div class="wiz-sublabel">Budget</div>
       <div class="chip-row" id="budget-chips">
-        <button class="chip" data-group="budget" data-val="budget-friendly, keeping costs low">&#128176; Budget-friendly</button>
-        <button class="chip" data-group="budget" data-val="mid-range, comfortable but not extravagant">&#128179; Mid-range</button>
-        <button class="chip" data-group="budget" data-val="splurge-worthy, best experiences money can buy">&#10024; Splurge-worthy</button>
+        <button class="chip" data-group="budget" data-val="budget-friendly">&#128176; Budget-friendly</button>
+        <button class="chip" data-group="budget" data-val="mid-range">&#128179; Mid-range</button>
+        <button class="chip" data-group="budget" data-val="splurge-worthy">&#10024; Splurge-worthy</button>
       </div>
     </div>
 
-    <!-- Step 5: Notes + API Key -->
     <div class="wiz-step" id="wstep-5">
       <span class="wiz-emoji">&#128221;</span>
       <div class="wiz-question">Anything else to know?</div>
-      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip, accessibility requirements&#8230;"></textarea>
-      <div class="api-key-section" id="api-key-section">
-        <span class="api-key-label">Anthropic API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(optional)</span></span>
-        <div class="api-key-sub">Add a key to let Claude AI fill in your full itinerary with real stops, times, and tips. Without one, we&#8217;ll create a blank trip you can fill in yourself using the place search. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a free key &#8594;</a></div>
-        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230; (leave blank to build manually)" autocomplete="off"/>
+      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
+      <div class="api-key-section" id="wiz-key-section">
+        <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free &#8212; optional)</span></span>
+        <div class="api-key-sub">Add a free key to let AI fill your full itinerary with real stops &amp; tips. Without one we create a blank trip you fill in yourself. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key &#8594;</a></div>
+        <input type="password" class="wiz-input" id="w-api-key" placeholder="AIza&#8230; (leave blank to build manually)" autocomplete="off"/>
       </div>
       <div class="wiz-error" id="wiz-error"></div>
     </div>
 
     <div class="wiz-nav">
-      <button class="wiz-back-btn" id="wiz-back-btn" onclick="wizBack()" style="display:none">&#8592; Back</button>
-      <button class="wiz-next-btn" id="wiz-next-btn" onclick="wizNext()">Next &#8594;</button>
+      <button class="btn-back" id="wiz-back-btn" onclick="wizBack()" style="display:none">&#8592; Back</button>
+      <button class="btn-primary" id="wiz-next-btn" onclick="wizNext()">Next &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== IMPORT MODAL ====== -->
+<div class="overlay" id="import-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeImport()">&times;</button>
+    <span class="wiz-emoji">&#128203;</span>
+    <div class="wiz-question">Import an Itinerary</div>
+    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Paste anything &#8212; a travel agent email, Google Doc, notes app text, booking confirmations. AI will parse it into a full interactive itinerary.</p>
+
+    <label class="upload-label" id="upload-label">
+      &#128206; Upload a .txt file
+      <input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>
+    </label>
+
+    <textarea class="wiz-textarea" id="import-text" style="min-height:180px" placeholder="Paste your itinerary here&#8230;
+
+Day 1 - June 6
+7:15am depart Tulsa
+Arrive Las Vegas 8am, pick up rental car
+Drive to Zion NP (4 hrs)
+Check in Zion Lodge
+Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
+
+    <div class="api-key-section" id="import-key-section">
+      <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free)</span></span>
+      <div class="api-key-sub">Required to parse your itinerary with AI. It&#8217;s completely free &#8212; no credit card needed. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key at aistudio.google.com &#8594;</a></div>
+      <input type="password" class="wiz-input" id="import-api-key" placeholder="AIza&#8230;" autocomplete="off"/>
+    </div>
+
+    <div class="wiz-error" id="import-error"></div>
+
+    <div class="wiz-nav">
+      <button class="btn-back" onclick="closeImport()">Cancel</button>
+      <button class="btn-primary river" onclick="importTrip()">&#10024; Import with AI</button>
     </div>
   </div>
 </div>
@@ -264,19 +284,14 @@ header{
 <!-- Loading overlay -->
 <div class="ai-loading" id="ai-loading">
   <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt=""/>
-  <div class="loading-title">Planning your adventure&#8230;</div>
-  <div class="loading-sub" id="loading-sub">Claude is crafting your itinerary</div>
-  <div class="loading-dots">
-    <div class="loading-dot"></div>
-    <div class="loading-dot"></div>
-    <div class="loading-dot"></div>
-  </div>
+  <div class="loading-title" id="loading-title">Planning your adventure&#8230;</div>
+  <div class="loading-sub" id="loading-sub">Gemini is crafting your itinerary</div>
+  <div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
 </div>
 
 <script>
-const SYSTEM_PROMPT=`You are a meticulous trip planner. Given the user's preferences, return ONLY a valid JSON object — no markdown, no prose, no code fences. Start with { and end with }.
+const TRIP_JSON_SCHEMA=`Return ONLY a valid JSON object — no markdown, no prose, no code fences. Start with { and end with }.
 
-Return this exact structure:
 {
   "title": "Trip Name",
   "mapCenter": [latitude, longitude],
@@ -287,72 +302,101 @@ Return this exact structure:
       "subtitle": "Mon Jun 6 • Key theme of the day",
       "tip": "A genuinely useful local insider tip",
       "stops": [
-        {
-          "name": "Stop Name",
-          "lat": 36.1984,
-          "lng": -95.8881,
-          "type": "hike",
-          "time": "9:00 AM",
-          "stars": "4.8",
-          "notes": "Helpful details about this stop"
-        }
+        {"name":"Stop Name","lat":36.1984,"lng":-95.8881,"type":"hike","time":"9:00 AM","stars":"4.8","notes":"Details"}
       ]
     }
   ]
 }
 
-Strict rules:
+Rules:
 1. "type" must be exactly one of: hike, food, lodge, drive, flight
-2. "lat" and "lng" must be real, accurate WGS84 coordinates — never 0,0 or invented values
-3. "stars" is a string like "4.5" or null if not rateable
-4. Each day should have 4-8 stops in chronological order from morning to night
-5. End most days with a lodge stop (unless the final day ends flying home)
-6. "tip" must be a genuinely useful local insider tip, not generic travel advice
-7. "mapCenter" is the geographic center of the full trip area
-8. "mapZoom" is 6-10 depending on geographic spread (6=continent, 8=region, 10=single city)
-9. Day titles must start with "Day N — " followed by a descriptive subtitle
-10. Day "subtitle" should be concise: day of week, date if known, and the key theme
-11. Include flight stops if the user is flying to or between destinations
-12. Return ONLY the JSON — nothing before or after`;
+2. "lat"/"lng" must be real WGS84 coordinates — never 0,0
+3. "stars" is a string like "4.5" or null
+4. Each day: 4-8 stops in chronological order, end with lodge unless flying home
+5. "tip": a genuinely useful local insider tip
+6. "mapCenter": geographic center of trip; "mapZoom": 6-10 by spread
+7. Day titles: "Day N — Description"; subtitle: short date + theme
+8. Return ONLY the JSON`;
 
-const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…'];
+const PLAN_SYSTEM=`You are a meticulous trip planner. Given travel preferences, generate a complete day-by-day itinerary. `+TRIP_JSON_SCHEMA;
+const IMPORT_SYSTEM=`You are parsing a travel itinerary from raw text. Extract all days, stops, times, and locations. Use your knowledge to provide accurate GPS coordinates for every location mentioned. If details are missing, fill them in with realistic values based on context. `+TRIP_JSON_SCHEMA;
+
+const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…','Almost there…'];
 
 let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''},loadingTimer=null;
 
-function getApiKey(){return(window.VITE_ANTHROPIC_API_KEY||window.ANTHROPIC_API_KEY||localStorage.getItem('anthropic_api_key')||'').trim()}
-function saveApiKey(k){if(k)localStorage.setItem('anthropic_api_key',k.trim())}
+function getApiKey(){return(window.GEMINI_API_KEY||localStorage.getItem('gemini_api_key')||'').trim()}
+function saveApiKey(k){if(k)localStorage.setItem('gemini_api_key',k.trim())}
 
-function openApiKeySettings(){
+function openKeySettings(){
   const cur=getApiKey(),masked=cur?cur.slice(0,8)+'…':'';
-  const nk=prompt('Anthropic API Key'+(masked?' (current: '+masked+')':'')+'\n\nGet a key at console.anthropic.com/settings/keys','');
+  const nk=prompt('Google Gemini API Key (free)\n'+(masked?'Current: '+masked+'\n\n':'\n')+'Get yours free at aistudio.google.com/apikey\nNo credit card needed.','');
   if(nk!==null&&nk.trim()){saveApiKey(nk);alert('API key saved!')}
 }
 
+/* ---- Gemini API call ---- */
+async function callGemini(systemPrompt,userPrompt,apiKey){
+  const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+encodeURIComponent(apiKey),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      systemInstruction:{parts:[{text:systemPrompt}]},
+      contents:[{role:'user',parts:[{text:userPrompt}]}],
+      generationConfig:{maxOutputTokens:8192,temperature:0.3}
+    })
+  });
+  if(!res.ok){
+    const d=await res.json().catch(()=>({}));
+    if(res.status===400&&d.error?.message?.includes('API_KEY'))throw new Error('Invalid API key format.');
+    if(res.status===400)throw new Error(d.error?.message||'Bad request.');
+    if(res.status===401||res.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
+    if(res.status===429)throw new Error('Rate limit reached — please wait a moment and try again.');
+    throw new Error(d.error?.message||'Request failed (HTTP '+res.status+')');
+  }
+  const data=await res.json();
+  const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  if(!text)throw new Error('Empty response from AI. Please try again.');
+  return text;
+}
+
+function parseJsonResponse(text){
+  let t=text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  const js=t.indexOf('{'),je=t.lastIndexOf('}');
+  if(js!==-1&&je!==-1)t=t.slice(js,je+1);
+  try{return JSON.parse(t)}catch(e){throw new Error('AI returned unexpected format. Please try again.')}
+}
+
+function saveTrip(trip,prefix,destName,startDate,endDate){
+  if(!trip.days||!Array.isArray(trip.days)||!trip.days.length)throw new Error('No days found. Please try again.');
+  const slug=destName.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,28);
+  const id=prefix+slug+'-'+Date.now().toString(36);
+  localStorage.setItem('tripState_'+id,JSON.stringify(trip));
+  const entry={id,title:trip.title||destName+' Trip',dates:formatDates(startDate,endDate),days:trip.days.length,destinations:[destName],local:true};
+  const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+  local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
+  return id;
+}
+
+/* ---- Wizard ---- */
 function openWizard(){
   wizStep=1;
   wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''};
   ['w-dest','w-start','w-end','w-notes','w-api-key'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('days-val').textContent='3';
   document.getElementById('wiz-error').classList.remove('visible');
-  document.getElementById('wiz-error').textContent='';
-  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  document.getElementById('api-key-section').style.display=getApiKey()?'none':'block';
+  document.querySelectorAll('#wizard-overlay .chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('wiz-key-section').style.display=getApiKey()?'none':'block';
   showWizStep(1);
   document.getElementById('wizard-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('w-dest').focus(),150);
 }
-
 function closeWizard(){document.getElementById('wizard-overlay').classList.remove('open')}
 
 function showWizStep(n){
   wizStep=n;
   document.querySelectorAll('.wiz-step').forEach(el=>el.classList.remove('active'));
   document.getElementById('wstep-'+n).classList.add('active');
-  document.querySelectorAll('.wiz-dot').forEach((d,i)=>{
-    d.classList.remove('active','done');
-    if(i+1<n)d.classList.add('done');
-    if(i+1===n)d.classList.add('active');
-  });
+  document.querySelectorAll('.wiz-dot').forEach((d,i)=>{d.classList.remove('active','done');if(i+1<n)d.classList.add('done');if(i+1===n)d.classList.add('active')});
   document.getElementById('wiz-back-btn').style.display=n>1?'block':'none';
   const btn=document.getElementById('wiz-next-btn');
   btn.textContent=n===5?'✨ Generate My Trip':'Next →';
@@ -366,29 +410,27 @@ function adjustDays(d){
   document.getElementById('days-plus').disabled=wizData.days>=14;
 }
 
-function wizBack(){hideWizError();if(wizStep>1)showWizStep(wizStep-1)}
+function wizBack(){hideErr('wiz-error');if(wizStep>1)showWizStep(wizStep-1)}
 
 function wizNext(){
-  const err=validateStep(wizStep);
-  if(err){showWizError(err);return}
-  collectStepData(wizStep);
-  hideWizError();
-  if(wizStep===5)generateTrip();
-  else showWizStep(wizStep+1);
+  const err=validateWizStep(wizStep);
+  if(err){showErr('wiz-error',err);return}
+  collectWizStep(wizStep);
+  hideErr('wiz-error');
+  if(wizStep===5)generateTrip();else showWizStep(wizStep+1);
 }
 
-function validateStep(s){
+function validateWizStep(s){
   if(s===1&&!document.getElementById('w-dest').value.trim())return'Please enter a destination.';
   if(s===2&&!document.querySelector('#who-chips .chip.active'))return'Please select who\'s coming.';
   if(s===4){
     if(!document.querySelector('#pace-chips .chip.active'))return'Please choose a pace.';
     if(!document.querySelector('#budget-chips .chip.active'))return'Please choose a budget level.';
   }
-  // API key is optional on step 5 — skeleton mode works without one
   return null;
 }
 
-function collectStepData(s){
+function collectWizStep(s){
   if(s===1){wizData.dest=document.getElementById('w-dest').value.trim();wizData.startDate=document.getElementById('w-start').value;wizData.endDate=document.getElementById('w-end').value}
   if(s===2){wizData.days=parseInt(document.getElementById('days-val').textContent,10);const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val}
   if(s===3)wizData.activities=[...document.querySelectorAll('#activities-chips .chip.active')].map(c=>c.dataset.val);
@@ -396,137 +438,158 @@ function collectStepData(s){
   if(s===5){wizData.notes=document.getElementById('w-notes').value.trim();const k=document.getElementById('w-api-key').value.trim();if(k)saveApiKey(k)}
 }
 
-function showWizError(m){const e=document.getElementById('wiz-error');e.textContent=m;e.classList.add('visible')}
-function hideWizError(){const e=document.getElementById('wiz-error');e.classList.remove('visible');e.textContent=''}
-
-function buildPrompt(){
+function buildWizPrompt(){
   const l=['Destination: '+wizData.dest];
   if(wizData.startDate&&wizData.endDate)l.push('Dates: '+wizData.startDate+' to '+wizData.endDate);
-  else if(wizData.startDate)l.push('Start date: '+wizData.startDate);
-  l.push('Number of days: '+wizData.days);
+  l.push('Days: '+wizData.days);
   if(wizData.who)l.push('Traveling: '+wizData.who);
   if(wizData.activities.length)l.push('Interests: '+wizData.activities.join(', '));
   if(wizData.pace)l.push('Pace: '+wizData.pace);
   if(wizData.budget)l.push('Budget: '+wizData.budget);
-  if(wizData.notes)l.push('Special notes: '+wizData.notes);
+  if(wizData.notes)l.push('Notes: '+wizData.notes);
   return l.join('\n');
 }
 
-function showLoading(){
+async function generateSkeleton(){
+  closeWizard();showLoading('Creating your trip…');
+  try{
+    let mapCenter=[20,0],mapZoom=4;
+    try{
+      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(wizData.dest)+'&format=json&limit=1',{headers:{'Accept-Language':'en'}});
+      if(r.ok){const d=await r.json();if(d[0]){mapCenter=[parseFloat(d[0].lat),parseFloat(d[0].lon)];mapZoom=8}}
+    }catch(e){}
+    const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const sd=wizData.startDate?new Date(wizData.startDate+'T00:00:00'):null;
+    const days=Array.from({length:wizData.days},(_,i)=>{
+      let sub=wizData.dest;
+      if(sd){const d=new Date(sd);d.setDate(d.getDate()+i);sub=DN[d.getDay()]+' '+MN[d.getMonth()]+' '+d.getDate()+' • '+wizData.dest}
+      return{title:'Day '+(i+1)+' — '+wizData.dest,subtitle:sub,tip:'',stops:[]};
+    });
+    const id=saveTrip({title:wizData.dest+' Trip',mapCenter,mapZoom,days},'trip-',wizData.dest,wizData.startDate,wizData.endDate);
+    hideLoading();window.location.href='trip.html?id='+id;
+  }catch(e){hideLoading();openWizard();showWizStep(5);showErr('wiz-error',e.message)}
+}
+
+async function generateTrip(){
+  const apiKey=document.getElementById('w-api-key').value.trim()||getApiKey();
+  if(!apiKey){generateSkeleton();return}
+  saveApiKey(apiKey);
+  closeWizard();showLoading('Planning your adventure…');
+  try{
+    const text=await callGemini(PLAN_SYSTEM,buildWizPrompt(),apiKey);
+    const trip=parseJsonResponse(text);
+    const id=saveTrip(trip,'ai-',wizData.dest,wizData.startDate,wizData.endDate);
+    hideLoading();window.location.href='trip.html?id='+id;
+  }catch(e){
+    hideLoading();
+    document.getElementById('wiz-key-section').style.display='block';
+    document.getElementById('wizard-overlay').classList.add('open');
+    showWizStep(5);showErr('wiz-error',e.message);
+  }
+}
+
+/* ---- Import ---- */
+function openImport(){
+  document.getElementById('import-text').value='';
+  document.getElementById('import-api-key').value='';
+  document.getElementById('import-error').classList.remove('visible');
+  document.getElementById('upload-label').classList.remove('has-file');
+  document.getElementById('upload-label').innerHTML='&#128206; Upload a .txt file<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>';
+  document.getElementById('import-key-section').style.display=getApiKey()?'none':'block';
+  document.getElementById('import-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('import-text').focus(),150);
+  // Re-attach file input listener after DOM rebuild
+  document.getElementById('import-file').addEventListener('change',handleFileUpload);
+}
+function closeImport(){document.getElementById('import-overlay').classList.remove('open')}
+
+function handleFileUpload(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    document.getElementById('import-text').value=ev.target.result;
+    document.getElementById('upload-label').classList.add('has-file');
+    document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
+  };
+  reader.readAsText(file);
+}
+
+async function importTrip(){
+  const text=document.getElementById('import-text').value.trim();
+  if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
+  const apiKey=document.getElementById('import-api-key').value.trim()||getApiKey();
+  if(!apiKey){showErr('import-error','A free Gemini API key is required to parse your itinerary. Get one at aistudio.google.com/apikey');return}
+  saveApiKey(apiKey);
+  closeImport();showLoading('Reading your itinerary…');
+  try{
+    const resp=await callGemini(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text,apiKey);
+    const trip=parseJsonResponse(resp);
+    // Extract a destination name from the trip title or first stop
+    const dest=(trip.title||'').replace(/trip$/i,'').trim()||'Trip';
+    const id=saveTrip(trip,'import-',dest,'','');
+    hideLoading();window.location.href='trip.html?id='+id;
+  }catch(e){
+    hideLoading();
+    document.getElementById('import-key-section').style.display='block';
+    document.getElementById('import-overlay').classList.add('open');
+    showErr('import-error',e.message);
+  }
+}
+
+/* ---- Loading ---- */
+function showLoading(title){
+  document.getElementById('loading-title').textContent=title||'Working…';
   document.getElementById('ai-loading').classList.add('open');
   const sub=document.getElementById('loading-sub');
-  let i=0;sub.textContent='Claude is crafting your itinerary';
+  let i=0;sub.textContent='Gemini is on it';
   loadingTimer=setInterval(()=>{
     sub.style.opacity='0';
     setTimeout(()=>{i=(i+1)%LOADING_MSGS.length;sub.textContent=LOADING_MSGS[i];sub.style.opacity='1'},400);
   },2800);
 }
-
 function hideLoading(){
   document.getElementById('ai-loading').classList.remove('open');
   if(loadingTimer){clearInterval(loadingTimer);loadingTimer=null}
 }
 
+/* ---- Helpers ---- */
+function showErr(id,m){const e=document.getElementById(id);e.textContent=m;e.classList.add('visible')}
+function hideErr(id){const e=document.getElementById(id);e.classList.remove('visible');e.textContent=''}
+
 function formatDates(s,e){
   if(!s)return'';
   try{
-    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const fmt=d=>{const[y,m,dd]=d.split('-');return months[+m-1]+' '+parseInt(dd)};
-    return(s&&e)?fmt(s)+'–'+fmt(e)+', '+s.split('-')[0]:fmt(s);
+    const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const f=d=>{const[y,m,dd]=d.split('-');return M[+m-1]+' '+parseInt(dd)};
+    return(s&&e)?f(s)+'–'+f(e)+', '+s.split('-')[0]:f(s);
   }catch(ex){return s}
 }
 
-async function generateSkeleton(){
-  closeWizard();
-  showLoading();
-  try{
-    // Geocode destination via Nominatim for map center
-    let mapCenter=[20,0],mapZoom=4;
-    try{
-      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(wizData.dest)+'&format=json&limit=1',{headers:{'Accept-Language':'en','Accept':'application/json'}});
-      if(r.ok){const d=await r.json();if(d[0]){mapCenter=[parseFloat(d[0].lat),parseFloat(d[0].lon)];mapZoom=8;}}
-    }catch(e){}
-    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const startD=wizData.startDate?new Date(wizData.startDate+'T00:00:00'):null;
-    const days=Array.from({length:wizData.days},(_,i)=>{
-      let subtitle=wizData.dest;
-      if(startD){const d=new Date(startD);d.setDate(d.getDate()+i);subtitle=dayNames[d.getDay()]+' '+monthNames[d.getMonth()]+' '+d.getDate()+' • '+wizData.dest;}
-      return{title:'Day '+(i+1)+' — '+wizData.dest,subtitle,tip:'',stops:[]};
-    });
-    const trip={title:wizData.dest+' Trip',mapCenter,mapZoom,days};
-    const slug=wizData.dest.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,28);
-    const id='trip-'+slug+'-'+Date.now().toString(36);
-    localStorage.setItem('tripState_'+id,JSON.stringify(trip));
-    const entry={id,title:trip.title,dates:formatDates(wizData.startDate,wizData.endDate),days:trip.days.length,destinations:[wizData.dest],local:true};
-    const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-    local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
-    hideLoading();
-    window.location.href='trip.html?id='+id;
-  }catch(e){hideLoading();showWizError('Something went wrong: '+e.message);}
-}
-
-async function generateTrip(){
-  const apiKey=document.getElementById('w-api-key').value.trim()||getApiKey();
-  if(!apiKey){generateSkeleton();return;}
-  saveApiKey(apiKey);
-  closeWizard();
-  showLoading();
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:SYSTEM_PROMPT,messages:[{role:'user',content:buildPrompt()}]})
-    });
-    if(!res.ok){
-      const d=await res.json().catch(()=>({}));
-      if(res.status===401)throw new Error('Invalid API key. Please check your key and try again.');
-      if(res.status===429)throw new Error('Rate limit reached. Please wait a moment and try again.');
-      throw new Error(d.error?.message||'Request failed (HTTP '+res.status+')');
-    }
-    const data=await res.json();
-    let text=(data.content[0]?.text||'').trim();
-    text=text.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
-    const js=text.indexOf('{'),je=text.lastIndexOf('}');
-    if(js!==-1&&je!==-1)text=text.slice(js,je+1);
-    let trip;
-    try{trip=JSON.parse(text)}catch(e){throw new Error('The AI returned an unexpected format. Please try again.')}
-    if(!trip.days||!Array.isArray(trip.days)||!trip.days.length)throw new Error('The AI returned an empty itinerary. Try adding more details and generate again.');
-    const slug=wizData.dest.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,28);
-    const id='ai-'+slug+'-'+Date.now().toString(36);
-    localStorage.setItem('tripState_'+id,JSON.stringify(trip));
-    const entry={id,title:trip.title||wizData.dest+' Trip',dates:formatDates(wizData.startDate,wizData.endDate),days:trip.days.length,destinations:[wizData.dest],local:true};
-    const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-    local.push(entry);
-    localStorage.setItem('localTrips',JSON.stringify(local));
-    hideLoading();
-    window.location.href='trip.html?id='+id;
-  }catch(e){
-    hideLoading();
-    document.getElementById('api-key-section').style.display='block';
-    document.getElementById('wizard-overlay').classList.add('open');
-    showWizStep(5);
-    showWizError(e.message||'Something went wrong. Please try again.');
-  }
-}
-
-// Chip handlers
+/* ---- Chip handlers ---- */
 document.querySelectorAll('.chip[data-group]').forEach(btn=>{
   btn.addEventListener('click',function(){
     document.querySelectorAll(`.chip[data-group="${this.dataset.group}"]`).forEach(b=>b.classList.remove('active'));
-    this.classList.add('active');hideWizError();
+    this.classList.add('active');hideErr('wiz-error');
   });
 });
 document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
 
-document.getElementById('wizard-overlay').addEventListener('click',function(e){if(e.target===this)closeWizard()});
+/* ---- File upload ---- */
+document.getElementById('import-file').addEventListener('change',handleFileUpload);
 
+/* ---- Overlay click to close ---- */
+document.getElementById('wizard-overlay').addEventListener('click',function(e){if(e.target===this)closeWizard()});
+document.getElementById('import-overlay').addEventListener('click',function(e){if(e.target===this)closeImport()});
+
+/* ---- Keyboard shortcuts ---- */
 document.addEventListener('keydown',function(e){
-  if(!document.getElementById('wizard-overlay').classList.contains('open'))return;
-  if(e.key==='Escape'){closeWizard();return}
-  if(e.key==='Enter'&&document.activeElement?.tagName!=='TEXTAREA')wizNext();
+  const wizOpen=document.getElementById('wizard-overlay').classList.contains('open');
+  const impOpen=document.getElementById('import-overlay').classList.contains('open');
+  if(e.key==='Escape'){if(wizOpen)closeWizard();if(impOpen)closeImport();return}
+  if(e.key==='Enter'&&wizOpen&&document.activeElement?.tagName!=='TEXTAREA')wizNext();
 });
 
+/* ---- Load trips grid ---- */
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   let serverTrips=[];
@@ -540,7 +603,7 @@ async function loadTrips(){
         <div class="trip-card-title">${t.title}</div>
         <div class="trip-card-meta">
           ${t.dates?`<span class="trip-meta-pill">${t.dates}</span>`:''}
-          <span class="trip-meta-pill">${t.days} Days</span>
+          <span class="trip-meta-pill">${t.days} Day${t.days!==1?'s':''}</span>
           ${t.local?'<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">AI</span>':''}
         </div>
         <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
@@ -548,9 +611,14 @@ async function loadTrips(){
       <div class="trip-card-footer"><span class="view-btn">View Itinerary &rarr;</span></div>
     </a>`).join('')+`
     <button class="add-card" onclick="openWizard()">
-      <div class="add-icon">+</div>
+      <div class="add-icon">&#10024;</div>
       <div class="add-label">Plan a New Trip</div>
-      <div class="add-sub">Let AI build your itinerary</div>
+      <div class="add-sub">Answer a few questions &amp; AI builds your itinerary</div>
+    </button>
+    <button class="add-card river" onclick="openImport()">
+      <div class="add-icon">&#128203;</div>
+      <div class="add-label">Import an Itinerary</div>
+      <div class="add-sub">Paste or upload any text &amp; AI populates it</div>
     </button>`;
 }
 loadTrips();

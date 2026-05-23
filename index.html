@@ -339,8 +339,29 @@ function openKeySettings(){
 }
 
 /* ---- Gemini API call ---- */
+let _geminiModel=null;
+async function discoverGeminiModel(apiKey){
+  if(_geminiModel)return _geminiModel;
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
+  if(!r.ok){
+    const d=await r.json().catch(()=>({}));
+    if(r.status===400||r.status===401||r.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
+    throw new Error((d.error?.message)||'Could not reach Google AI API ('+r.status+')');
+  }
+  const d=await r.json();
+  const models=(d.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'));
+  const prefer=['gemini-1.5-flash','gemini-2.0-flash','gemini-1.5-pro','gemini-1.0-pro','gemini-pro'];
+  for(const p of prefer){
+    const m=models.find(m=>m.name.includes(p));
+    if(m){_geminiModel=m.name.replace('models/','');return _geminiModel;}
+  }
+  if(models[0]){_geminiModel=models[0].name.replace('models/','');return _geminiModel;}
+  throw new Error('No compatible Gemini models found for this API key.');
+}
+
 async function callGemini(systemPrompt,userPrompt,apiKey){
-  const res=await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key='+encodeURIComponent(apiKey),{
+  const model=await discoverGeminiModel(apiKey);
+  const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+apiKey,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
@@ -351,7 +372,6 @@ async function callGemini(systemPrompt,userPrompt,apiKey){
   if(!res.ok){
     const d=await res.json().catch(()=>({}));
     const msg=d.error?.message||'HTTP '+res.status;
-    if(res.status===400)throw new Error('API error: '+msg);
     if(res.status===401||res.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
     if(res.status===429)throw new Error('Quota exceeded: '+msg);
     throw new Error('API error ('+res.status+'): '+msg);

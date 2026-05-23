@@ -145,7 +145,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div class="header-right">
-      <button class="api-settings-btn" onclick="openKeySettings()">&#9881; API Key</button>
+      <button class="api-settings-btn" onclick="openKeySettings()" style="display:none">&#9881; API Key</button>
       <span class="brand-tagline-text">Searles Family Trips</span>
     </div>
   </div>
@@ -233,10 +233,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <span class="wiz-emoji">&#128221;</span>
       <div class="wiz-question">Anything else to know?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
-      <div class="api-key-section" id="wiz-key-section">
-        <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free &#8212; optional)</span></span>
-        <div class="api-key-sub">Add a free key to let AI fill your full itinerary with real stops &amp; tips. Without one we create a blank trip you fill in yourself. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key &#8594;</a></div>
-        <input type="password" class="wiz-input" id="w-api-key" placeholder="AIza&#8230; (leave blank to build manually)" autocomplete="off"/>
+      <div class="api-key-section" id="wiz-key-section" style="display:none">
+        <input type="hidden" id="w-api-key" value=""/>
       </div>
       <div class="wiz-error" id="wiz-error"></div>
     </div>
@@ -270,10 +268,8 @@ Drive to Zion NP (4 hrs)
 Check in Zion Lodge
 Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 
-    <div class="api-key-section" id="import-key-section">
-      <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free)</span></span>
-      <div class="api-key-sub">Required to parse your itinerary with AI. It&#8217;s completely free &#8212; no credit card needed. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key at aistudio.google.com &#8594;</a></div>
-      <input type="password" class="wiz-input" id="import-api-key" placeholder="AIza&#8230;" autocomplete="off"/>
+    <div class="api-key-section" id="import-key-section" style="display:none">
+      <input type="hidden" id="import-api-key" value=""/>
     </div>
 
     <div class="wiz-error" id="import-error"></div>
@@ -329,6 +325,7 @@ const LOADING_MSGS=['Researching the best local spots…','Plotting scenic route
 
 let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''},loadingTimer=null;
 
+window.GEMINI_API_KEY='AIzaSyBmAwTtpFnsl7LEzJDL3aMPH-4og9uCO3k';
 function getApiKey(){return(window.GEMINI_API_KEY||localStorage.getItem('gemini_api_key')||'').trim()}
 function saveApiKey(k){if(k)localStorage.setItem('gemini_api_key',k.trim())}
 

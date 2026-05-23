@@ -324,7 +324,37 @@ Rules:
 9. Return ONLY the JSON`;
 
 const PLAN_SYSTEM=`You are a meticulous trip planner. Given travel preferences, generate a complete day-by-day itinerary. `+TRIP_JSON_SCHEMA;
-const IMPORT_SYSTEM=`You are parsing a travel itinerary from raw text. Extract all days, stops, times, and locations. Use your knowledge to provide accurate GPS coordinates for every location mentioned. If details are missing, fill them in with realistic values based on context. `+TRIP_JSON_SCHEMA;
+
+/* Compact schema for import — omits generated notes/stars/tips to maximise stops within token limit */
+const IMPORT_SCHEMA=`CRITICAL: Respond with a single raw JSON object only. No markdown, no backticks, no prose. Start with { end with }.
+
+{
+  "title": "Trip Name",
+  "mapCenter": [51.5, -0.12],
+  "mapZoom": 7,
+  "days": [
+    {
+      "title": "Day 1 — Location",
+      "subtitle": "Thu Jul 30 • Theme",
+      "tip": "",
+      "stops": [
+        {"name":"Stop Name","lat":51.5074,"lng":-0.1278,"type":"hike","time":"9:00 AM","stars":null,"notes":""}
+      ]
+    }
+  ]
+}
+
+Rules:
+1. Include EVERY stop mentioned in the source text — do not skip any
+2. "type": hike, food, lodge, drive, flight, or train
+3. "lat"/"lng": real numeric WGS84 coordinates — never 0, never the word "latitude"
+4. "time": copy from source text if present, otherwise ""
+5. "notes": "" — do not generate descriptions, leave blank
+6. "stars": null always
+7. "tip": "" always — do not generate tips
+8. Return ONLY the JSON`;
+
+const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary. Your only job is to identify every day, every stop, its location coordinates, type, and time. Do not generate any descriptions or tips — leave notes and tip blank. `+IMPORT_SCHEMA;
 
 const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…','Almost there…'];
 

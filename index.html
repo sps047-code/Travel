@@ -56,6 +56,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-card.river:hover .add-icon{background:rgba(43,108,176,0.18)}
 .add-label{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:0.01em}
 .add-sub{font-family:var(--font-ui);font-size:12px;opacity:0.7;text-align:center;line-height:1.4}
+.trip-card{position:relative}
+.card-delete{position:absolute;top:14px;right:12px;width:26px;height:26px;border-radius:50%;background:rgba(26,35,50,0.55);border:none;color:rgba(253,252,250,0.7);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:all 0.18s;z-index:2;line-height:1}
+.trip-card:hover .card-delete{opacity:1}
+.card-delete:hover{background:var(--ruby);color:white;transform:scale(1.1)}
 
 /* === Shared modal/wizard styles === */
 .overlay{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.68);z-index:9000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
@@ -589,15 +593,33 @@ document.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&wizOpen&&document.activeElement?.tagName!=='TEXTAREA')wizNext();
 });
 
+/* ---- Delete trip ---- */
+function deleteTrip(id,title,isLocal){
+  if(!confirm('Remove "'+title+'" from your trips?'))return;
+  if(isLocal){
+    // Remove state and manifest entry
+    localStorage.removeItem('tripState_'+id);
+    const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+    localStorage.setItem('localTrips',JSON.stringify(local.filter(t=>t.id!==id)));
+  } else {
+    // Server trip: just hide it
+    const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
+    if(!hidden.includes(id)){hidden.push(id);localStorage.setItem('hiddenTrips',JSON.stringify(hidden))}
+  }
+  loadTrips();
+}
+
 /* ---- Load trips grid ---- */
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   let serverTrips=[];
   try{const r=await fetch('trips/manifest.json');if(r.ok)serverTrips=await r.json()}catch(e){}
   const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-  const all=[...serverTrips,...local];
+  const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
+  const all=[...serverTrips,...local].filter(t=>!hidden.includes(t.id));
   grid.innerHTML=all.map(t=>`
     <a class="trip-card" href="trip.html?id=${t.id}">
+      <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',${!!t.local})" title="Remove trip">&times;</button>
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
         <div class="trip-card-title">${t.title}</div>

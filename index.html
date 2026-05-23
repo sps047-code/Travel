@@ -294,7 +294,7 @@ Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 </div>
 
 <script>
-const TRIP_JSON_SCHEMA=`Return ONLY a valid JSON object — no markdown, no prose, no code fences. Start with { and end with }.
+const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON object. Do NOT use markdown, code fences, backticks, or any explanatory text. Begin your response with { and end with }. Any character before { or after } will break the app.
 
 {
   "title": "Trip Name",
@@ -393,10 +393,16 @@ async function callGemini(systemPrompt,userPrompt,apiKey){
 }
 
 function parseJsonResponse(text){
-  let t=text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  console.log('[Gemini raw]',text);
+  /* strip all code fences and leading/trailing prose */
+  let t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+  /* find outermost { } */
   const js=t.indexOf('{'),je=t.lastIndexOf('}');
-  if(js!==-1&&je!==-1)t=t.slice(js,je+1);
-  try{return JSON.parse(t)}catch(e){throw new Error('AI returned unexpected format. Please try again.')}
+  if(js!==-1&&je>js)t=t.slice(js,je+1);
+  try{return JSON.parse(t)}catch(e){
+    console.error('[Gemini parse error]',e.message,'\nCleaned text:',t);
+    throw new Error('AI returned unexpected format — check browser console for details. Please try again.');
+  }
 }
 
 function saveTrip(trip,prefix,destName,startDate,endDate){

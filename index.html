@@ -247,9 +247,9 @@ header{
       <div class="wiz-question">Anything else to know?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip, accessibility requirements&#8230;"></textarea>
       <div class="api-key-section" id="api-key-section">
-        <span class="api-key-label">Anthropic API Key</span>
-        <div class="api-key-sub">Used to generate your itinerary with Claude AI. Saved in your browser only &#8212; never sent anywhere except the Anthropic API. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a key &#8594;</a></div>
-        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230;" autocomplete="off"/>
+        <span class="api-key-label">Anthropic API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(optional)</span></span>
+        <div class="api-key-sub">Add a key to let Claude AI fill in your full itinerary with real stops, times, and tips. Without one, we&#8217;ll create a blank trip you can fill in yourself using the place search. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a free key &#8594;</a></div>
+        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230; (leave blank to build manually)" autocomplete="off"/>
       </div>
       <div class="wiz-error" id="wiz-error"></div>
     </div>
@@ -384,7 +384,7 @@ function validateStep(s){
     if(!document.querySelector('#pace-chips .chip.active'))return'Please choose a pace.';
     if(!document.querySelector('#budget-chips .chip.active'))return'Please choose a budget level.';
   }
-  if(s===5&&!document.getElementById('w-api-key').value.trim()&&!getApiKey())return'Please enter your Anthropic API key to generate your trip.';
+  // API key is optional on step 5 — skeleton mode works without one
   return null;
 }
 
@@ -436,9 +436,39 @@ function formatDates(s,e){
   }catch(ex){return s}
 }
 
+async function generateSkeleton(){
+  closeWizard();
+  showLoading();
+  try{
+    // Geocode destination via Nominatim for map center
+    let mapCenter=[20,0],mapZoom=4;
+    try{
+      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(wizData.dest)+'&format=json&limit=1',{headers:{'Accept-Language':'en','Accept':'application/json'}});
+      if(r.ok){const d=await r.json();if(d[0]){mapCenter=[parseFloat(d[0].lat),parseFloat(d[0].lon)];mapZoom=8;}}
+    }catch(e){}
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const startD=wizData.startDate?new Date(wizData.startDate+'T00:00:00'):null;
+    const days=Array.from({length:wizData.days},(_,i)=>{
+      let subtitle=wizData.dest;
+      if(startD){const d=new Date(startD);d.setDate(d.getDate()+i);subtitle=dayNames[d.getDay()]+' '+monthNames[d.getMonth()]+' '+d.getDate()+' • '+wizData.dest;}
+      return{title:'Day '+(i+1)+' — '+wizData.dest,subtitle,tip:'',stops:[]};
+    });
+    const trip={title:wizData.dest+' Trip',mapCenter,mapZoom,days};
+    const slug=wizData.dest.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,28);
+    const id='trip-'+slug+'-'+Date.now().toString(36);
+    localStorage.setItem('tripState_'+id,JSON.stringify(trip));
+    const entry={id,title:trip.title,dates:formatDates(wizData.startDate,wizData.endDate),days:trip.days.length,destinations:[wizData.dest],local:true};
+    const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+    local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
+    hideLoading();
+    window.location.href='trip.html?id='+id;
+  }catch(e){hideLoading();showWizError('Something went wrong: '+e.message);}
+}
+
 async function generateTrip(){
   const apiKey=document.getElementById('w-api-key').value.trim()||getApiKey();
-  if(!apiKey){showWizError('Please enter your Anthropic API key.');return}
+  if(!apiKey){generateSkeleton();return;}
   saveApiKey(apiKey);
   closeWizard();
   showLoading();

@@ -336,9 +336,9 @@ function openKeySettings(){
 }
 
 /* ---- Gemini API call ---- */
-let _geminiModel=null;
-async function discoverGeminiModel(apiKey){
-  if(_geminiModel)return _geminiModel;
+let _geminiModels=null,_geminiModelIdx=0;
+async function discoverGeminiModels(apiKey){
+  if(_geminiModels)return _geminiModels;
   const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
   if(!r.ok){
     const d=await r.json().catch(()=>({}));
@@ -346,37 +346,47 @@ async function discoverGeminiModel(apiKey){
     throw new Error((d.error?.message)||'Could not reach Google AI API ('+r.status+')');
   }
   const d=await r.json();
-  const models=(d.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'));
-  const prefer=['gemini-1.5-flash','gemini-2.0-flash','gemini-1.5-pro','gemini-1.0-pro','gemini-pro'];
-  for(const p of prefer){
-    const m=models.find(m=>m.name.includes(p));
-    if(m){_geminiModel=m.name.replace('models/','');return _geminiModel;}
-  }
-  if(models[0]){_geminiModel=models[0].name.replace('models/','');return _geminiModel;}
-  throw new Error('No compatible Gemini models found for this API key.');
+  const available=(d.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace('models/',''));
+  /* prefer free-tier friendly models first */
+  const prefer=['gemini-1.5-flash-8b','gemini-1.5-flash','gemini-2.0-flash-lite','gemini-1.5-pro','gemini-1.0-pro','gemini-2.0-flash','gemini-pro'];
+  const ordered=[];
+  for(const p of prefer){const m=available.find(n=>n.includes(p));if(m&&!ordered.includes(m))ordered.push(m);}
+  for(const m of available){if(!ordered.includes(m))ordered.push(m);}
+  if(!ordered.length)throw new Error('No compatible Gemini models found for this API key.');
+  _geminiModels=ordered;
+  _geminiModelIdx=0;
+  return _geminiModels;
 }
 
 async function callGemini(systemPrompt,userPrompt,apiKey){
-  const model=await discoverGeminiModel(apiKey);
-  const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+apiKey,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      contents:[{role:'user',parts:[{text:systemPrompt+'\n\n'+userPrompt}]}],
-      generationConfig:{maxOutputTokens:8192,temperature:0.3}
-    })
-  });
-  if(!res.ok){
-    const d=await res.json().catch(()=>({}));
-    const msg=d.error?.message||'HTTP '+res.status;
-    if(res.status===401||res.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
-    if(res.status===429)throw new Error('Quota exceeded: '+msg);
-    throw new Error('API error ('+res.status+'): '+msg);
+  const models=await discoverGeminiModels(apiKey);
+  while(_geminiModelIdx<models.length){
+    const model=models[_geminiModelIdx];
+    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+apiKey,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contents:[{role:'user',parts:[{text:systemPrompt+'\n\n'+userPrompt}]}],
+        generationConfig:{maxOutputTokens:8192,temperature:0.3}
+      })
+    });
+    if(!res.ok){
+      const d=await res.json().catch(()=>({}));
+      const msg=d.error?.message||'HTTP '+res.status;
+      if(res.status===401||res.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
+      if(res.status===429||res.status===403){
+        /* quota hit on this model — try the next one */
+        _geminiModelIdx++;
+        continue;
+      }
+      throw new Error('API error ('+res.status+'): '+msg);
+    }
+    const data=await res.json();
+    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    if(!text)throw new Error('Empty response from AI. Please try again.');
+    return text;
   }
-  const data=await res.json();
-  const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-  if(!text)throw new Error('Empty response from AI. Please try again.');
-  return text;
+  throw new Error('All available Gemini models have exceeded their quota. Please try again tomorrow or upgrade your Google AI plan.');
 }
 
 function parseJsonResponse(text){

@@ -211,7 +211,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <a href="index.html" class="back-link">&#8592; All Trips</a>
   </div>
 </header>
-<div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08)"><div class="tabs" id="tabs-inner"></div></div>
+<div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch;position:relative">
+  <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
+  <div class="tabs" id="tabs-inner" style="flex:1;min-width:0"></div>
+  <button id="tabs-scroll-right" onclick="tabsScroll(1)" style="display:none;flex-shrink:0;background:linear-gradient(to left,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 8px 0 10px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8250;</button>
+</div>
 <div class="map-legend">
   <span class="legend-item"><span class="legend-dot" style="background:var(--ruby)"></span>Hike</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span>Food</span>
@@ -440,6 +444,19 @@ async function renderDayMap(idx){
   }catch(e){st.style.display='none'}
 }
 
+function tabsScroll(dir){
+  const bar=document.getElementById('tabs-inner');
+  bar.scrollBy({left:dir*160,behavior:'smooth'});
+}
+function updateTabScrollBtns(){
+  const bar=document.getElementById('tabs-inner');
+  const btnL=document.getElementById('tabs-scroll-left');
+  const btnR=document.getElementById('tabs-scroll-right');
+  if(!bar||!btnL||!btnR)return;
+  const overflows=bar.scrollWidth>bar.clientWidth+4;
+  btnL.style.display=overflows?'block':'none';
+  btnR.style.display=overflows?'block':'none';
+}
 function renderTabs(){
   const bar=document.getElementById('tabs-inner');bar.innerHTML='';
   const ov=document.createElement('div');
@@ -456,6 +473,11 @@ function renderTabs(){
   const add=document.createElement('button');
   add.className='tab-add';add.title='Add day';add.innerHTML='+';add.onclick=addDay;
   bar.appendChild(add);
+  requestAnimationFrame(()=>{
+    updateTabScrollBtns();
+    const active=bar.querySelector('.tab-item.active');
+    if(active)active.scrollIntoView({block:'nearest',inline:'nearest'});
+  });
 }
 
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
@@ -493,7 +515,7 @@ function renderPanel(idx){
       }
     }
   });
-  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
+  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+' " id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     '<div class="timeline">'+cards+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
@@ -802,7 +824,7 @@ function renderOverview(){
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
+    '<div class="check-item'+(item.done?' done':'')+' " id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
     (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
@@ -833,7 +855,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -866,6 +888,7 @@ async function init(){
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;
   renderAll();renderOverviewMap();loadTimezones();
+  new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
 }
 init();
 </script>

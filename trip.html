@@ -88,6 +88,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .badge-alt{background:rgba(43,108,176,0.10);color:var(--river)}
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:4px}
 .add-stop-btn:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
+.leg-connector{display:flex;align-items:center;gap:6px;padding:3px 0;margin:-2px 0 2px 0;font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:0.01em}
+.leg-connector-arrow{color:var(--border);font-size:10px;flex-shrink:0}
+.card-btn.edit-btn:hover{background:var(--river-tint);color:var(--river)}
 .pro-tip{background:linear-gradient(135deg,rgba(194,59,59,0.07) 0%,rgba(46,125,82,0.05) 100%);border:1.5px solid rgba(194,59,59,0.18);border-radius:var(--radius-md);padding:14px 18px;margin-top:20px}
 .pro-tip-label{font-family:var(--font-ui);font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--ruby);display:block;margin-bottom:5px}
 .pro-tip p{font-family:var(--font-ui);font-size:13px;line-height:1.55;color:var(--ink-soft)}
@@ -207,13 +210,30 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 <script>
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
-let state,currentDayIdx=0,addingToDay=0;
+let state,currentDayIdx=0,addingToDay=0,editingStop=null;
 function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}}
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7"};
+
+function haversine(la1,lo1,la2,lo2){
+  const R=3959,r=Math.PI/180;
+  const dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function legLabel(a,b){
+  if(!a.lat||!a.lng||!b.lat||!b.lng)return'';
+  const dist=haversine(a.lat,a.lng,b.lat,b.lng);
+  if(dist<0.3)return'';
+  const mi=dist<10?dist.toFixed(1):Math.round(dist);
+  const isFlight=a.type==='flight'||b.type==='flight';
+  const mins=Math.round(dist/(isFlight?8:1.15));
+  const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
+  return mi+' mi · '+tStr+(isFlight?' flight':' drive');
+}
 
 function makeIcon(num,color,isAlt){
   const op=isAlt?0.6:1;
@@ -304,6 +324,7 @@ function renderPanel(idx){
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
+      '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
       '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
@@ -315,6 +336,7 @@ function renderPanel(idx){
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '</div>';
+    if(!isLast){const leg=legLabel(s,day.stops[si+1]);if(leg)cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+leg+'</div>';}
   });
   return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
@@ -397,15 +419,38 @@ function deleteStop(dayIdx,stopIdx){
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
+function setModalMode(isEdit){
+  document.querySelector('#modal-overlay .modal-title').textContent=isEdit?'Edit Stop':'Add a Stop';
+  document.querySelector('#modal-overlay .btn-primary').textContent=isEdit?'Save Changes':'Add Stop';
+}
 function openAddStopModal(dayIdx){
-  addingToDay=dayIdx;
+  editingStop=null;addingToDay=dayIdx;
   ['place-search','f-name','f-time','f-stars','f-lat','f-lng','f-notes'].forEach(id=>{document.getElementById(id).value=''});
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
+  setModalMode(false);
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('place-search').focus(),100);
+}
+function openEditStopModal(dayIdx,stopIdx){
+  editingStop={dayIdx,stopIdx};addingToDay=dayIdx;
+  const s=state.days[dayIdx].stops[stopIdx];
+  document.getElementById('place-search').value='';
+  document.getElementById('f-name').value=s.name||'';
+  document.getElementById('f-time').value=s.time||'';
+  document.getElementById('f-type').value=s.type||'hike';
+  document.getElementById('f-stars').value=s.stars||'';
+  document.getElementById('f-lat').value=s.lat||'';
+  document.getElementById('f-lng').value=s.lng||'';
+  document.getElementById('f-notes').value=s.notes||'';
+  document.getElementById('f-alt').checked=!!s.alt;
+  document.getElementById('search-results').innerHTML='';
+  document.getElementById('search-results').classList.remove('open');
+  setModalMode(true);
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('f-name').focus(),100);
 }
 
 function closeModal(){document.getElementById('modal-overlay').classList.remove('open')}
@@ -464,15 +509,11 @@ function saveStop(){
   if(isNaN(lat)||isNaN(lng)){alert('Please select a search result or enter valid coordinates.');return}
   if(Math.abs(lat)>90&&Math.abs(lng)<=90){[lat,lng]=[lng,lat];}
   if(Math.abs(lat)>90||Math.abs(lng)>180){alert('Coordinates appear invalid. Lat must be -90 to 90, Lng must be -180 to 180.');return}
-  state.days[addingToDay].stops.push({
-    name,lat,lng,
-    type:document.getElementById('f-type').value,
-    time:document.getElementById('f-time').value.trim(),
-    stars:document.getElementById('f-stars').value.trim()||null,
-    notes:document.getElementById('f-notes').value.trim(),
-    alt:document.getElementById('f-alt').checked
-  });
-  saveState();closeModal();renderAll();if(addingToDay===currentDayIdx)renderDayMap(currentDayIdx);
+  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),alt:document.getElementById('f-alt').checked};
+  const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
+  if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
+  else{state.days[addingToDay].stops.push(stop);}
+  saveState();closeModal();renderAll();if(affectedDay===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
 async function init(){

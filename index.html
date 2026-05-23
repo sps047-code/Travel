@@ -298,7 +298,7 @@ const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON
 
 {
   "title": "Trip Name",
-  "mapCenter": [latitude, longitude],
+  "mapCenter": [36.27, -112.86],
   "mapZoom": 7,
   "days": [
     {
@@ -306,7 +306,7 @@ const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON
       "subtitle": "Mon Jun 6 • Key theme of the day",
       "tip": "A genuinely useful local insider tip",
       "stops": [
-        {"name":"Stop Name","lat":36.1984,"lng":-95.8881,"type":"hike","time":"9:00 AM","stars":"4.8","notes":"Details"}
+        {"name":"Stop Name","lat":36.1984,"lng":-112.8812,"type":"hike","time":"9:00 AM","stars":"4.8","notes":"Details"}
       ]
     }
   ]
@@ -314,7 +314,7 @@ const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON
 
 Rules:
 1. "type" must be exactly one of: hike, food, lodge, drive, flight, train
-2. "lat"/"lng" must be real WGS84 coordinates — never 0,0
+2. "lat"/"lng" must be real numeric WGS84 coordinates — never 0, never strings, never the word "latitude"
 3. "stars" is a string like "4.5" or null
 4. Each day: 4-8 stops in chronological order, end with lodge unless flying home
 5. "tip": a genuinely useful local insider tip
@@ -394,14 +394,26 @@ async function callGemini(systemPrompt,userPrompt,apiKey){
 
 function parseJsonResponse(text){
   console.log('[Gemini raw]',text);
-  /* strip all code fences and leading/trailing prose */
+  /* strip code fences */
   let t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
-  /* find outermost { } */
+  /* extract outermost { } */
   const js=t.indexOf('{'),je=t.lastIndexOf('}');
   if(js!==-1&&je>js)t=t.slice(js,je+1);
-  try{return JSON.parse(t)}catch(e){
-    console.error('[Gemini parse error]',e.message,'\nCleaned text:',t);
-    throw new Error('AI returned unexpected format — check browser console for details. Please try again.');
+  /* try direct parse */
+  try{return JSON.parse(t)}catch(e1){}
+  /* auto-repair common issues */
+  let fixed=t
+    .replace(/,\s*([}\]])/g,'$1')                    /* trailing commas */
+    .replace(/:\s*(latitude|longitude)\b/gi,':0')     /* literal placeholder words */
+    .replace(/\bundefined\b/g,'null')
+    .replace(/\bNaN\b/g,'null')
+    .replace(/\bInfinity\b/g,'null')
+    .replace(/\/\/[^\n]*/g,'')                        /* // comments */
+    .replace(/\/\*[\s\S]*?\*\//g,'');                 /* /* comments */
+  try{return JSON.parse(fixed)}catch(e2){
+    console.error('[Gemini parse error]',e2.message,'\nRaw:',text.slice(0,800));
+    const snippet=text.slice(0,200).replace(/</g,'&lt;');
+    throw new Error('AI returned unexpected format. Open browser DevTools → Console to see full response. Preview: "'+snippet+'"');
   }
 }
 

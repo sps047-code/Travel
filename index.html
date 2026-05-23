@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -34,6 +33,9 @@ header{
 .brand-name-text{font-family:var(--font-display);font-size:24px;font-weight:600;color:#FDFCFA;letter-spacing:0.10em;text-transform:uppercase;line-height:1;animation:brandFadeUp 0.36s ease-out 0.18s both}
 .brand-bar{width:36px;height:3px;background:linear-gradient(to right,var(--ruby),var(--pine),var(--river));border-radius:2px;margin-top:6px;animation:brandFadeUp 0.36s ease-out 0.22s both}
 .brand-tagline-text{font-family:var(--font-ui);font-size:10px;font-weight:400;color:rgba(253,252,250,0.38);letter-spacing:0.16em;text-transform:uppercase;animation:brandFadeUp 0.32s ease-out 0.28s both}
+.header-right{display:flex;align-items:center;gap:12px}
+.api-settings-btn{background:transparent;border:1px solid rgba(253,252,250,0.18);border-radius:var(--radius-sm);color:rgba(253,252,250,0.50);font-size:12px;font-family:var(--font-ui);cursor:pointer;padding:5px 11px;transition:all 0.2s;white-space:nowrap}
+.api-settings-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.40)}
 @keyframes leafDrop{from{opacity:0;transform:scale(0.82) translateY(-8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes brandFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .page{max-width:960px;margin:0 auto;padding:36px 20px 64px}
@@ -51,13 +53,89 @@ header{
 .trip-card-footer{padding:0 18px 18px}
 .view-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:11px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:background 0.2s;letter-spacing:0.02em}
 .view-btn:hover{background:var(--ink-soft)}
-.add-card{background:transparent;border:2px dashed var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:44px 20px;cursor:pointer;transition:all 0.2s;text-decoration:none;color:var(--muted);min-height:200px}
+.add-card{background:transparent;border:2px dashed var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:44px 20px;cursor:pointer;transition:all 0.2s;color:var(--muted);min-height:200px;font-family:inherit;width:100%}
 .add-card:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
 .add-icon{width:44px;height:44px;border-radius:50%;background:rgba(194,59,59,0.08);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--ruby);transition:background 0.2s}
 .add-card:hover .add-icon{background:rgba(194,59,59,0.18)}
 .add-label{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:0.01em}
 .add-sub{font-family:var(--font-ui);font-size:12px;opacity:0.7;text-align:center}
-@media(max-width:480px){header{padding:14px 14px 12px}.page{padding:20px 12px 48px}}
+
+/* === AI Trip Wizard === */
+.wizard-overlay{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.68);z-index:9000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
+.wizard-overlay.open{display:flex}
+.wizard-card{background:var(--paper);border-radius:var(--radius-xl);padding:36px 40px 32px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 16px 60px rgba(26,35,50,0.35);position:relative;animation:wizIn 0.24s cubic-bezier(0.34,1.2,0.64,1)}
+@keyframes wizIn{from{opacity:0;transform:scale(0.95) translateY(14px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.wizard-close{position:absolute;top:16px;right:18px;background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--muted);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s}
+.wizard-close:hover{background:var(--ruby-tint);color:var(--ruby)}
+.wiz-progress{display:flex;align-items:center;gap:7px;margin-bottom:30px}
+.wiz-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:all 0.28s}
+.wiz-dot.active{background:var(--ruby);transform:scale(1.35)}
+.wiz-dot.done{background:var(--pine)}
+.wiz-step{display:none}
+.wiz-step.active{display:block}
+.wiz-emoji{font-size:38px;margin-bottom:10px;line-height:1;display:block}
+.wiz-question{font-family:var(--font-display);font-size:clamp(20px,4.5vw,26px);font-weight:600;color:var(--ink);letter-spacing:0.01em;line-height:1.25;margin-bottom:20px}
+.wiz-sublabel{font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin:22px 0 11px}
+.wiz-input{width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:15px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s}
+.wiz-input:focus{border-color:var(--ruby)}
+.wiz-input::placeholder{color:rgba(110,101,88,0.45)}
+.wiz-date-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;margin-top:10px}
+.wiz-date-sep{font-family:var(--font-ui);font-size:13px;color:var(--muted);text-align:center}
+.wiz-input-date{width:100%;padding:11px 12px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s}
+.wiz-input-date:focus{border-color:var(--ruby)}
+.stepper{display:inline-flex;align-items:center;border:2px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.stepper-btn{width:46px;height:46px;background:transparent;border:none;cursor:pointer;font-size:22px;color:var(--ink);display:flex;align-items:center;justify-content:center;transition:background 0.18s;font-family:var(--font-ui);line-height:1}
+.stepper-btn:hover:not(:disabled){background:var(--mist)}
+.stepper-btn:disabled{color:var(--border);cursor:default}
+.stepper-val{font-family:var(--font-display);font-size:28px;font-weight:600;color:var(--ink);min-width:60px;text-align:center;padding:4px 8px;line-height:1}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--font-ui);font-size:13px;font-weight:500;padding:9px 17px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);cursor:pointer;transition:all 0.18s;line-height:1.2;text-align:left}
+.chip:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
+.chip.active{background:var(--ruby);border-color:var(--ruby);color:white}
+.chip.multi:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
+.chip.multi.active{background:var(--river);border-color:var(--river);color:white}
+.wiz-textarea{width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s;resize:vertical;min-height:90px;line-height:1.55}
+.wiz-textarea:focus{border-color:var(--ruby)}
+.wiz-textarea::placeholder{color:rgba(110,101,88,0.45)}
+.api-key-section{margin-top:22px;padding-top:20px;border-top:1px solid var(--border)}
+.api-key-label{font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;display:block;margin-bottom:7px}
+.api-key-sub{font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55}
+.api-key-sub a{color:var(--river);text-decoration:none}
+.api-key-sub a:hover{text-decoration:underline}
+.wiz-error{background:rgba(194,59,59,0.09);border:1.5px solid rgba(194,59,59,0.28);border-radius:var(--radius-md);padding:13px 16px;margin-top:18px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);line-height:1.5;display:none}
+.wiz-error.visible{display:block}
+.wiz-nav{display:flex;gap:10px;margin-top:30px;align-items:center}
+.wiz-back-btn{padding:12px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+.wiz-back-btn:hover{border-color:var(--ruby);color:var(--ruby)}
+.wiz-next-btn{flex:1;padding:13px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.2s;letter-spacing:0.02em}
+.wiz-next-btn:hover{background:var(--ink-soft)}
+.wiz-next-btn.generate{background:var(--ruby)}
+.wiz-next-btn.generate:hover{background:#A83232}
+
+/* === Loading Overlay === */
+.ai-loading{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.94);z-index:9100;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px}
+.ai-loading.open{display:flex}
+.loading-leaf{animation:leafGlow 2.2s ease-in-out infinite}
+@keyframes leafGlow{0%,100%{transform:scale(1) translateY(0);filter:brightness(1)}50%{transform:scale(1.07) translateY(-5px);filter:brightness(1.15)}}
+.loading-title{font-family:var(--font-display);font-size:28px;font-weight:600;color:#FDFCFA;letter-spacing:0.02em;text-align:center}
+.loading-sub{font-family:var(--font-ui);font-size:14px;color:rgba(253,252,250,0.50);transition:opacity 0.45s;text-align:center;min-height:22px}
+.loading-dots{display:flex;gap:9px}
+.loading-dot{width:9px;height:9px;border-radius:50%;background:rgba(253,252,250,0.28);animation:dotPop 1.5s ease-in-out infinite}
+.loading-dot:nth-child(2){animation-delay:0.2s}
+.loading-dot:nth-child(3){animation-delay:0.4s}
+@keyframes dotPop{0%,80%,100%{transform:scale(0.7);opacity:0.35}40%{transform:scale(1.1);opacity:1}}
+
+@media(max-width:560px){
+  .wizard-card{padding:28px 22px 26px;border-radius:var(--radius-lg)}
+  .wiz-question{font-size:20px}
+  .wiz-date-row{grid-template-columns:1fr;gap:8px}
+  .wiz-date-sep{display:none}
+}
+@media(max-width:480px){
+  header{padding:14px 14px 12px}
+  .page{padding:20px 12px 48px}
+  .api-settings-btn{display:none}
+}
 </style>
 </head>
 <body>
@@ -70,42 +148,380 @@ header{
         <div class="brand-bar"></div>
       </div>
     </div>
-    <span class="brand-tagline-text">Searles Family Trips</span>
+    <div class="header-right">
+      <button class="api-settings-btn" onclick="openApiKeySettings()">&#9881; API Key</button>
+      <span class="brand-tagline-text">Searles Family Trips</span>
+    </div>
   </div>
 </header>
+
 <div class="page">
   <div class="section-title">Upcoming &amp; Recent Trips</div>
   <div class="trips-grid" id="trips-grid">
     <div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px">Loading trips...</div>
   </div>
 </div>
+
+<!-- AI Trip Wizard -->
+<div class="wizard-overlay" id="wizard-overlay">
+  <div class="wizard-card">
+    <button class="wizard-close" onclick="closeWizard()" title="Close">&times;</button>
+
+    <div class="wiz-progress">
+      <div class="wiz-dot active"></div>
+      <div class="wiz-dot"></div>
+      <div class="wiz-dot"></div>
+      <div class="wiz-dot"></div>
+      <div class="wiz-dot"></div>
+    </div>
+
+    <!-- Step 1: Destination + Dates -->
+    <div class="wiz-step active" id="wstep-1">
+      <span class="wiz-emoji">&#127758;</span>
+      <div class="wiz-question">Where are you headed?</div>
+      <input type="text" class="wiz-input" id="w-dest" placeholder="Utah's national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
+      <div class="wiz-sublabel">When are you going?</div>
+      <div class="wiz-date-row">
+        <input type="date" class="wiz-input-date" id="w-start"/>
+        <div class="wiz-date-sep">to</div>
+        <input type="date" class="wiz-input-date" id="w-end"/>
+      </div>
+    </div>
+
+    <!-- Step 2: Days + Who -->
+    <div class="wiz-step" id="wstep-2">
+      <span class="wiz-emoji">&#128197;</span>
+      <div class="wiz-question">How long is the trip?</div>
+      <div class="stepper">
+        <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)">&#8722;</button>
+        <div class="stepper-val" id="days-val">3</div>
+        <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)">+</button>
+      </div>
+      <div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:8px">days</div>
+      <div class="wiz-sublabel">Who&#8217;s coming?</div>
+      <div class="chip-row" id="who-chips">
+        <button class="chip" data-group="who" data-val="just the two of us">Just the two of us</button>
+        <button class="chip" data-group="who" data-val="family with kids">Family with kids</button>
+        <button class="chip" data-group="who" data-val="friends group">Friends group</button>
+        <button class="chip" data-group="who" data-val="solo adventure">Solo adventure</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Activities (multi-select) -->
+    <div class="wiz-step" id="wstep-3">
+      <span class="wiz-emoji">&#127752;</span>
+      <div class="wiz-question">What do you love? Pick all that apply.</div>
+      <div class="chip-row" id="activities-chips">
+        <button class="chip multi" data-val="hiking and national parks">&#129097; Hiking &amp; Parks</button>
+        <button class="chip multi" data-val="fine dining and local food">&#127829; Fine Dining</button>
+        <button class="chip multi" data-val="city exploring and neighborhoods">&#127963; City Exploring</button>
+        <button class="chip multi" data-val="scenic drives and road trips">&#128663; Scenic Drives</button>
+        <button class="chip multi" data-val="museums and history">&#127963; Museums &amp; History</button>
+        <button class="chip multi" data-val="beach and water activities">&#127958; Beach &amp; Water</button>
+        <button class="chip multi" data-val="shopping and markets">&#128717; Shopping</button>
+        <button class="chip multi" data-val="photography and viewpoints">&#128247; Photography</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Pace + Budget -->
+    <div class="wiz-step" id="wstep-4">
+      <span class="wiz-emoji">&#9889;</span>
+      <div class="wiz-question">What&#8217;s your travel style?</div>
+      <div class="wiz-sublabel">Pace</div>
+      <div class="chip-row" id="pace-chips">
+        <button class="chip" data-group="pace" data-val="relaxed, 2-3 stops per day, lots of downtime">&#128524; Easy-going</button>
+        <button class="chip" data-group="pace" data-val="balanced, 4-5 stops per day">&#9878;&#65039; Balanced</button>
+        <button class="chip" data-group="pace" data-val="adventure mode, pack in as much as possible, 6-8 stops per day">&#127939; Adventure mode</button>
+      </div>
+      <div class="wiz-sublabel">Budget</div>
+      <div class="chip-row" id="budget-chips">
+        <button class="chip" data-group="budget" data-val="budget-friendly, keeping costs low">&#128176; Budget-friendly</button>
+        <button class="chip" data-group="budget" data-val="mid-range, comfortable but not extravagant">&#128179; Mid-range</button>
+        <button class="chip" data-group="budget" data-val="splurge-worthy, best experiences money can buy">&#10024; Splurge-worthy</button>
+      </div>
+    </div>
+
+    <!-- Step 5: Notes + API Key -->
+    <div class="wiz-step" id="wstep-5">
+      <span class="wiz-emoji">&#128221;</span>
+      <div class="wiz-question">Anything else to know?</div>
+      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip, accessibility requirements&#8230;"></textarea>
+      <div class="api-key-section" id="api-key-section">
+        <span class="api-key-label">Anthropic API Key</span>
+        <div class="api-key-sub">Used to generate your itinerary with Claude AI. Saved in your browser only &#8212; never sent anywhere except the Anthropic API. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a key &#8594;</a></div>
+        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230;" autocomplete="off"/>
+      </div>
+      <div class="wiz-error" id="wiz-error"></div>
+    </div>
+
+    <div class="wiz-nav">
+      <button class="wiz-back-btn" id="wiz-back-btn" onclick="wizBack()" style="display:none">&#8592; Back</button>
+      <button class="wiz-next-btn" id="wiz-next-btn" onclick="wizNext()">Next &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div class="ai-loading" id="ai-loading">
+  <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt=""/>
+  <div class="loading-title">Planning your adventure&#8230;</div>
+  <div class="loading-sub" id="loading-sub">Claude is crafting your itinerary</div>
+  <div class="loading-dots">
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+  </div>
+</div>
+
 <script>
+const SYSTEM_PROMPT=`You are a meticulous trip planner. Given the user's preferences, return ONLY a valid JSON object — no markdown, no prose, no code fences. Start with { and end with }.
+
+Return this exact structure:
+{
+  "title": "Trip Name",
+  "mapCenter": [latitude, longitude],
+  "mapZoom": 7,
+  "days": [
+    {
+      "title": "Day 1 — Descriptive Name",
+      "subtitle": "Mon Jun 6 • Key theme of the day",
+      "tip": "A genuinely useful local insider tip",
+      "stops": [
+        {
+          "name": "Stop Name",
+          "lat": 36.1984,
+          "lng": -95.8881,
+          "type": "hike",
+          "time": "9:00 AM",
+          "stars": "4.8",
+          "notes": "Helpful details about this stop"
+        }
+      ]
+    }
+  ]
+}
+
+Strict rules:
+1. "type" must be exactly one of: hike, food, lodge, drive, flight
+2. "lat" and "lng" must be real, accurate WGS84 coordinates — never 0,0 or invented values
+3. "stars" is a string like "4.5" or null if not rateable
+4. Each day should have 4-8 stops in chronological order from morning to night
+5. End most days with a lodge stop (unless the final day ends flying home)
+6. "tip" must be a genuinely useful local insider tip, not generic travel advice
+7. "mapCenter" is the geographic center of the full trip area
+8. "mapZoom" is 6-10 depending on geographic spread (6=continent, 8=region, 10=single city)
+9. Day titles must start with "Day N — " followed by a descriptive subtitle
+10. Day "subtitle" should be concise: day of week, date if known, and the key theme
+11. Include flight stops if the user is flying to or between destinations
+12. Return ONLY the JSON — nothing before or after`;
+
+const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…'];
+
+let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''},loadingTimer=null;
+
+function getApiKey(){return(window.VITE_ANTHROPIC_API_KEY||window.ANTHROPIC_API_KEY||localStorage.getItem('anthropic_api_key')||'').trim()}
+function saveApiKey(k){if(k)localStorage.setItem('anthropic_api_key',k.trim())}
+
+function openApiKeySettings(){
+  const cur=getApiKey(),masked=cur?cur.slice(0,8)+'…':'';
+  const nk=prompt('Anthropic API Key'+(masked?' (current: '+masked+')':'')+'\n\nGet a key at console.anthropic.com/settings/keys','');
+  if(nk!==null&&nk.trim()){saveApiKey(nk);alert('API key saved!')}
+}
+
+function openWizard(){
+  wizStep=1;
+  wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''};
+  ['w-dest','w-start','w-end','w-notes','w-api-key'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('days-val').textContent='3';
+  document.getElementById('wiz-error').classList.remove('visible');
+  document.getElementById('wiz-error').textContent='';
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('api-key-section').style.display=getApiKey()?'none':'block';
+  showWizStep(1);
+  document.getElementById('wizard-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('w-dest').focus(),150);
+}
+
+function closeWizard(){document.getElementById('wizard-overlay').classList.remove('open')}
+
+function showWizStep(n){
+  wizStep=n;
+  document.querySelectorAll('.wiz-step').forEach(el=>el.classList.remove('active'));
+  document.getElementById('wstep-'+n).classList.add('active');
+  document.querySelectorAll('.wiz-dot').forEach((d,i)=>{
+    d.classList.remove('active','done');
+    if(i+1<n)d.classList.add('done');
+    if(i+1===n)d.classList.add('active');
+  });
+  document.getElementById('wiz-back-btn').style.display=n>1?'block':'none';
+  const btn=document.getElementById('wiz-next-btn');
+  btn.textContent=n===5?'✨ Generate My Trip':'Next →';
+  btn.classList.toggle('generate',n===5);
+}
+
+function adjustDays(d){
+  wizData.days=Math.max(1,Math.min(14,wizData.days+d));
+  document.getElementById('days-val').textContent=wizData.days;
+  document.getElementById('days-minus').disabled=wizData.days<=1;
+  document.getElementById('days-plus').disabled=wizData.days>=14;
+}
+
+function wizBack(){hideWizError();if(wizStep>1)showWizStep(wizStep-1)}
+
+function wizNext(){
+  const err=validateStep(wizStep);
+  if(err){showWizError(err);return}
+  collectStepData(wizStep);
+  hideWizError();
+  if(wizStep===5)generateTrip();
+  else showWizStep(wizStep+1);
+}
+
+function validateStep(s){
+  if(s===1&&!document.getElementById('w-dest').value.trim())return'Please enter a destination.';
+  if(s===2&&!document.querySelector('#who-chips .chip.active'))return'Please select who\'s coming.';
+  if(s===4){
+    if(!document.querySelector('#pace-chips .chip.active'))return'Please choose a pace.';
+    if(!document.querySelector('#budget-chips .chip.active'))return'Please choose a budget level.';
+  }
+  if(s===5&&!document.getElementById('w-api-key').value.trim()&&!getApiKey())return'Please enter your Anthropic API key to generate your trip.';
+  return null;
+}
+
+function collectStepData(s){
+  if(s===1){wizData.dest=document.getElementById('w-dest').value.trim();wizData.startDate=document.getElementById('w-start').value;wizData.endDate=document.getElementById('w-end').value}
+  if(s===2){wizData.days=parseInt(document.getElementById('days-val').textContent,10);const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val}
+  if(s===3)wizData.activities=[...document.querySelectorAll('#activities-chips .chip.active')].map(c=>c.dataset.val);
+  if(s===4){const p=document.querySelector('#pace-chips .chip.active'),b=document.querySelector('#budget-chips .chip.active');if(p)wizData.pace=p.dataset.val;if(b)wizData.budget=b.dataset.val}
+  if(s===5){wizData.notes=document.getElementById('w-notes').value.trim();const k=document.getElementById('w-api-key').value.trim();if(k)saveApiKey(k)}
+}
+
+function showWizError(m){const e=document.getElementById('wiz-error');e.textContent=m;e.classList.add('visible')}
+function hideWizError(){const e=document.getElementById('wiz-error');e.classList.remove('visible');e.textContent=''}
+
+function buildPrompt(){
+  const l=['Destination: '+wizData.dest];
+  if(wizData.startDate&&wizData.endDate)l.push('Dates: '+wizData.startDate+' to '+wizData.endDate);
+  else if(wizData.startDate)l.push('Start date: '+wizData.startDate);
+  l.push('Number of days: '+wizData.days);
+  if(wizData.who)l.push('Traveling: '+wizData.who);
+  if(wizData.activities.length)l.push('Interests: '+wizData.activities.join(', '));
+  if(wizData.pace)l.push('Pace: '+wizData.pace);
+  if(wizData.budget)l.push('Budget: '+wizData.budget);
+  if(wizData.notes)l.push('Special notes: '+wizData.notes);
+  return l.join('\n');
+}
+
+function showLoading(){
+  document.getElementById('ai-loading').classList.add('open');
+  const sub=document.getElementById('loading-sub');
+  let i=0;sub.textContent='Claude is crafting your itinerary';
+  loadingTimer=setInterval(()=>{
+    sub.style.opacity='0';
+    setTimeout(()=>{i=(i+1)%LOADING_MSGS.length;sub.textContent=LOADING_MSGS[i];sub.style.opacity='1'},400);
+  },2800);
+}
+
+function hideLoading(){
+  document.getElementById('ai-loading').classList.remove('open');
+  if(loadingTimer){clearInterval(loadingTimer);loadingTimer=null}
+}
+
+function formatDates(s,e){
+  if(!s)return'';
+  try{
+    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const fmt=d=>{const[y,m,dd]=d.split('-');return months[+m-1]+' '+parseInt(dd)};
+    return(s&&e)?fmt(s)+'–'+fmt(e)+', '+s.split('-')[0]:fmt(s);
+  }catch(ex){return s}
+}
+
+async function generateTrip(){
+  const apiKey=document.getElementById('w-api-key').value.trim()||getApiKey();
+  if(!apiKey){showWizError('Please enter your Anthropic API key.');return}
+  saveApiKey(apiKey);
+  closeWizard();
+  showLoading();
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:SYSTEM_PROMPT,messages:[{role:'user',content:buildPrompt()}]})
+    });
+    if(!res.ok){
+      const d=await res.json().catch(()=>({}));
+      if(res.status===401)throw new Error('Invalid API key. Please check your key and try again.');
+      if(res.status===429)throw new Error('Rate limit reached. Please wait a moment and try again.');
+      throw new Error(d.error?.message||'Request failed (HTTP '+res.status+')');
+    }
+    const data=await res.json();
+    let text=(data.content[0]?.text||'').trim();
+    text=text.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+    const js=text.indexOf('{'),je=text.lastIndexOf('}');
+    if(js!==-1&&je!==-1)text=text.slice(js,je+1);
+    let trip;
+    try{trip=JSON.parse(text)}catch(e){throw new Error('The AI returned an unexpected format. Please try again.')}
+    if(!trip.days||!Array.isArray(trip.days)||!trip.days.length)throw new Error('The AI returned an empty itinerary. Try adding more details and generate again.');
+    const slug=wizData.dest.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,28);
+    const id='ai-'+slug+'-'+Date.now().toString(36);
+    localStorage.setItem('tripState_'+id,JSON.stringify(trip));
+    const entry={id,title:trip.title||wizData.dest+' Trip',dates:formatDates(wizData.startDate,wizData.endDate),days:trip.days.length,destinations:[wizData.dest],local:true};
+    const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+    local.push(entry);
+    localStorage.setItem('localTrips',JSON.stringify(local));
+    hideLoading();
+    window.location.href='trip.html?id='+id;
+  }catch(e){
+    hideLoading();
+    document.getElementById('api-key-section').style.display='block';
+    document.getElementById('wizard-overlay').classList.add('open');
+    showWizStep(5);
+    showWizError(e.message||'Something went wrong. Please try again.');
+  }
+}
+
+// Chip handlers
+document.querySelectorAll('.chip[data-group]').forEach(btn=>{
+  btn.addEventListener('click',function(){
+    document.querySelectorAll(`.chip[data-group="${this.dataset.group}"]`).forEach(b=>b.classList.remove('active'));
+    this.classList.add('active');hideWizError();
+  });
+});
+document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
+
+document.getElementById('wizard-overlay').addEventListener('click',function(e){if(e.target===this)closeWizard()});
+
+document.addEventListener('keydown',function(e){
+  if(!document.getElementById('wizard-overlay').classList.contains('open'))return;
+  if(e.key==='Escape'){closeWizard();return}
+  if(e.key==='Enter'&&document.activeElement?.tagName!=='TEXTAREA')wizNext();
+});
+
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
-  try{
-    const r=await fetch('trips/manifest.json');
-    const trips=await r.json();
-    grid.innerHTML=trips.map(t=>`
-      <a class="trip-card" href="trip.html?id=${t.id}">
-        <div class="trip-card-banner"></div>
-        <div class="trip-card-body">
-          <div class="trip-card-title">${t.title}</div>
-          <div class="trip-card-meta">
-            <span class="trip-meta-pill">${t.dates}</span>
-            <span class="trip-meta-pill">${t.days} Days</span>
-          </div>
-          <div class="trip-destinations">${t.destinations.map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
+  let serverTrips=[];
+  try{const r=await fetch('trips/manifest.json');if(r.ok)serverTrips=await r.json()}catch(e){}
+  const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+  const all=[...serverTrips,...local];
+  grid.innerHTML=all.map(t=>`
+    <a class="trip-card" href="trip.html?id=${t.id}">
+      <div class="trip-card-banner"></div>
+      <div class="trip-card-body">
+        <div class="trip-card-title">${t.title}</div>
+        <div class="trip-card-meta">
+          ${t.dates?`<span class="trip-meta-pill">${t.dates}</span>`:''}
+          <span class="trip-meta-pill">${t.days} Days</span>
+          ${t.local?'<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">AI</span>':''}
         </div>
-        <div class="trip-card-footer"><span class="view-btn">View Itinerary &rarr;</span></div>
-      </a>`).join('')+`
-      <a class="add-card" href="#" onclick="alert('Coming soon!');return false">
-        <div class="add-icon">+</div>
-        <div class="add-label">Add a New Trip</div>
-        <div class="add-sub">Plan your next adventure</div>
-      </a>`;
-  }catch(e){
-    grid.innerHTML='<div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px">Could not load trips.</div>';
-  }
+        <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
+      </div>
+      <div class="trip-card-footer"><span class="view-btn">View Itinerary &rarr;</span></div>
+    </a>`).join('')+`
+    <button class="add-card" onclick="openWizard()">
+      <div class="add-icon">+</div>
+      <div class="add-label">Plan a New Trip</div>
+      <div class="add-sub">Let AI build your itinerary</div>
+    </button>`;
 }
 loadTrips();
 </script>

@@ -95,6 +95,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .leg-connector{display:flex;align-items:center;gap:6px;padding:3px 0;margin:-2px 0 2px 0;font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:0.01em}
 .leg-connector-arrow{color:var(--border);font-size:10px;flex-shrink:0}
 .card-btn.edit-btn:hover{background:var(--river-tint);color:var(--river)}
+.stop-img-wrap{margin:10px -1px -1px;border-radius:0 0 var(--radius-md) var(--radius-md);overflow:hidden;height:0;transition:height 0.3s ease}
+.stop-img-wrap.loaded{height:150px}
+@keyframes imgFade{from{opacity:0;transform:scale(1.02)}to{opacity:1;transform:scale(1)}}
+.stop-img{width:100%;height:150px;object-fit:cover;display:block;animation:imgFade 0.4s ease}
+.stop-img-credit{position:absolute;bottom:4px;right:6px;font-size:9px;color:rgba(255,255,255,0.7);font-family:var(--font-ui);text-shadow:0 1px 3px rgba(0,0,0,0.6)}
 .pro-tip{background:linear-gradient(135deg,rgba(194,59,59,0.07) 0%,rgba(46,125,82,0.05) 100%);border:1.5px solid rgba(194,59,59,0.18);border-radius:var(--radius-md);padding:14px 18px;margin-top:20px}
 .pro-tip-label{font-family:var(--font-ui);font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--ruby);display:block;margin-bottom:5px}
 .pro-tip p{font-family:var(--font-ui);font-size:13px;line-height:1.55;color:var(--ink-soft)}
@@ -379,6 +384,7 @@ function renderPanel(idx){
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
+      '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];
@@ -400,9 +406,41 @@ function renderPanel(idx){
     '</div>';
 }
 
+/* ---- Wikipedia stop images ---- */
+const IMG_LS='stop_img_v2';
+let imgData={};
+try{imgData=JSON.parse(localStorage.getItem(IMG_LS)||'{}')}catch(e){}
+
+async function fetchStopImage(name){
+  if(name in imgData)return imgData[name];
+  try{
+    const title=encodeURIComponent(name.replace(/\s+/g,'_'));
+    const r=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+title,{headers:{Accept:'application/json'}});
+    if(!r.ok){imgData[name]=null;return null}
+    const d=await r.json();
+    const url=d.thumbnail?.source?.replace(/\/\d+px-/,'/500px-')||null;
+    imgData[name]=url;
+    try{localStorage.setItem(IMG_LS,JSON.stringify(imgData))}catch(e){}
+    return url;
+  }catch(e){imgData[name]=null;return null}
+}
+
+async function loadStopImages(){
+  const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({name:s.name,di,si})));
+  for(const {name,di,si} of allStops){
+    const url=await fetchStopImage(name);
+    const el=document.getElementById('stopimg-'+di+'-'+si);
+    if(url&&el&&!el.classList.contains('loaded')){
+      el.innerHTML='<img class="stop-img" src="'+url+'" alt="'+name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
+      el.classList.add('loaded');
+    }
+  }
+}
+
 function renderAll(){
   renderTabs();
   document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
+  loadStopImages();
 }
 
 function switchDay(idx){currentDayIdx=idx;renderAll();renderDayMap(idx);window.scrollTo({top:0,behavior:'smooth'})}

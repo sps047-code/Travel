@@ -156,6 +156,46 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   .card-name{font-size:14px}
   .card-notes{font-size:12.5px}
 }
+/* ---- Overview styles ---- */
+.ov-panel{padding-bottom:48px}
+.ov-section{margin-bottom:32px}
+.ov-heading{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--ink);margin-bottom:14px;letter-spacing:0.01em;padding-bottom:8px;border-bottom:1.5px solid var(--border)}
+.ov-trip-name{font-family:var(--font-display);font-size:clamp(22px,5vw,30px);font-weight:600;color:var(--ink);line-height:1.2;margin-bottom:16px}
+.ov-stats{display:flex;gap:12px;flex-wrap:wrap}
+.ov-stat{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:14px 20px;text-align:center;min-width:76px}
+.ov-stat-num{font-family:var(--font-display);font-size:30px;font-weight:600;color:var(--ink);line-height:1}
+.ov-stat-label{font-family:var(--font-ui);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-top:4px}
+.cal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px}
+.cal-card{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:13px 14px;cursor:pointer;transition:box-shadow 0.17s,transform 0.17s}
+.cal-card:hover{box-shadow:0 4px 18px rgba(26,35,50,0.10);transform:translateY(-1px)}
+.cal-day-num{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)}
+.cal-date{font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-top:2px}
+.cal-theme{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--ink);margin-top:5px;line-height:1.3}
+.cal-stop-count{font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-top:4px}
+.lodge-list{display:flex;flex-direction:column;gap:10px}
+.lodge-card{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;display:flex;align-items:flex-start;gap:14px}
+.lodge-night-badge{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:52px}
+.lodge-night{font-family:var(--font-ui);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;background:var(--pine-tint);color:var(--pine);border-radius:20px;padding:3px 9px;white-space:nowrap}
+.lodge-date{font-family:var(--font-ui);font-size:10px;color:var(--muted);white-space:nowrap}
+.lodge-info{flex:1;min-width:0}
+.lodge-name{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink)}
+.lodge-notes{font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
+.lodge-booked{display:flex;align-items:center;gap:5px;font-family:var(--font-ui);font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap;padding-top:1px}
+.lodge-booked input{accent-color:var(--pine);width:14px;height:14px;flex-shrink:0}
+.check-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.check-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);transition:opacity 0.2s}
+.check-item.done{opacity:0.5}
+.check-item.done .check-text{text-decoration:line-through;color:var(--muted)}
+.check-item input[type=checkbox]{width:16px;height:16px;accent-color:var(--pine);flex-shrink:0;cursor:pointer}
+.check-text{font-family:var(--font-ui);font-size:13px;flex:1;line-height:1.4;color:var(--ink)}
+.chk-del{background:none;border:none;cursor:pointer;color:var(--border);font-size:18px;line-height:1;padding:0 2px;transition:color 0.2s;flex-shrink:0}
+.chk-del:hover{color:var(--ruby)}
+.add-check-row{display:flex;gap:8px}
+.add-check-input{flex:1;padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;outline:none;background:var(--paper);color:var(--ink);transition:border-color 0.2s}
+.add-check-input:focus{border-color:var(--pine)}
+.add-check-btn{padding:10px 18px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.2s}
+.add-check-btn:hover{background:#1a6640}
+.ov-empty{font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:16px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-md)}
 </style>
 </head>
 <body>
@@ -402,6 +442,10 @@ async function renderDayMap(idx){
 
 function renderTabs(){
   const bar=document.getElementById('tabs-inner');bar.innerHTML='';
+  const ov=document.createElement('div');
+  ov.className='tab-item'+(currentDayIdx===-1?' active active-ruby':'');
+  ov.innerHTML='<button class="tab-btn" onclick="switchDay(-1)">&#9776; Overview</button>';
+  bar.appendChild(ov);
   state.days.forEach((d,i)=>{
     const accentClass=['ruby','pine','river'][i%3];
     const item=document.createElement('div');
@@ -511,11 +555,20 @@ async function loadStopImages(){
 
 function renderAll(){
   renderTabs();
-  document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
-  loadStopImages();
+  if(currentDayIdx===-1){
+    document.getElementById('content-area').innerHTML=renderOverview();
+  }else{
+    document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
+    loadStopImages();
+  }
 }
 
-function switchDay(idx){currentDayIdx=idx;renderAll();renderDayMap(idx);window.scrollTo({top:0,behavior:'smooth'})}
+function switchDay(idx){
+  currentDayIdx=idx;renderAll();
+  if(idx===-1)renderOverviewMap();
+  else renderDayMap(idx);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 
 function addDay(){
   const n=state.days.length+1;
@@ -683,6 +736,126 @@ function saveStop(){
   saveState();closeModal();renderAll();if(affectedDay===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
+/* ---- Overview ---- */
+function generateChecklist(){
+  const prev={};
+  (state.checklist||[]).filter(i=>i.auto).forEach(i=>{prev[i.id]=i.done});
+  const items=[];const seen=new Set();
+  const hasFlights=state.days.some(d=>d.stops.some(s=>s.type==='flight'));
+  const hasTrains=state.days.some(d=>d.stops.some(s=>s.type==='train'));
+  if(hasFlights){
+    items.push({id:'auto-flights',text:'Book flights',done:prev['auto-flights']||false,auto:true});
+    items.push({id:'auto-car',text:'Reserve rental car',done:prev['auto-car']||false,auto:true});
+  }
+  if(hasTrains)items.push({id:'auto-trains',text:'Book train tickets',done:prev['auto-trains']||false,auto:true});
+  state.days.forEach(d=>d.stops.filter(s=>s.type==='lodge').forEach(s=>{
+    const nm=s.name.replace(/\s*[—–].*/,'').trim();
+    if(seen.has(nm))return;seen.add(nm);
+    const id='auto-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+    items.push({id,text:'Book lodging: '+nm,done:prev[id]||false,auto:true});
+  }));
+  const parkKw=['National Park','State Park','National Monument','National Forest',' NP'];
+  state.days.forEach(d=>d.stops.filter(s=>parkKw.some(k=>s.name.includes(k))).forEach(s=>{
+    const nm=s.name.replace(/\s*[—–].*/,'').replace(/\bNP\b/,'National Park').trim();
+    const pk='park-'+nm;if(seen.has(pk))return;seen.add(pk);
+    const id='auto-park-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+    items.push({id,text:'Purchase park pass: '+nm,done:prev[id]||false,auto:true});
+  }));
+  items.push({id:'auto-insurance',text:'Review travel insurance options',done:prev['auto-insurance']||false,auto:true});
+  return [...items,...(state.checklist||[]).filter(i=>!i.auto)];
+}
+
+function renderOverview(){
+  state.checklist=generateChecklist();
+  const totalStops=state.days.reduce((n,d)=>n+d.stops.length,0);
+  const lodges=[];
+  state.days.forEach((day,di)=>day.stops.forEach(s=>{if(s.type==='lodge')lodges.push({di,day,s});}));
+
+  const statsHtml='<div class="ov-stats">'+
+    '<div class="ov-stat"><div class="ov-stat-num">'+state.days.length+'</div><div class="ov-stat-label">Days</div></div>'+
+    '<div class="ov-stat"><div class="ov-stat-num">'+totalStops+'</div><div class="ov-stat-label">Stops</div></div>'+
+    '<div class="ov-stat"><div class="ov-stat-num">'+lodges.length+'</div><div class="ov-stat-label">Nights</div></div>'+
+    '</div>';
+
+  const colors=['var(--ruby)','var(--pine)','var(--river)','var(--amber)'];
+  const calHtml=state.days.map((day,di)=>{
+    const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
+    const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
+    return'<div class="cal-card" onclick="switchDay('+di+')" style="border-top:3px solid '+colors[di%4]+'">'+
+      '<div class="cal-day-num">Day '+(di+1)+'</div>'+
+      (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
+      '<div class="cal-theme">'+theme+'</div>'+
+      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
+      '</div>';
+  }).join('');
+
+  const lodgeHtml=lodges.length?lodges.map(({di,day,s})=>{
+    const nm=s.name.replace(/\s*[—–].*/,'').trim();
+    const id='auto-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+    const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
+    const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
+    return'<div class="lodge-card">'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
+      '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
+      '</div>';
+  }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
+
+  const checkHtml=state.checklist.map(item=>
+    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
+    '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
+    '<span class="check-text">'+item.text+'</span>'+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
+    '</div>'
+  ).join('');
+
+  return'<div class="ov-panel">'+
+    '<div class="ov-section">'+(state.title?'<div class="ov-trip-name">'+state.title+'</div>':'')+statsHtml+'</div>'+
+    '<div class="ov-section"><div class="ov-heading">&#128197; Calendar</div><div class="cal-grid">'+calHtml+'</div></div>'+
+    '<div class="ov-section"><div class="ov-heading">&#127970; Where You\'re Staying</div><div class="lodge-list">'+lodgeHtml+'</div></div>'+
+    '<div class="ov-section"><div class="ov-heading">&#9989; Pre-Trip Checklist</div>'+
+    '<div class="check-list">'+checkHtml+'</div>'+
+    '<div class="add-check-row"><input type="text" id="new-check-input" class="add-check-input" placeholder="Add an item to book or pack..." onkeydown="if(event.key===\'Enter\')addCheckItem()"/><button class="add-check-btn" onclick="addCheckItem()">+ Add</button></div>'+
+    '</div></div>';
+}
+
+function toggleCheckItem(id,done){
+  const item=(state.checklist||[]).find(i=>i.id===id);
+  if(item){item.done=done;saveState();}
+  const el=document.getElementById('chk-'+id);if(el)el.classList.toggle('done',done);
+}
+function addCheckItem(){
+  const input=document.getElementById('new-check-input');
+  const text=input.value.trim();if(!text)return;
+  if(!state.checklist)state.checklist=[];
+  const id='custom-'+Date.now();
+  const item={id,text,done:false,auto:false};
+  state.checklist.push(item);saveState();input.value='';
+  const list=document.querySelector('.check-list');
+  if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
+    list.appendChild(el);}
+}
+function deleteCheckItem(id){
+  state.checklist=(state.checklist||[]).filter(i=>i.id!==id);saveState();
+  const el=document.getElementById('chk-'+id);if(el)el.remove();
+}
+
+async function renderOverviewMap(){
+  markersLayer.clearLayers();routeLayer.clearLayers();
+  const bounds=[];
+  state.days.forEach((day,di)=>{
+    day.stops.forEach((s,si)=>{
+      if(!s.lat||!s.lng)return;
+      const m=L.marker([s.lat,s.lng],{icon:makeIcon(di+1,TC[s.type]||'#8B7355',s.alt)});
+      m.bindPopup('<div style="font-weight:700;font-size:13px">Day '+(di+1)+': '+s.name+'</div>',{maxWidth:200});
+      markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
+    });
+  });
+  if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
+  document.getElementById('route-status').style.display='none';
+}
+
 async function init(){
   try{
     const saved=localStorage.getItem(LS_KEY);
@@ -691,7 +864,8 @@ async function init(){
   }catch(e){state={days:[],title:'Trip'};}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
-  renderAll();renderDayMap(0);loadTimezones();
+  currentDayIdx=-1;
+  renderAll();renderOverviewMap();loadTimezones();
 }
 init();
 </script>

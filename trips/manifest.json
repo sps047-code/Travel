@@ -12,5 +12,12 @@
     "dates": "Oct 9–15, 2026",
     "days": 7,
     "destinations": ["New York City", "Hudson Valley", "Catskills", "Bethel Woods"]
+  },
+  {
+    "id": "london-scotland",
+    "title": "London & Scotland Family Trip",
+    "dates": "Jul 30–Aug 8, 2026",
+    "days": 10,
+    "destinations": ["London", "Edinburgh", "Scottish Highlands", "Glencoe", "St. Andrews"]
   }
 ]

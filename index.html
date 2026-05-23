@@ -181,16 +181,17 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div class="wiz-step" id="wstep-2">
       <span class="wiz-emoji">&#128197;</span>
       <div class="wiz-question">How long is the trip?</div>
-      <div class="stepper">
+      <div class="stepper" id="days-stepper">
         <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)">&#8722;</button>
         <div class="stepper-val" id="days-val">3</div>
         <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)">+</button>
       </div>
-      <div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:8px">days</div>
+      <div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:8px" id="days-label">days</div>
       <div class="wiz-sublabel">Who&#8217;s coming?</div>
       <div class="chip-row" id="who-chips">
         <button class="chip" data-group="who" data-val="just the two of us">Just the two of us</button>
         <button class="chip" data-group="who" data-val="family with kids">Family with kids</button>
+        <button class="chip" data-group="who" data-val="family without kids">Family without kids</button>
         <button class="chip" data-group="who" data-val="friends group">Friends group</button>
         <button class="chip" data-group="who" data-val="solo adventure">Solo adventure</button>
       </div>
@@ -386,6 +387,9 @@ function openWizard(){
   wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''};
   ['w-dest','w-start','w-end','w-notes','w-api-key'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('days-val').textContent='3';
+  document.getElementById('days-label').textContent='days';
+  document.getElementById('days-minus').disabled=false;
+  document.getElementById('days-plus').disabled=false;
   document.getElementById('wiz-error').classList.remove('visible');
   document.querySelectorAll('#wizard-overlay .chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('wiz-key-section').style.display=getApiKey()?'none':'block';
@@ -576,6 +580,32 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
   });
 });
 document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
+
+/* ---- Date pickers: auto-fill end date and calculate days ---- */
+function updateDaysFromDates(){
+  const s=document.getElementById('w-start').value;
+  const e=document.getElementById('w-end').value;
+  if(!s||!e)return;
+  const diff=Math.round((new Date(e)-new Date(s))/(1000*60*60*24));
+  if(diff>=1&&diff<=60){
+    wizData.days=diff;
+    document.getElementById('days-val').textContent=diff;
+    document.getElementById('days-minus').disabled=diff<=1;
+    document.getElementById('days-plus').disabled=diff>=14;
+    document.getElementById('days-label').textContent='days (calculated from your dates)';
+  }
+}
+
+document.getElementById('w-start').addEventListener('change',function(){
+  const s=this.value;if(!s)return;
+  // Default end date to the next day if not set or before start
+  const endEl=document.getElementById('w-end');
+  const next=new Date(s+'T00:00:00');next.setDate(next.getDate()+1);
+  const nextStr=next.toISOString().split('T')[0];
+  if(!endEl.value||endEl.value<=s)endEl.value=nextStr;
+  updateDaysFromDates();
+});
+document.getElementById('w-end').addEventListener('change',updateDaysFromDates);
 
 /* ---- File upload ---- */
 document.getElementById('import-file').addEventListener('change',handleFileUpload);

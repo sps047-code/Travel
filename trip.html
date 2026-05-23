@@ -407,21 +407,36 @@ function renderPanel(idx){
 }
 
 /* ---- Wikipedia stop images ---- */
-const IMG_LS='stop_img_v2';
+const IMG_LS='stop_img_v3';
 let imgData={};
 try{imgData=JSON.parse(localStorage.getItem(IMG_LS)||'{}')}catch(e){}
 
+function cleanStopName(name){
+  return name
+    .replace(/\s*[—–]\s*.*/,'')
+    .replace(/\s*\([^)]*\)/g,'')
+    .replace(/\bNP\b/,'National Park')
+    .replace(/\bSP\b/,'State Park')
+    .replace(/\bNF\b/,'National Forest')
+    .replace(/\s+(Hike|Trail|BBQ|Restaurant|Cafe|Hotel|Motel|Inn|Buffet|Bar|Grill|Patio)\s*$/i,'')
+    .trim();
+}
+
 async function fetchStopImage(name){
   if(name in imgData)return imgData[name];
+  const q=cleanStopName(name);
+  if(!q||q.length<4){imgData[name]=null;return null}
   try{
-    const title=encodeURIComponent(name.replace(/\s+/g,'_'));
-    const r=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+title,{headers:{Accept:'application/json'}});
+    const url='https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&generator=search&gsrsearch='+
+      encodeURIComponent(q)+'&gsrlimit=1&pithumbsize=500&format=json&origin=*';
+    const r=await fetch(url);
     if(!r.ok){imgData[name]=null;return null}
     const d=await r.json();
-    const url=d.thumbnail?.source?.replace(/\/\d+px-/,'/500px-')||null;
-    imgData[name]=url;
+    const pages=Object.values(d.query?.pages||{});
+    const img=pages[0]?.thumbnail?.source||null;
+    imgData[name]=img;
     try{localStorage.setItem(IMG_LS,JSON.stringify(imgData))}catch(e){}
-    return url;
+    return img;
   }catch(e){imgData[name]=null;return null}
 }
 

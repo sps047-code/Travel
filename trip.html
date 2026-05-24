@@ -208,6 +208,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .map-link:hover{background:var(--river);color:white}
 .dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
 .dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
+.dl-btn.collab-live{color:#4ade80;border-color:rgba(74,222,128,0.35);gap:6px}
+.collab-live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4ade80;animation:collabPulse 2s ease-in-out infinite}
+@keyframes collabPulse{0%,100%{opacity:1}50%{opacity:0.35}}
+.collab-code-box{font-family:var(--font-display);font-size:32px;font-weight:600;letter-spacing:0.22em;color:var(--ink);text-align:center;padding:14px;border:2px dashed var(--border);border-radius:var(--radius-md);margin:14px 0;cursor:pointer;transition:border-color 0.2s;user-select:all}
+.collab-code-box:hover{border-color:var(--pine)}
+.collab-or{text-align:center;font-family:var(--font-ui);font-size:11px;color:var(--border);margin:16px 0;overflow:hidden}
+.collab-or::before,.collab-or::after{content:'——————————';letter-spacing:2px}
+.collab-status-bar{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:11px 14px;font-family:var(--font-ui);font-size:13px;color:var(--pine);display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.collab-join-row{display:flex;gap:8px;margin-top:8px}
 .share-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#FDFCFA;font-family:var(--font-ui);font-size:13px;font-weight:500;padding:11px 20px;border-radius:var(--radius-md);box-shadow:0 6px 24px rgba(26,35,50,0.28);z-index:9999;transition:transform 0.28s cubic-bezier(0.34,1.2,0.64,1),opacity 0.28s;opacity:0;pointer-events:none;white-space:nowrap}
 .share-toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
 .import-banner{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:13px 18px;font-family:var(--font-ui);font-size:13px;color:var(--pine);margin:16px 16px 0;line-height:1.5;display:none}
@@ -225,6 +234,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button class="dl-btn" id="collab-btn" onclick="openCollabModal()" title="Collaborate with others in real time">&#128101; Collaborate</button>
       <button class="dl-btn" onclick="shareTrip()" title="Copy shareable link to clipboard">&#128279; Share</button>
       <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015; Excel</button>
       <a href="index.html" class="back-link">&#8592; All Trips</a>
@@ -299,11 +309,61 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div id="copy-day-btns" style="max-height:55vh;overflow-y:auto;margin-top:4px"></div>
   </div>
 </div>
+
+<!-- Collaboration modal -->
+<div class="modal-overlay" id="collab-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Collaborate</div>
+    <button class="modal-close" onclick="closeCollabModal()">&#215;</button>
+
+    <!-- Active state -->
+    <div id="collab-active-panel" style="display:none">
+      <div class="collab-status-bar"><span class="collab-live-dot"></span> Live — collaborators can join with this code</div>
+      <div class="collab-code-box" id="collab-code-display" onclick="copyCollabInvite()" title="Click to copy invite link">——</div>
+      <p style="font-family:var(--font-ui);font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px">Click the code to copy an invite link</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" style="flex:1" onclick="stopCollab()">Stop collaborating</button>
+      </div>
+    </div>
+
+    <!-- Idle state -->
+    <div id="collab-idle-panel">
+      <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Start a live session and share the code with your travel partner. Everyone in the session can add and edit stops together.</p>
+      <button class="btn-primary" style="width:100%" onclick="startCollab()">&#128101; Start collaborating</button>
+      <div class="collab-or">or</div>
+      <p style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px">Join someone&rsquo;s session</p>
+      <div class="collab-join-row">
+        <input class="form-input" id="collab-join-input" placeholder="6-character code" maxlength="8" style="flex:1;text-transform:uppercase;letter-spacing:0.12em;font-size:15px" oninput="this.value=this.value.toUpperCase()"/>
+        <button class="btn-primary" style="flex:0 0 auto;padding:9px 18px" onclick="joinCollab()">Join</button>
+      </div>
+      <div id="collab-error" style="font-family:var(--font-ui);font-size:12px;color:var(--ruby);margin-top:8px;display:none"></div>
+    </div>
+  </div>
+</div>
 <script>
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
+/* ---- Collaboration config ----
+   To enable real-time collaboration:
+   1. Create a free Firebase project at console.firebase.google.com
+   2. Add a Realtime Database (start in test mode)
+   3. Replace null below with your Firebase config object
+   4. (Optional) tighten security rules after testing
+*/
+const FIREBASE_CONFIG = null;
+/* Example:
+const FIREBASE_CONFIG = {
+  apiKey: "AIza...",
+  databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+  projectId: "your-project-id"
+};
+*/
+
 let state,currentDayIdx=0,addingToDay=0,editingStop=null;
-function saveState(){try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}}
+function saveState(){
+  try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+  _syncCollab();
+}
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
@@ -952,6 +1012,130 @@ function downloadExcel(){
   XLSX.writeFile(wb,filename);
 }
 
+/* ---- Collaboration (Firebase Realtime Database) ---- */
+let _fbDb=null,_collabRef=null,_collabCode=null,_collabListener=null;
+let _lastSyncAt=0,_syncTimer=null;
+
+function _sessionId(){
+  let id=sessionStorage.getItem('_csid');
+  if(!id){id=Math.random().toString(36).slice(2,8);sessionStorage.setItem('_csid',id);}
+  return id;
+}
+function _genCode(){
+  const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6},()=>a[Math.floor(Math.random()*a.length)]).join('');
+}
+function _loadFirebaseSDK(){
+  return new Promise((resolve,reject)=>{
+    if(window.firebase&&window.firebase.database){resolve();return;}
+    const s1=document.createElement('script');
+    s1.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script');
+      s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';
+      s2.onload=resolve;s2.onerror=reject;
+      document.head.appendChild(s2);
+    };
+    s1.onerror=reject;document.head.appendChild(s1);
+  });
+}
+async function _firebaseReady(){
+  if(!FIREBASE_CONFIG)return false;
+  if(_fbDb)return true;
+  await _loadFirebaseSDK();
+  if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
+  _fbDb=firebase.database();
+  return true;
+}
+function _showCollabError(msg){
+  const el=document.getElementById('collab-error');
+  el.textContent=msg;el.style.display=msg?'block':'none';
+}
+function openCollabModal(){
+  document.getElementById('collab-modal').classList.add('open');
+  _showCollabError('');
+  document.getElementById('collab-active-panel').style.display=_collabCode?'':'none';
+  document.getElementById('collab-idle-panel').style.display=_collabCode?'none':'';
+  if(_collabCode)document.getElementById('collab-code-display').textContent=_collabCode;
+}
+function closeCollabModal(){document.getElementById('collab-modal').classList.remove('open');}
+async function startCollab(){
+  if(!await _firebaseReady()){
+    _showCollabError('Add your Firebase config to trip.html to enable collaboration.');return;
+  }
+  _collabCode=_genCode();
+  _collabRef=_fbDb.ref('trips/'+_collabCode);
+  const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
+  await _collabRef.set(snap);
+  _lastSyncAt=snap.updatedAt;
+  _watchCollab();
+  _updateCollabBtn();
+  document.getElementById('collab-idle-panel').style.display='none';
+  document.getElementById('collab-active-panel').style.display='';
+  document.getElementById('collab-code-display').textContent=_collabCode;
+}
+async function joinCollab(){
+  const raw=document.getElementById('collab-join-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(raw.length<6){_showCollabError('Enter the 6-character code from your host.');return;}
+  if(!await _firebaseReady()){
+    _showCollabError('Add your Firebase config to trip.html to enable collaboration.');return;
+  }
+  _showCollabError('');
+  const ref=_fbDb.ref('trips/'+raw);
+  const snap=await ref.get();
+  if(!snap.exists()){_showCollabError('Code not found — check with your host and try again.');return;}
+  _collabCode=raw;_collabRef=ref;
+  const data=snap.val();
+  state=data.state;
+  _lastSyncAt=data.updatedAt||0;
+  saveState();renderAll();
+  _watchCollab();_updateCollabBtn();
+  closeCollabModal();
+  showToast('&#128101; Joined — you\'re now editing together');
+}
+function _watchCollab(){
+  if(_collabListener)_collabRef.off('value',_collabListener);
+  _collabListener=_collabRef.on('value',snap=>{
+    const data=snap&&snap.val();
+    if(!data)return;
+    if(data.by===_sessionId())return; // own write
+    if((data.updatedAt||0)<=_lastSyncAt)return;
+    _lastSyncAt=data.updatedAt;
+    state=data.state;
+    renderAll();
+    showToast('&#9998; Updated by a collaborator');
+  });
+}
+function _syncCollab(){
+  if(!_collabRef)return;
+  clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(()=>{
+    const ts=Date.now();_lastSyncAt=ts;
+    _collabRef.update({state:JSON.parse(JSON.stringify(state)),updatedAt:ts,by:_sessionId()});
+  },600);
+}
+function stopCollab(){
+  if(_collabListener&&_collabRef)_collabRef.off('value',_collabListener);
+  _collabRef=null;_collabCode=null;_collabListener=null;
+  _updateCollabBtn();closeCollabModal();
+  showToast('Collaboration ended');
+}
+function _updateCollabBtn(){
+  const btn=document.getElementById('collab-btn');
+  if(_collabCode){
+    btn.innerHTML='<span class="collab-live-dot"></span>'+_collabCode;
+    btn.classList.add('collab-live');
+  }else{
+    btn.innerHTML='&#128101; Collaborate';
+    btn.classList.remove('collab-live');
+  }
+}
+function copyCollabInvite(){
+  if(!_collabCode)return;
+  const url=location.origin+location.pathname+'?collab='+_collabCode;
+  navigator.clipboard.writeText(url).then(()=>showToast('&#128279; Invite link copied'));
+}
+
 /* ---- Trip sharing (URL-encoded, no backend needed) ---- */
 async function compressToBase64url(str){
   const bytes=new TextEncoder().encode(str);
@@ -991,6 +1175,15 @@ async function shareTrip(){
 }
 
 async function init(){
+  /* Handle incoming collab invite link */
+  const collabParam=new URLSearchParams(location.search).get('collab');
+  if(collabParam){
+    history.replaceState(null,'',location.pathname);
+    document.getElementById('collab-join-input').value=collabParam;
+    // Wait for Firebase SDK then auto-join
+    _firebaseReady().then(ok=>{if(ok)joinCollab();else openCollabModal();});
+  }
+
   /* Handle incoming shared trip link */
   const shareParam=new URLSearchParams(location.search).get('share');
   if(shareParam){

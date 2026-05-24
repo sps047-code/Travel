@@ -351,8 +351,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
           <button class="btn-primary" id="join-collab-btn" style="flex:0 0 auto;padding:9px 18px;background:var(--river)" onclick="joinCollab()">Join</button>
         </div>
       </div>
-      <div id="collab-error" style="font-family:var(--font-ui);font-size:12px;color:var(--ruby);margin-top:10px;display:none"></div>
     </div>
+    <div id="collab-error" style="font-family:var(--font-ui);font-size:12px;color:var(--ruby);margin-top:10px;padding:0 2px;display:none"></div>
   </div>
 </div>
 <script>
@@ -1078,47 +1078,50 @@ function closeCollabModal(){document.getElementById('collab-modal').classList.re
 async function startCollab(){
   const btn=document.getElementById('start-collab-btn');
   btn.textContent='Starting…';btn.disabled=true;
-  if(!await _firebaseReady()){
-    _showCollabError('Firebase is not configured. Collaboration is unavailable.');
-    btn.textContent='Start Session';btn.disabled=false;return;
+  _showCollabError('');
+  try{
+    if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
+    _collabCode=_genCode();
+    _collabRef=_fbDb.ref('trips/'+_collabCode);
+    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
+    await _collabRef.set(snap);
+    _lastSyncAt=snap.updatedAt;
+    _watchCollab();
+    _updateCollabBtn();
+    document.getElementById('collab-idle-panel').style.display='none';
+    document.getElementById('collab-active-panel').style.display='';
+    document.getElementById('collab-code-display').textContent=_collabCode;
+  }catch(e){
+    _collabCode=null;_collabRef=null;
+    _showCollabError('Could not start session: '+e.message);
+  }finally{
+    btn.textContent='Start Session';btn.disabled=false;
   }
-  _collabCode=_genCode();
-  _collabRef=_fbDb.ref('trips/'+_collabCode);
-  const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-  await _collabRef.set(snap);
-  _lastSyncAt=snap.updatedAt;
-  _watchCollab();
-  _updateCollabBtn();
-  btn.textContent='Start Session';btn.disabled=false;
-  document.getElementById('collab-idle-panel').style.display='none';
-  document.getElementById('collab-active-panel').style.display='';
-  document.getElementById('collab-code-display').textContent=_collabCode;
 }
 async function joinCollab(){
   const raw=document.getElementById('collab-join-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(raw.length<6){_showCollabError('Please enter the full 6-character code.');return;}
   const btn=document.getElementById('join-collab-btn');
   btn.textContent='Joining…';btn.disabled=true;
-  if(!await _firebaseReady()){
-    _showCollabError('Firebase is not configured. Collaboration is unavailable.');
-    btn.textContent='Join';btn.disabled=false;return;
-  }
   _showCollabError('');
-  const ref=_fbDb.ref('trips/'+raw);
-  const snap=await ref.get();
-  if(!snap.exists()){
-    _showCollabError('Code not found. Double-check with your partner and try again.');
-    btn.textContent='Join';btn.disabled=false;return;
+  try{
+    if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
+    const ref=_fbDb.ref('trips/'+raw);
+    const snap=await ref.get();
+    if(!snap.exists())throw new Error('Code not found — double-check with your partner.');
+    _collabCode=raw;_collabRef=ref;
+    const data=snap.val();
+    state=data.state;
+    _lastSyncAt=data.updatedAt||0;
+    saveState();renderAll();
+    _watchCollab();_updateCollabBtn();
+    closeCollabModal();
+    showToast('&#128101; Joined — you\'re now editing together');
+  }catch(e){
+    _showCollabError(e.message);
+  }finally{
+    btn.textContent='Join';btn.disabled=false;
   }
-  _collabCode=raw;_collabRef=ref;
-  const data=snap.val();
-  state=data.state;
-  _lastSyncAt=data.updatedAt||0;
-  saveState();renderAll();
-  _watchCollab();_updateCollabBtn();
-  btn.textContent='Join';btn.disabled=false;
-  closeCollabModal();
-  showToast('&#128101; Joined — you\'re now editing together');
 }
 function _watchCollab(){
   if(_collabListener)_collabRef.off('value',_collabListener);

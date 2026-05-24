@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -196,6 +197,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-check-btn{padding:10px 18px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.2s}
 .add-check-btn:hover{background:#1a6640}
 .ov-empty{font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:16px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-md)}
+.dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
+.dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
 </style>
 </head>
 <body>
@@ -208,7 +211,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="brand-bar"></div>
       </div>
     </div>
-    <a href="index.html" class="back-link">&#8592; All Trips</a>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015; Excel</button>
+      <a href="index.html" class="back-link">&#8592; All Trips</a>
+    </div>
   </div>
 </header>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch;position:relative">
@@ -876,6 +882,56 @@ async function renderOverviewMap(){
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   document.getElementById('route-status').style.display='none';
+}
+
+/* ---- Excel export ---- */
+function downloadExcel(){
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded yet. Please wait a moment and try again.');return;}
+  if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
+  const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};
+  /* ---- Itinerary sheet ---- */
+  const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Notes']];
+  state.days.forEach((day,di)=>{
+    const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
+    const sub=day.subtitle||(day.title)||'';
+    const datePart=(sub.split('·')[0]||sub.split('•')[0]).trim();
+    if(day.stops.length===0){
+      rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','']);
+    } else {
+      day.stops.forEach((s,si)=>{
+        rows.push([
+          'Day '+(di+1),
+          datePart||theme,
+          si+1,
+          s.time||'',
+          s.name||'',
+          typeLabel[s.type]||s.type||'',
+          s.stars?parseFloat(s.stars)||s.stars:'',
+          s.notes||''
+        ]);
+      });
+    }
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:44}];
+  /* bold the header row */
+  const hdrRange=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){
+    const cell=XLSX.utils.encode_cell({r:0,c});
+    if(ws[cell])ws[cell].s={font:{bold:true}};
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Itinerary');
+  /* ---- Checklist sheet (if any items) ---- */
+  if(state.checklist&&state.checklist.length){
+    const chkRows=[['Item','Done']];
+    state.checklist.forEach(c=>chkRows.push([c.text,c.done?'Yes':'']));
+    const wsC=XLSX.utils.aoa_to_sheet(chkRows);
+    wsC['!cols']=[{wch:44},{wch:6}];
+    XLSX.utils.book_append_sheet(wb,wsC,'Checklist');
+  }
+  const filename=(state.title||'Itinerary').replace(/[/\\?%*:|"<>]/g,'-')+'.xlsx';
+  XLSX.writeFile(wb,filename);
 }
 
 async function init(){

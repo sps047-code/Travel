@@ -759,12 +759,13 @@ function deleteTrip(id,title,isLocal){
 }
 
 /* ---- Load trips grid ---- */
+function lsGet(key,fallback){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}}
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   let serverTrips=[];
   try{const r=await fetch('trips/manifest.json');if(r.ok)serverTrips=await r.json()}catch(e){}
-  const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-  const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
+  const local=lsGet('localTrips',[]);
+  const hidden=lsGet('hiddenTrips',[]);
   const all=[...serverTrips,...local].filter(t=>!hidden.includes(t.id));
   _allTripsCache=all;
   grid.innerHTML=all.map(t=>`
@@ -781,7 +782,7 @@ async function loadTrips(){
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
-        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,\"\\'\")}',${ !!t.local})" title="Delete trip">&#128465;</button>
+        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',${!!t.local})" title="Delete trip">&#128465;</button>
       </div>
     </a>`).join('')+`
     <button class="add-card" onclick="openWizard()">

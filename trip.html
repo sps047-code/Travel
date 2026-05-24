@@ -350,14 +350,15 @@ const LS_KEY='tripState_'+tripId;
    3. Replace null below with your Firebase config object
    4. (Optional) tighten security rules after testing
 */
-const FIREBASE_CONFIG = null;
-/* Example:
 const FIREBASE_CONFIG = {
-  apiKey: "AIza...",
-  databaseURL: "https://your-project-default-rtdb.firebaseio.com",
-  projectId: "your-project-id"
+  apiKey: "AIzaSyC344fuoqnXG5RWN3hNMkCkr9GoHk6dozY",
+  authDomain: "seasons-trips.firebaseapp.com",
+  databaseURL: "https://seasons-trips-default-rtdb.firebaseio.com",
+  projectId: "seasons-trips",
+  storageBucket: "seasons-trips.firebasestorage.app",
+  messagingSenderId: "33886419285",
+  appId: "1:33886419285:web:22628c2508855318dc57dc"
 };
-*/
 
 let state,currentDayIdx=0,addingToDay=0,editingStop=null;
 function saveState(){

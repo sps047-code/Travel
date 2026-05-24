@@ -521,7 +521,8 @@ function renderPanel(idx){
       }
     }
   });
-  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+'" id="panel-'+idx+'">'+
+  const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
+  return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     '<div class="timeline">'+cards+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+

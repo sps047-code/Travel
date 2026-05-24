@@ -117,6 +117,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .upload-label{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.2s;margin-bottom:12px}
 .upload-label:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
 .upload-label.has-file{border-color:var(--pine);color:var(--pine);background:var(--pine-tint)}
+.import-mode-row{display:flex;gap:8px;margin-bottom:14px}
+.import-mode-btn{flex:1;padding:9px 10px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--muted);background:white;cursor:pointer;transition:all 0.18s;text-align:center}
+.import-mode-btn.active{border-color:var(--river);color:var(--river);background:var(--river-tint)}
+.import-trip-select{width:100%;padding:11px 12px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s;margin-bottom:12px;display:none}
+.import-trip-select:focus{border-color:var(--river)}
 
 /* === Loading Overlay === */
 .ai-loading{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.94);z-index:9100;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px}
@@ -256,6 +261,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div class="wiz-question">Import an Itinerary</div>
     <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Paste anything &#8212; a travel agent email, Google Doc, notes app text, booking confirmations. AI will parse it into a full interactive itinerary.</p>
 
+    <div class="import-mode-row">
+      <button class="import-mode-btn active" id="mode-new" onclick="setImportMode('new')">&#10024; Create new trip</button>
+      <button class="import-mode-btn" id="mode-append" onclick="setImportMode('append')">&#43; Add to existing trip</button>
+    </div>
+    <select class="import-trip-select" id="import-target-trip"></select>
+
     <label class="upload-label" id="upload-label">
       &#128206; Upload a .txt file
       <input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>
@@ -359,6 +370,8 @@ const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary. Your only
 const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…','Almost there…'];
 
 let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''},loadingTimer=null;
+let _allTripsCache=[];
+let _importMode='new';
 
 function getApiKey(){return(localStorage.getItem('gemini_api_key')||'').trim()}
 function saveApiKey(k){if(k)localStorage.setItem('gemini_api_key',k.trim())}
@@ -574,16 +587,29 @@ async function generateTrip(){
 }
 
 /* ---- Import ---- */
+function setImportMode(mode){
+  _importMode=mode;
+  document.getElementById('mode-new').classList.toggle('active',mode==='new');
+  document.getElementById('mode-append').classList.toggle('active',mode==='append');
+  document.getElementById('import-target-trip').style.display=mode==='append'?'block':'none';
+}
 function openImport(){
+  _importMode='new';
   document.getElementById('import-text').value='';
   document.getElementById('import-api-key').value='';
   document.getElementById('import-error').classList.remove('visible');
   document.getElementById('upload-label').classList.remove('has-file');
   document.getElementById('upload-label').innerHTML='&#128206; Upload a .txt file<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>';
   document.getElementById('import-key-section').style.display=getApiKey()?'none':'block';
+  // Reset mode buttons
+  document.getElementById('mode-new').classList.add('active');
+  document.getElementById('mode-append').classList.remove('active');
+  // Populate trip selector
+  const sel=document.getElementById('import-target-trip');
+  sel.style.display='none';
+  sel.innerHTML=_allTripsCache.map(t=>`<option value="${t.id}">${t.title}${t.dates?' ('+t.dates+')':''}</option>`).join('');
   document.getElementById('import-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('import-text').focus(),150);
-  // Re-attach file input listener after DOM rebuild
   document.getElementById('import-file').addEventListener('change',handleFileUpload);
 }
 function closeImport(){document.getElementById('import-overlay').classList.remove('open')}
@@ -605,14 +631,30 @@ async function importTrip(){
   const apiKey=document.getElementById('import-api-key').value.trim()||getApiKey();
   if(!apiKey){showErr('import-error','A free Gemini API key is required to parse your itinerary. Get one at aistudio.google.com/apikey');return}
   saveApiKey(apiKey);
+  const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
     const resp=await callGemini(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text,apiKey);
-    const trip=parseJsonResponse(resp);
-    // Extract a destination name from the trip title or first stop
-    const dest=(trip.title||'').replace(/trip$/i,'').trim()||'Trip';
-    const id=saveTrip(trip,'import-',dest,'','');
-    hideLoading();window.location.href='trip.html?id='+id;
+    const parsed=parseJsonResponse(resp);
+    if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
+    if(targetId){
+      // Append parsed days to the existing trip
+      let existing=null;
+      const saved=localStorage.getItem('tripState_'+targetId);
+      if(saved){existing=JSON.parse(saved);}
+      else{
+        const meta=_allTripsCache.find(t=>t.id===targetId);
+        if(meta&&!meta.local){const r=await fetch('trips/'+targetId+'.json');existing=await r.json();}
+      }
+      if(!existing)throw new Error('Could not load the existing trip. Please try again.');
+      existing.days=[...existing.days,...parsed.days];
+      localStorage.setItem('tripState_'+targetId,JSON.stringify(existing));
+      hideLoading();window.location.href='trip.html?id='+targetId;
+    }else{
+      const dest=(parsed.title||'').replace(/trip$/i,'').trim()||'Trip';
+      const id=saveTrip(parsed,'import-',dest,'','');
+      hideLoading();window.location.href='trip.html?id='+id;
+    }
   }catch(e){
     hideLoading();
     document.getElementById('import-key-section').style.display='block';
@@ -724,6 +766,7 @@ async function loadTrips(){
   const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
   const all=[...serverTrips,...local].filter(t=>!hidden.includes(t.id));
+  _allTripsCache=all;
   grid.innerHTML=all.map(t=>`
     <a class="trip-card" href="trip.html?id=${t.id}">
       <div class="trip-card-banner"></div>
@@ -738,7 +781,7 @@ async function loadTrips(){
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
-        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',${!!t.local})" title="Delete trip">&#128465;</button>
+        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,\"\\'\")}',${ !!t.local})" title="Delete trip">&#128465;</button>
       </div>
     </a>`).join('')+`
     <button class="add-card" onclick="openWizard()">

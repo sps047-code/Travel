@@ -246,9 +246,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="wiz-question">Anything else to know?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
       <div class="api-key-section" id="wiz-key-section">
-        <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free &#8212; optional)</span></span>
-        <div class="api-key-sub">Add a free key to let AI fill your full itinerary with real stops &amp; tips. Without one we create a blank trip you fill in yourself. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key &#8594;</a></div>
-        <input type="password" class="wiz-input" id="w-api-key" placeholder="AIza&#8230; (leave blank to build manually)" autocomplete="off"/>
+        <span class="api-key-label">Claude API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(optional)</span></span>
+        <div class="api-key-sub">Add a key to let AI fill your full itinerary with real stops &amp; tips. Without one we create a blank trip you fill in yourself. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key at console.anthropic.com &#8594;</a></div>
+        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230; (leave blank to build manually)" autocomplete="off"/>
       </div>
       <div class="wiz-error" id="wiz-error"></div>
     </div>
@@ -289,9 +289,9 @@ Check in Zion Lodge
 Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 
     <div class="api-key-section" id="import-key-section">
-      <span class="api-key-label">Google Gemini API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(free)</span></span>
-      <div class="api-key-sub">Required to parse your itinerary with AI. It&#8217;s completely free &#8212; no credit card needed. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get your free key at aistudio.google.com &#8594;</a></div>
-      <input type="password" class="wiz-input" id="import-api-key" placeholder="AIza&#8230;" autocomplete="off"/>
+      <span class="api-key-label">Claude API Key</span>
+      <div class="api-key-sub">Required to parse your itinerary with AI. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key at console.anthropic.com &#8594;</a></div>
+      <input type="password" class="wiz-input" id="import-api-key" placeholder="sk-ant-&#8230;" autocomplete="off"/>
     </div>
 
     <div class="wiz-error" id="import-error"></div>
@@ -307,7 +307,7 @@ Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 <div class="ai-loading" id="ai-loading">
   <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt=""/>
   <div class="loading-title" id="loading-title">Planning your adventure&#8230;</div>
-  <div class="loading-sub" id="loading-sub">Gemini is crafting your itinerary</div>
+  <div class="loading-sub" id="loading-sub">Claude is crafting your itinerary</div>
   <div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
 </div>
 
@@ -380,69 +380,49 @@ let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:
 let _allTripsCache=[];
 let _importMode='new';
 
-function getApiKey(){return(localStorage.getItem('gemini_api_key')||'').trim()}
-function saveApiKey(k){if(k)localStorage.setItem('gemini_api_key',k.trim())}
+function getApiKey(){return(localStorage.getItem('claude_api_key')||'').trim()}
+function saveApiKey(k){if(k)localStorage.setItem('claude_api_key',k.trim())}
 
 function openKeySettings(){
   const cur=getApiKey(),masked=cur?cur.slice(0,8)+'…':'';
-  const nk=prompt('Google Gemini API Key (free)\n'+(masked?'Current: '+masked+'\n\n':'\n')+'Get yours free at aistudio.google.com/apikey\nNo credit card needed.','');
+  const nk=prompt('Claude API Key\n'+(masked?'Current: '+masked+'\n\n':'\n')+'Get your key at console.anthropic.com\nUsage-based pricing applies.','');
   if(nk!==null&&nk.trim()){saveApiKey(nk);alert('API key saved!')}
 }
 
-/* ---- Gemini API call ---- */
-let _geminiModels=null,_geminiModelIdx=0;
-async function discoverGeminiModels(apiKey){
-  if(_geminiModels)return _geminiModels;
-  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
-  if(!r.ok){
-    const d=await r.json().catch(()=>({}));
-    if(r.status===400||r.status===401||r.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
-    throw new Error((d.error?.message)||'Could not reach Google AI API ('+r.status+')');
+/* ---- Claude API call ---- */
+async function callClaude(systemPrompt,userPrompt,apiKey){
+  /* Guard: Claude API rejects empty text content blocks */
+  const trimmedPrompt=userPrompt.trim();
+  if(!trimmedPrompt)throw new Error('Prompt is empty — nothing to send to Claude.');
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:8192,
+      system:systemPrompt,
+      messages:[{role:'user',content:trimmedPrompt}]
+    })
+  });
+  if(!res.ok){
+    const d=await res.json().catch(()=>({}));
+    const msg=d.error?.message||'HTTP '+res.status;
+    if(res.status===401||res.status===403)throw new Error('Invalid API key. Get your key at console.anthropic.com');
+    throw new Error('API Error: '+res.status+' '+msg);
   }
-  const d=await r.json();
-  const available=(d.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace('models/',''));
-  /* prefer free-tier friendly models first */
-  const prefer=['gemini-1.5-flash-8b','gemini-1.5-flash','gemini-2.0-flash-lite','gemini-1.5-pro','gemini-1.0-pro','gemini-2.0-flash','gemini-pro'];
-  const ordered=[];
-  for(const p of prefer){const m=available.find(n=>n.includes(p));if(m&&!ordered.includes(m))ordered.push(m);}
-  for(const m of available){if(!ordered.includes(m))ordered.push(m);}
-  if(!ordered.length)throw new Error('No compatible Gemini models found for this API key.');
-  _geminiModels=ordered;
-  _geminiModelIdx=0;
-  return _geminiModels;
-}
-
-async function callGemini(systemPrompt,userPrompt,apiKey){
-  const models=await discoverGeminiModels(apiKey);
-  while(_geminiModelIdx<models.length){
-    const model=models[_geminiModelIdx];
-    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+apiKey,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[{role:'user',parts:[{text:systemPrompt+'\n\n'+userPrompt}]}],
-        generationConfig:{maxOutputTokens:8192,temperature:0.3,response_mime_type:'application/json'}
-      })
-    });
-    if(!res.ok){
-      const d=await res.json().catch(()=>({}));
-      const msg=d.error?.message||'HTTP '+res.status;
-      if(res.status===401||res.status===403)throw new Error('Invalid API key. Get a free key at aistudio.google.com/apikey');
-      if(res.status===429||res.status===403){_geminiModelIdx++;continue;}
-      throw new Error('API error ('+res.status+'): '+msg);
-    }
-    const data=await res.json();
-    const finishReason=data.candidates?.[0]?.finishReason;
-    if(finishReason==='MAX_TOKENS')throw new Error('Trip itinerary is too long for the AI to process in one go. Try importing 7 days at a time.');
-    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    if(!text)throw new Error('Empty response from AI. Please try again.');
-    return text;
-  }
-  throw new Error('All available Gemini models have exceeded their quota. Please try again tomorrow or upgrade your Google AI plan.');
+  const data=await res.json();
+  const text=data.content?.[0]?.text||'';
+  if(!text)throw new Error('Empty response from AI. Please try again.');
+  return text;
 }
 
 function parseJsonResponse(text){
-  console.log('[Gemini raw]',text);
+  console.log('[Claude raw]',text);
   /* strip code fences */
   let t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
   /* detect truncated response — no closing brace at all */
@@ -462,7 +442,7 @@ function parseJsonResponse(text){
     .replace(/\/\/[^\n]*/g,'')                        /* // comments */
     .replace(/\/\*[\s\S]*?\*\//g,'');                 /* /* comments */
   try{return JSON.parse(fixed)}catch(e2){
-    console.error('[Gemini parse error]',e2.message,'\nRaw:',text.slice(0,800));
+    console.error('[Claude parse error]',e2.message,'\nRaw:',text.slice(0,800));
     const snippet=text.slice(0,200).replace(/</g,'&lt;');
     throw new Error('AI returned unexpected format. Open browser DevTools → Console to see full response. Preview: "'+snippet+'"');
   }
@@ -581,7 +561,7 @@ async function generateTrip(){
   saveApiKey(apiKey);
   closeWizard();showLoading('Planning your adventure…');
   try{
-    const text=await callGemini(PLAN_SYSTEM,buildWizPrompt(),apiKey);
+    const text=await callClaude(PLAN_SYSTEM,buildWizPrompt(),apiKey);
     const trip=parseJsonResponse(text);
     const id=saveTrip(trip,'ai-',wizData.dest,wizData.startDate,wizData.endDate);
     hideLoading();window.location.href='trip.html?id='+id;
@@ -636,12 +616,12 @@ async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
   if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
   const apiKey=document.getElementById('import-api-key').value.trim()||getApiKey();
-  if(!apiKey){showErr('import-error','A free Gemini API key is required to parse your itinerary. Get one at aistudio.google.com/apikey');return}
+  if(!apiKey){showErr('import-error','A Claude API key is required to parse your itinerary. Get one at console.anthropic.com');return}
   saveApiKey(apiKey);
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
-    const resp=await callGemini(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text,apiKey);
+    const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text,apiKey);
     const parsed=parseJsonResponse(resp);
     if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
     if(targetId){
@@ -675,7 +655,7 @@ function showLoading(title){
   document.getElementById('loading-title').textContent=title||'Working…';
   document.getElementById('ai-loading').classList.add('open');
   const sub=document.getElementById('loading-sub');
-  let i=0;sub.textContent='Gemini is on it';
+  let i=0;sub.textContent='Claude is on it';
   loadingTimer=setInterval(()=>{
     sub.style.opacity='0';
     setTimeout(()=>{i=(i+1)%LOADING_MSGS.length;sub.textContent=LOADING_MSGS[i];sub.style.opacity='1'},400);
@@ -706,7 +686,7 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
     this.classList.add('active');hideErr('wiz-error');
   });
 });
-document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
+document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})})
 
 /* ---- Date pickers: auto-fill end date and calculate days ---- */
 function updateDaysFromDates(){
@@ -789,7 +769,7 @@ async function loadTrips(){
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
-        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',${!!t.local})" title="Delete trip">&#128465;</button>
+        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")},${!!t.local})" title="Delete trip">&#128465;</button>
       </div>
     </a>`).join('')+`
     <button class="add-card" onclick="openWizard()">

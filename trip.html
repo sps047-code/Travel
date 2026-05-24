@@ -197,6 +197,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-check-btn{padding:10px 18px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.2s}
 .add-check-btn:hover{background:#1a6640}
 .ov-empty{font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:16px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-md)}
+.map-link{font-family:var(--font-ui);font-size:9.5px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:3px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;background:var(--river-tint);color:var(--river);text-decoration:none;transition:all 0.18s;margin-top:6px}
+.map-link:hover{background:var(--river);color:white}
 .dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
 .dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
 </style>
@@ -507,6 +509,7 @@ function renderPanel(idx){
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
+      (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';

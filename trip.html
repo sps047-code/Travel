@@ -208,6 +208,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .map-link:hover{background:var(--river);color:white}
 .dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
 .dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
+.share-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#FDFCFA;font-family:var(--font-ui);font-size:13px;font-weight:500;padding:11px 20px;border-radius:var(--radius-md);box-shadow:0 6px 24px rgba(26,35,50,0.28);z-index:9999;transition:transform 0.28s cubic-bezier(0.34,1.2,0.64,1),opacity 0.28s;opacity:0;pointer-events:none;white-space:nowrap}
+.share-toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
+.import-banner{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:13px 18px;font-family:var(--font-ui);font-size:13px;color:var(--pine);margin:16px 16px 0;line-height:1.5;display:none}
+.import-banner.visible{display:block}
 </style>
 </head>
 <body>
@@ -221,11 +225,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button class="dl-btn" onclick="shareTrip()" title="Copy shareable link to clipboard">&#128279; Share</button>
       <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015; Excel</button>
       <a href="index.html" class="back-link">&#8592; All Trips</a>
     </div>
   </div>
 </header>
+<div class="import-banner" id="import-banner"></div>
+<div class="share-toast" id="share-toast"></div>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch;position:relative">
   <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
   <div class="tabs" id="tabs-inner" style="flex:1;min-width:0"></div>
@@ -945,7 +952,62 @@ function downloadExcel(){
   XLSX.writeFile(wb,filename);
 }
 
+/* ---- Trip sharing (URL-encoded, no backend needed) ---- */
+async function compressToBase64url(str){
+  const bytes=new TextEncoder().encode(str);
+  const cs=new CompressionStream('deflate-raw');
+  const writer=cs.writable.getWriter();
+  writer.write(bytes);writer.close();
+  const buf=await new Response(cs.readable).arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function decompressFromBase64url(b64url){
+  const b64=b64url.replace(/-/g,'+').replace(/_/g,'/');
+  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const ds=new DecompressionStream('deflate-raw');
+  const writer=ds.writable.getWriter();
+  writer.write(bytes);writer.close();
+  const buf=await new Response(ds.readable).arrayBuffer();
+  return new TextDecoder().decode(buf);
+}
+function showToast(msg,duration=3000){
+  const t=document.getElementById('share-toast');
+  t.textContent=msg;t.classList.add('visible');
+  setTimeout(()=>t.classList.remove('visible'),duration);
+}
+async function shareTrip(){
+  try{
+    /* Strip photo data URLs — they're too large for a URL */
+    const shareable=JSON.parse(JSON.stringify(state));
+    (shareable.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{if(s.photo&&s.photo.startsWith('data:'))delete s.photo;}));
+    const encoded=await compressToBase64url(JSON.stringify(shareable));
+    const url=location.origin+location.pathname+'?share='+encoded;
+    await navigator.clipboard.writeText(url);
+    showToast('&#128279; Link copied — anyone with it can open this trip');
+  }catch(e){
+    showToast('Could not copy link: '+e.message,4000);
+  }
+}
+
 async function init(){
+  /* Handle incoming shared trip link */
+  const shareParam=new URLSearchParams(location.search).get('share');
+  if(shareParam){
+    try{
+      const json=await decompressFromBase64url(shareParam);
+      const shared=JSON.parse(json);
+      const newId='shared-'+Date.now().toString(36);
+      localStorage.setItem('tripState_'+newId,JSON.stringify(shared));
+      const entry={id:newId,title:shared.title||'Shared Trip',dates:'',days:(shared.days||[]).length,destinations:[],local:true};
+      const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+      local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
+      /* Redirect to clean URL, then show banner */
+      sessionStorage.setItem('justImported',shared.title||'Shared Trip');
+      location.replace('trip.html?id='+newId);
+      return;
+    }catch(e){console.error('Share import failed',e);}
+  }
   try{
     const saved=localStorage.getItem(LS_KEY);
     if(saved){state=JSON.parse(saved);}
@@ -956,6 +1018,15 @@ async function init(){
   currentDayIdx=-1;
   renderAll();renderOverviewMap();loadTimezones();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
+  /* Show banner if this trip was just imported from a share link */
+  const imported=sessionStorage.getItem('justImported');
+  if(imported){
+    sessionStorage.removeItem('justImported');
+    const b=document.getElementById('import-banner');
+    b.textContent='&#10003; "'+imported+'" was added to your trips. You can now edit it independently.';
+    b.classList.add('visible');
+    setTimeout(()=>b.classList.remove('visible'),6000);
+  }
 }
 init();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}

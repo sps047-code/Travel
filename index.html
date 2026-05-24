@@ -686,7 +686,7 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
     this.classList.add('active');hideErr('wiz-error');
   });
 });
-document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})})
+document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
 
 /* ---- Date pickers: auto-fill end date and calculate days ---- */
 function updateDaysFromDates(){
@@ -769,7 +769,7 @@ async function loadTrips(){
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
-        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")},${!!t.local})" title="Delete trip">&#128465;</button>
+        <button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',${!!t.local})" title="Delete trip">&#128465;</button>
       </div>
     </a>`).join('')+`
     <button class="add-card" onclick="openWizard()">

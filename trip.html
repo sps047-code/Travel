@@ -343,6 +343,13 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 <script>
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
+/* ---- Collaboration config ----
+   To enable real-time collaboration:
+   1. Create a free Firebase project at console.firebase.google.com
+   2. Add a Realtime Database (start in test mode)
+   3. Replace null below with your Firebase config object
+   4. (Optional) tighten security rules after testing
+*/
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyC344fuoqnXG5RWN3hNMkCkr9GoHk6dozY",
   authDomain: "seasons-trips.firebaseapp.com",
@@ -365,7 +372,7 @@ let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572"};
 
 /* ---- Photo upload helpers ---- */
-let pendingPhoto=null;
+let pendingPhoto=null; // null=no change, dataURL=new image
 function showPhotoPreview(src){
   const area=document.getElementById('photo-upload-area');
   const preview=document.getElementById('f-photo-preview');
@@ -564,7 +571,7 @@ function renderPanel(idx){
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
-      '<div class="stop-dot dot-'+(s.type||'drive')+'">"+(si+1)+"</div>"+
+      '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
@@ -572,11 +579,11 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+"</span><div class=\"card-main\">"+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+"</div>"+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+"</div>"+
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
@@ -594,7 +601,7 @@ function renderPanel(idx){
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+"</div>"+
+    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     '<div class="timeline">'+cards+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -885,7 +892,7 @@ function renderOverview(){
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
       (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
       '<div class="cal-theme">'+theme+'</div>'+
-      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+"</div>"+
+      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
       '</div>';
   }).join('');
 
@@ -895,17 +902,17 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+"</div>"+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+"</div>"+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
-  }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type “Lodging” to see them here.</div>';
+  }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')" >&#215;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
     '</div>'
   ).join('');
 
@@ -933,7 +940,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')" >&#215;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -961,6 +968,7 @@ function downloadExcel(){
   if(typeof XLSX==='undefined'){alert('Excel library not loaded yet. Please wait a moment and try again.');return;}
   if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
   const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};
+  /* ---- Itinerary sheet ---- */
   const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Notes']];
   state.days.forEach((day,di)=>{
     const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
@@ -985,6 +993,7 @@ function downloadExcel(){
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:44}];
+  /* bold the header row */
   const hdrRange=XLSX.utils.decode_range(ws['!ref']);
   for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){
     const cell=XLSX.utils.encode_cell({r:0,c});
@@ -992,6 +1001,7 @@ function downloadExcel(){
   }
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Itinerary');
+  /* ---- Checklist sheet (if any items) ---- */
   if(state.checklist&&state.checklist.length){
     const chkRows=[['Item','Done']];
     state.checklist.forEach(c=>chkRows.push([c.text,c.done?'Yes':'']));
@@ -999,7 +1009,7 @@ function downloadExcel(){
     wsC['!cols']=[{wch:44},{wch:6}];
     XLSX.utils.book_append_sheet(wb,wsC,'Checklist');
   }
-  const filename=(state.title||'Itinerary').replace(/[\/\\?%*:|"<>]/g,'-')+'.xlsx';
+  const filename=(state.title||'Itinerary').replace(/[/\\?%*:|"<>]/g,'-')+'.xlsx';
   XLSX.writeFile(wb,filename);
 }
 
@@ -1089,7 +1099,7 @@ function _watchCollab(){
   _collabListener=_collabRef.on('value',snap=>{
     const data=snap&&snap.val();
     if(!data)return;
-    if(data.by===_sessionId())return;
+    if(data.by===_sessionId())return; // own write
     if((data.updatedAt||0)<=_lastSyncAt)return;
     _lastSyncAt=data.updatedAt;
     state=data.state;
@@ -1127,7 +1137,7 @@ function copyCollabInvite(){
   navigator.clipboard.writeText(url).then(()=>showToast('&#128279; Invite link copied'));
 }
 
-/* ---- Trip sharing ---- */
+/* ---- Trip sharing (URL-encoded, no backend needed) ---- */
 async function compressToBase64url(str){
   const bytes=new TextEncoder().encode(str);
   const cs=new CompressionStream('deflate-raw');
@@ -1153,6 +1163,7 @@ function showToast(msg,duration=3000){
 }
 async function shareTrip(){
   try{
+    /* Strip photo data URLs — they're too large for a URL */
     const shareable=JSON.parse(JSON.stringify(state));
     (shareable.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{if(s.photo&&s.photo.startsWith('data:'))delete s.photo;}));
     const encoded=await compressToBase64url(JSON.stringify(shareable));
@@ -1165,13 +1176,16 @@ async function shareTrip(){
 }
 
 async function init(){
+  /* Handle incoming collab invite link */
   const collabParam=new URLSearchParams(location.search).get('collab');
   if(collabParam){
     history.replaceState(null,'',location.pathname);
     document.getElementById('collab-join-input').value=collabParam;
+    // Wait for Firebase SDK then auto-join
     _firebaseReady().then(ok=>{if(ok)joinCollab();else openCollabModal();});
   }
 
+  /* Handle incoming shared trip link */
   const shareParam=new URLSearchParams(location.search).get('share');
   if(shareParam){
     try{
@@ -1182,6 +1196,7 @@ async function init(){
       const entry={id:newId,title:shared.title||'Shared Trip',dates:'',days:(shared.days||[]).length,destinations:[],local:true};
       const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
       local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
+      /* Redirect to clean URL, then show banner */
       sessionStorage.setItem('justImported',shared.title||'Shared Trip');
       location.replace('trip.html?id='+newId);
       return;
@@ -1197,11 +1212,12 @@ async function init(){
   currentDayIdx=-1;
   renderAll();renderOverviewMap();loadTimezones();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
+  /* Show banner if this trip was just imported from a share link */
   const imported=sessionStorage.getItem('justImported');
   if(imported){
     sessionStorage.removeItem('justImported');
     const b=document.getElementById('import-banner');
-    b.textContent='✓ "'+imported+'" was added to your trips. You can now edit it independently.';
+    b.textContent='&#10003; "'+imported+'" was added to your trips. You can now edit it independently.';
     b.classList.add('visible');
     setTimeout(()=>b.classList.remove('visible'),6000);
   }

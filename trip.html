@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -196,6 +197,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-check-btn{padding:10px 18px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.2s}
 .add-check-btn:hover{background:#1a6640}
 .ov-empty{font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:16px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-md)}
+.dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
+.dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
 </style>
 </head>
 <body>
@@ -208,7 +211,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="brand-bar"></div>
       </div>
     </div>
-    <a href="index.html" class="back-link">&#8592; All Trips</a>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015; Excel</button>
+      <a href="index.html" class="back-link">&#8592; All Trips</a>
+    </div>
   </div>
 </header>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch;position:relative">
@@ -488,7 +494,7 @@ function renderPanel(idx){
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
-      '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
+      '<div class="stop-dot dot-'+(s.type||'drive')+'">"+(si+1)+"</div>"+
       '<div class="card-controls">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
@@ -496,11 +502,11 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+"</span><div class=\"card-main\">"+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+"</div>"+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+"</div>"+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';
@@ -515,11 +521,8 @@ function renderPanel(idx){
       }
     }
   });
-  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+' " id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
-    '<div class="timeline">'+cards+
-    '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
-    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
+  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+" id=\"panel-\"+idx+"\">"+'<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+"</div>"+'<div class="timeline">'+cards+
+    '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+'<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
     (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+
     '</div>';
 }
@@ -807,8 +810,7 @@ function renderOverview(){
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
       (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
       '<div class="cal-theme">'+theme+'</div>'+
-      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
-      '</div>';
+      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+"</div>"+'</div>';
   }).join('');
 
   const lodgeHtml=lodges.length?lodges.map(({di,day,s})=>{
@@ -817,17 +819,16 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+"</div>"+
+      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+"</div>"+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+' " id="chk-'+item.id+'">'+
-    '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
+    '<div class="check-item'+(item.done?' done':'')+" id=\"chk-\"+item.id+"\">"+'<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')+
     '</div>'
   ).join('');
 
@@ -855,7 +856,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -876,6 +877,56 @@ async function renderOverviewMap(){
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   document.getElementById('route-status').style.display='none';
+}
+
+/* ---- Excel export ---- */
+function downloadExcel(){
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded yet. Please wait a moment and try again.');return;}
+  if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
+  const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};
+  /* ---- Itinerary sheet ---- */
+  const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Notes']];
+  state.days.forEach((day,di)=>{
+    const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
+    const sub=day.subtitle||(day.title)||'';
+    const datePart=(sub.split('·')[0]||sub.split('•')[0]).trim();
+    if(day.stops.length===0){
+      rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','']);
+    } else {
+      day.stops.forEach((s,si)=>{
+        rows.push([
+          'Day '+(di+1),
+          datePart||theme,
+          si+1,
+          s.time||'',
+          s.name||'',
+          typeLabel[s.type]||s.type||'',
+          s.stars?parseFloat(s.stars)||s.stars:'',
+          s.notes||''
+        ]);
+      });
+    }
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:44}];
+  /* bold the header row */
+  const hdrRange=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){
+    const cell=XLSX.utils.encode_cell({r:0,c});
+    if(ws[cell])ws[cell].s={font:{bold:true}};
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Itinerary');
+  /* ---- Checklist sheet (if any items) ---- */
+  if(state.checklist&&state.checklist.length){
+    const chkRows=[['Item','Done']];
+    state.checklist.forEach(c=>chkRows.push([c.text,c.done?'Yes':'']));
+    const wsC=XLSX.utils.aoa_to_sheet(chkRows);
+    wsC['!cols']=[{wch:44},{wch:6}];
+    XLSX.utils.book_append_sheet(wb,wsC,'Checklist');
+  }
+  const filename=(state.title||'Itinerary').replace(/[\/\\?%*:|"<>]/g,'-')+'.xlsx';
+  XLSX.writeFile(wb,filename);
 }
 
 async function init(){

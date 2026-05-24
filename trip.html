@@ -1092,20 +1092,25 @@ async function startCollab(){
   _showCollabError('');
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
+    /* Show the panel immediately — don't block on the write promise */
     _collabCode=_genCode();
     _collabRef=_fbDb.ref('trips/'+_collabCode);
-    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-    await _withTimeout(_collabRef.set(snap),8000,'Could not write to Firebase. Check your database rules allow writes.');
-    _lastSyncAt=snap.updatedAt;
-    _watchCollab();
-    _updateCollabBtn();
     document.getElementById('collab-idle-panel').style.display='none';
     document.getElementById('collab-active-panel').style.display='';
     document.getElementById('collab-code-display').textContent=_collabCode;
+    btn.textContent='Start Session';btn.disabled=false;
+    _updateCollabBtn();
+    /* Write to Firebase and start listening in the background */
+    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
+    _collabRef.set(snap).then(()=>{
+      _lastSyncAt=snap.updatedAt;
+      _watchCollab();
+    }).catch(e=>{
+      _showCollabError('Session started but sync failed: '+e.message);
+    });
   }catch(e){
     _collabCode=null;_collabRef=null;
     _showCollabError('Could not start session: '+e.message);
-  }finally{
     btn.textContent='Start Session';btn.disabled=false;
   }
 }
@@ -1118,19 +1123,24 @@ async function joinCollab(){
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
     const ref=_fbDb.ref('trips/'+raw);
-    const snap=await _withTimeout(ref.get(),8000,'Firebase read timed out. Check your connection.');
-    if(!snap.exists())throw new Error('Code not found — double-check with your partner.');
-    _collabCode=raw;_collabRef=ref;
-    const data=snap.val();
-    state=data.state;
-    _lastSyncAt=data.updatedAt||0;
-    saveState();renderAll();
-    _watchCollab();_updateCollabBtn();
-    closeCollabModal();
-    showToast('&#128101; Joined — you\'re now editing together');
+    /* Use .then()/.catch() to avoid Firebase compat promise not settling with await */
+    ref.get().then(snap=>{
+      if(!snap.exists()){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
+      _collabCode=raw;_collabRef=ref;
+      const data=snap.val();
+      state=data.state;
+      _lastSyncAt=data.updatedAt||0;
+      saveState();renderAll();
+      _watchCollab();_updateCollabBtn();
+      closeCollabModal();
+      showToast('&#128101; Joined — you\'re now editing together');
+      btn.textContent='Join';btn.disabled=false;
+    }).catch(e=>{
+      _showCollabError('Could not read session: '+e.message);
+      btn.textContent='Join';btn.disabled=false;
+    });
   }catch(e){
     _showCollabError(e.message);
-  }finally{
     btn.textContent='Join';btn.disabled=false;
   }
 }

@@ -1066,6 +1066,7 @@ async function _firebaseReady(){
   await _withTimeout(_loadFirebaseSDK(),10000,'Firebase SDK took too long to load. Check your connection.');
   if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
   _fbDb=firebase.database();
+  _fbDb.goOnline();
   return true;
 }
 function _showCollabError(msg){
@@ -1075,6 +1076,11 @@ function _showCollabError(msg){
 function openCollabModal(){
   document.getElementById('collab-modal').classList.add('open');
   _showCollabError('');
+  /* Always reset button states so re-opening never shows a stale "Starting…" */
+  const startBtn=document.getElementById('start-collab-btn');
+  if(startBtn){startBtn.textContent='Start Session';startBtn.disabled=false;}
+  const joinBtn=document.getElementById('join-collab-btn');
+  if(joinBtn){joinBtn.textContent='Join';joinBtn.disabled=false;}
   document.getElementById('collab-active-panel').style.display=_collabCode?'':'none';
   document.getElementById('collab-idle-panel').style.display=_collabCode?'none':'';
   if(_collabCode)document.getElementById('collab-code-display').textContent=_collabCode;
@@ -1154,8 +1160,11 @@ function confirmStopCollab(){
   stopCollab();
 }
 function stopCollab(){
+  clearTimeout(_syncTimer);
   if(_collabListener&&_collabRef)_collabRef.off('value',_collabListener);
   _collabRef=null;_collabCode=null;_collabListener=null;
+  /* Drop the db reference so the next session gets a fresh connection */
+  if(_fbDb){try{_fbDb.goOffline();}catch(e){} _fbDb=null;}
   _updateCollabBtn();closeCollabModal();
   showToast('Session ended');
 }

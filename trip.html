@@ -163,6 +163,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   .brand-name-text{font-size:17px}
   .card-name{font-size:14px}
   .card-notes{font-size:12.5px}
+  .dl-label{display:none}
+  .dl-btn{padding:6px 8px;font-size:15px}
+  .back-link{padding:6px 8px;font-size:15px}
 }
 /* ---- Overview styles ---- */
 .ov-panel{padding-bottom:48px}
@@ -233,11 +236,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="brand-bar"></div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button class="dl-btn" id="collab-btn" onclick="openCollabModal()" title="Collaborate with others in real time">&#128101; Collaborate</button>
-      <button class="dl-btn" onclick="shareTrip()" title="Copy shareable link to clipboard">&#128279; Share</button>
-      <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015; Excel</button>
-      <a href="index.html" class="back-link">&#8592; All Trips</a>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="dl-btn" id="collab-btn" onclick="openCollabModal()" title="Collaborate with others in real time">&#128101;<span class="dl-label"> Collaborate</span></button>
+      <button class="dl-btn" onclick="shareTrip()" title="Copy shareable link to clipboard">&#128279;<span class="dl-label"> Share</span></button>
+      <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015;<span class="dl-label"> Excel</span></button>
+      <a href="index.html" class="back-link">&#8592;<span class="dl-label"> All Trips</span></a>
     </div>
   </div>
 </header>

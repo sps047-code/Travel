@@ -494,7 +494,7 @@ function renderPanel(idx){
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
-      '<div class="stop-dot dot-'+(s.type||'drive')+'">"+(si+1)+"</div>"+
+      '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
@@ -502,11 +502,11 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+"</span><div class=\"card-main\">"+ 
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+"</div>"+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+"</div>"+
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';
@@ -521,8 +521,9 @@ function renderPanel(idx){
       }
     }
   });
-  return'<div class="day-panel'+(idx===currentDayIdx?' active':'')+' id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+"</div>"+
+  const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
+  return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
+    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     '<div class="timeline">'+cards+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -813,7 +814,7 @@ function renderOverview(){
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
       (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
       '<div class="cal-theme">'+theme+'</div>'+
-      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+"</div>"+
+      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
       '</div>';
   }).join('');
 
@@ -823,17 +824,17 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+"</div>"+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+"</div>"+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+' id="chk-'+item.id+'">'+
+    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
     '</div>'
   ).join('');
 
@@ -861,7 +862,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -930,7 +931,7 @@ function downloadExcel(){
     wsC['!cols']=[{wch:44},{wch:6}];
     XLSX.utils.book_append_sheet(wb,wsC,'Checklist');
   }
-  const filename=(state.title||'Itinerary').replace(/[\/\\?%*:|"<>]/g,'-')+'.xlsx';
+  const filename=(state.title||'Itinerary').replace(/[/\\?%*:|"<>]/g,'-')+'.xlsx';
   XLSX.writeFile(wb,filename);
 }
 

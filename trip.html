@@ -1041,6 +1041,9 @@ function _genCode(){
   const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:6},()=>a[Math.floor(Math.random()*a.length)]).join('');
 }
+function _withTimeout(promise,ms,msg){
+  return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(msg)),ms))]);
+}
 function _loadFirebaseSDK(){
   return new Promise((resolve,reject)=>{
     if(window.firebase&&window.firebase.database){resolve();return;}
@@ -1049,16 +1052,18 @@ function _loadFirebaseSDK(){
     s1.onload=()=>{
       const s2=document.createElement('script');
       s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';
-      s2.onload=resolve;s2.onerror=reject;
+      s2.onload=resolve;
+      s2.onerror=()=>reject(new Error('Failed to load Firebase database SDK. Check your connection.'));
       document.head.appendChild(s2);
     };
-    s1.onerror=reject;document.head.appendChild(s1);
+    s1.onerror=()=>reject(new Error('Failed to load Firebase app SDK. Check your connection.'));
+    document.head.appendChild(s1);
   });
 }
 async function _firebaseReady(){
   if(!FIREBASE_CONFIG)return false;
   if(_fbDb)return true;
-  await _loadFirebaseSDK();
+  await _withTimeout(_loadFirebaseSDK(),10000,'Firebase SDK took too long to load. Check your connection.');
   if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
   _fbDb=firebase.database();
   return true;
@@ -1084,7 +1089,7 @@ async function startCollab(){
     _collabCode=_genCode();
     _collabRef=_fbDb.ref('trips/'+_collabCode);
     const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-    await _collabRef.set(snap);
+    await _withTimeout(_collabRef.set(snap),8000,'Could not write to Firebase. Check your database rules allow writes.');
     _lastSyncAt=snap.updatedAt;
     _watchCollab();
     _updateCollabBtn();
@@ -1107,7 +1112,7 @@ async function joinCollab(){
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
     const ref=_fbDb.ref('trips/'+raw);
-    const snap=await ref.get();
+    const snap=await _withTimeout(ref.get(),8000,'Firebase read timed out. Check your connection.');
     if(!snap.exists())throw new Error('Code not found — double-check with your partner.');
     _collabCode=raw;_collabRef=ref;
     const data=snap.val();

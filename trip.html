@@ -399,7 +399,8 @@ const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
 const PACK_KEY='seasons_packing_'+tripId;
 let _isReadOnly=false;
-function getApiKey(){return(localStorage.getItem('claude_api_key')||'').trim()}
+const SHARED_KEY='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';
+function getApiKey(){return(localStorage.getItem('claude_api_key')||SHARED_KEY).trim()}
 function lsPack(val){
   if(val===undefined){try{return JSON.parse(localStorage.getItem(PACK_KEY)||'null')}catch(e){return null}}
   try{localStorage.setItem(PACK_KEY,JSON.stringify(val))}catch(e){}

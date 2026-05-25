@@ -498,7 +498,8 @@ let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total'
 let _wizOpener=null,_settingsOpener=null,_retryGenWizData=null,_trapCleanup=null;
 
 /* ---- API Key ---- */
-function getApiKey(){return(localStorage.getItem('claude_api_key')||'').trim()}
+const SHARED_KEY='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';
+function getApiKey(){return(localStorage.getItem('claude_api_key')||SHARED_KEY).trim()}
 function saveApiKey(k){if(k){localStorage.setItem('claude_api_key',k.trim());updateConnUI()}}
 function clearApiKey(){localStorage.removeItem('claude_api_key');updateConnUI()}
 
@@ -531,11 +532,7 @@ function trapFocus(el){
 
 /* ---- Setup screen ---- */
 function checkSetup(){
-  if(!localStorage.getItem('seasons_setup_seen')){
-    document.getElementById('setup-overlay').classList.add('open');
-    setTimeout(()=>document.getElementById('setup-api-key').focus(),150);
-    _trapCleanup=trapFocus(document.querySelector('#setup-overlay .modal-card'));
-  }
+  /* Skip setup screen — shared key is baked in */
 }
 function finishSetup(){
   const k=document.getElementById('setup-api-key').value.trim();

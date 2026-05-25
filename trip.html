@@ -400,8 +400,7 @@ const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
 const PACK_KEY='seasons_packing_'+tripId;
 let _isReadOnly=false;
-const SHARED_KEY='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';
-function getApiKey(){return(localStorage.getItem('claude_api_key')||SHARED_KEY).trim()}
+const PROXY_URL='https://travel-ai-proxy.sps047.workers.dev';
 function lsPack(val){
   if(val===undefined){try{return JSON.parse(localStorage.getItem(PACK_KEY)||'null')}catch(e){return null}}
   try{localStorage.setItem(PACK_KEY,JSON.stringify(val))}catch(e){}
@@ -1040,14 +1039,9 @@ function renderPackingListHtml(){
   const stored=lsPack();
   const categories=stored?stored.categories:null;
   if(!categories){
-    const keyExists=!!getApiKey();
     return'<div class="pack-empty">'+
       '<p>Generate a personalized packing list tailored to this specific trip.</p>'+
-      (keyExists
-        ?'<button class="pack-gen-btn" onclick="generatePackingList()">&#10024; Generate Packing List with AI</button>'
-        :'<p style="font-size:12px">Add a Claude API key in Settings to generate with AI.</p>'+
-         '<button class="pack-gen-btn" style="background:var(--ink-soft)" onclick="loadFallbackPacking()">&#128220; Use standard template</button>'
-      )+
+      '<button class="pack-gen-btn" onclick="generatePackingList()">&#10024; Generate Packing List with AI</button>'+
       '</div>';
   }
   const checked=stored.checked||{};
@@ -1106,7 +1100,6 @@ function loadFallbackPacking(){
 }
 
 async function generatePackingList(){
-  const apiKey=getApiKey();
   const btn=document.querySelector('.pack-gen-btn:not(.regen),.pack-gen-btn.regen');
   if(btn){btn.textContent='Generating…';btn.disabled=true;}
   try{
@@ -1119,7 +1112,7 @@ async function generatePackingList(){
     }
     const stopNames=state.days.flatMap(d=>d.stops.map(s=>s.name)).slice(0,12);
     if(stopNames.length)prompt+='Key stops: '+stopNames.join(', ')+'\n';
-    const text=await callClaude(PACK_PROMPT_SYSTEM,prompt,apiKey);
+    const text=await callClaude(PACK_PROMPT_SYSTEM,prompt);
     let parsed;
     try{
       const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
@@ -1130,22 +1123,18 @@ async function generatePackingList(){
     lsPack({categories:parsed.categories,checked:{}});
     switchDay(-1);
   }catch(e){
-    if(!apiKey){
-      loadFallbackPacking();
-    }else{
-      showToast('Packing list error: '+e.message,4000);
-      if(btn){btn.textContent=btn.classList.contains('regen')?'↺ Regenerate':'✨ Generate Packing List with AI';btn.disabled=false;}
-    }
+    showToast('Packing list error: '+e.message,4000);
+    if(btn){btn.textContent=btn.classList.contains('regen')?'↺ Regenerate':'✨ Generate Packing List with AI';btn.disabled=false;}
   }
 }
 
-async function callClaude(systemPrompt,userPrompt,apiKey){
-  const res=await fetch('https://api.anthropic.com/v1/messages',{
+async function callClaude(systemPrompt,userPrompt){
+  const res=await fetch(PROXY_URL,{
     method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2048,system:systemPrompt,messages:[{role:'user',content:userPrompt.trim()}]})
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({system:systemPrompt,user:userPrompt.trim()})
   });
-  if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error('API Error: '+(d.error?.message||'HTTP '+res.status));}
+  if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error('AI error: '+(d.error?.message||'HTTP '+res.status));}
   const data=await res.json();
   const text=data.content?.[0]?.text||'';
   if(!text)throw new Error('Empty response from AI');

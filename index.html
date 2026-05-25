@@ -197,39 +197,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 </head>
 <body>
 
-<!-- ====== SETUP OVERLAY (first run) ====== -->
-<div class="overlay" id="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
-  <div class="modal-card" style="max-width:460px;text-align:center">
-    <img src="leaf-logo.png" width="52" height="62" alt="" aria-hidden="true" style="display:block;margin:0 auto 16px">
-    <div class="wiz-question" id="setup-title" style="font-size:clamp(22px,5vw,28px);text-align:center;margin-bottom:12px">Welcome to Seasons</div>
-    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6">Optionally add a Claude API key to let AI build your full itineraries with real stops and tips.</p>
-    <input type="password" class="wiz-input" id="setup-api-key" placeholder="sk-ant-… (optional)" autocomplete="off" style="text-align:left"/>
-    <div class="api-key-sub" style="margin-top:8px;text-align:left">Get your free key at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com →</a></div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:24px">
-      <button class="btn-primary" style="flex:none" onclick="finishSetup()">Get Started →</button>
-      <button class="btn-back" onclick="skipSetup()" style="display:block;text-align:center;width:100%">Skip for now</button>
-    </div>
-  </div>
-</div>
-
-<!-- ====== SETTINGS OVERLAY ====== -->
-<div class="overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-  <div class="modal-card" style="max-width:440px">
-    <button class="modal-close" onclick="closeSettings()" aria-label="Close settings">&times;</button>
-    <div class="wiz-question" id="settings-title" style="font-size:22px;margin-bottom:24px">&#9881; Settings</div>
-    <div class="api-key-label">Claude API Key</div>
-    <div class="settings-key-row">
-      <span id="settings-conn-badge" class="conn-badge conn-badge-disconnected">Not Connected</span>
-      <span class="settings-key-masked" id="settings-key-masked"></span>
-    </div>
-    <div class="api-key-sub">Powers AI trip generation and packing lists. Usage-based pricing applies. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key →</a></div>
-    <input type="password" class="wiz-input" id="settings-api-key" placeholder="sk-ant-…" autocomplete="off" style="margin-bottom:12px"/>
-    <div style="display:flex;gap:8px">
-      <button class="btn-primary" style="flex:none;padding:12px 24px" onclick="saveSettingsKey()">Save Key</button>
-      <button class="btn-back" id="settings-clear-btn" onclick="clearSettingsKey()" style="display:none">Remove</button>
-    </div>
-  </div>
-</div>
 
 <header>
   <div class="header-inner">
@@ -241,9 +208,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div class="header-right">
-      <button class="api-settings-btn" id="api-settings-btn" onclick="openSettings()">
-        &#9881; Settings <span class="api-conn-dot disconnected" id="api-conn-dot" aria-hidden="true">&#9679;</span>
-      </button>
       <span class="brand-tagline-text">Searles Family Trips</span>
     </div>
   </div>
@@ -348,10 +312,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <span class="wiz-emoji" aria-hidden="true">&#128221;</span>
       <div class="wiz-question">Anything else to know?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
-      <div class="wiz-nokey-note" id="wiz-no-key-note" style="display:none">
-        No API key set &#8212; we&#8217;ll create a blank trip you can fill in yourself.
-        <a href="#" onclick="event.preventDefault();closeWizard();openSettings()">Add your key in Settings &#8594;</a>
-      </div>
     </div>
 
     <div class="wiz-error" id="wiz-error" role="alert"></div>
@@ -391,15 +351,6 @@ Drive to Zion NP (4 hrs)
 Check in Zion Lodge
 Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 
-    <div class="api-key-section" id="import-key-section" style="display:none">
-      <div id="import-key-connected" style="display:none">
-        <span style="font-family:var(--font-ui);font-size:12px;color:var(--pine)">&#10003; API key connected &#8212; ready to import.</span>
-      </div>
-      <div id="import-key-needed">
-        <span class="api-key-label">Claude API Key Required</span>
-        <div class="api-key-sub">A key is needed to parse your itinerary with AI. <a href="#" onclick="event.preventDefault();closeImport();openSettings()">Add your key in Settings &#8594;</a></div>
-      </div>
-    </div>
 
     <div class="wiz-error" id="import-error" role="alert"></div>
 
@@ -498,22 +449,7 @@ let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total'
 let _wizOpener=null,_settingsOpener=null,_retryGenWizData=null,_trapCleanup=null;
 
 /* ---- API Key ---- */
-const SHARED_KEY='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';
-function getApiKey(){return(localStorage.getItem('claude_api_key')||SHARED_KEY).trim()}
-function saveApiKey(k){if(k){localStorage.setItem('claude_api_key',k.trim());updateConnUI()}}
-function clearApiKey(){localStorage.removeItem('claude_api_key');updateConnUI()}
-
-function updateConnUI(){
-  const key=getApiKey();
-  const dot=document.getElementById('api-conn-dot');
-  if(dot){dot.className='api-conn-dot '+(key?'connected':'disconnected')}
-  const badge=document.getElementById('settings-conn-badge');
-  if(badge){badge.textContent=key?'Connected':'Not Connected';badge.className='conn-badge '+(key?'conn-badge-connected':'conn-badge-disconnected')}
-  const masked=document.getElementById('settings-key-masked');
-  if(masked)masked.textContent=key?key.slice(0,8)+'••••••••':'';
-  const clearBtn=document.getElementById('settings-clear-btn');
-  if(clearBtn)clearBtn.style.display=key?'block':'none';
-}
+const PROXY_URL='https://travel-ai-proxy.sps047.workers.dev';
 
 /* ---- Focus trap ---- */
 function trapFocus(el){
@@ -531,64 +467,23 @@ function trapFocus(el){
 }
 
 /* ---- Setup screen ---- */
-function checkSetup(){
-  /* Skip setup screen — shared key is baked in */
-}
-function finishSetup(){
-  const k=document.getElementById('setup-api-key').value.trim();
-  if(k)saveApiKey(k);
-  localStorage.setItem('seasons_setup_seen','1');
-  document.getElementById('setup-overlay').classList.remove('open');
-  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
-  updateConnUI();
-}
-function skipSetup(){
-  localStorage.setItem('seasons_setup_seen','1');
-  document.getElementById('setup-overlay').classList.remove('open');
-  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
-}
-
-/* ---- Settings panel ---- */
-function openSettings(){
-  _settingsOpener=document.activeElement;
-  updateConnUI();
-  document.getElementById('settings-api-key').value='';
-  document.getElementById('settings-overlay').classList.add('open');
-  _trapCleanup=trapFocus(document.querySelector('#settings-overlay .modal-card'));
-  setTimeout(()=>document.getElementById('settings-api-key').focus(),150);
-}
-function closeSettings(){
-  document.getElementById('settings-overlay').classList.remove('open');
-  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
-  if(_settingsOpener)_settingsOpener.focus();
-}
-function saveSettingsKey(){
-  const k=document.getElementById('settings-api-key').value.trim();
-  if(!k){showSettingsMsg('Please enter an API key.');return}
-  saveApiKey(k);
-  document.getElementById('settings-api-key').value='';
-  closeSettings();
-}
-function clearSettingsKey(){
-  if(!confirm('Remove your saved API key?'))return;
-  clearApiKey();
-}
-function showSettingsMsg(m){/* inline: just focus the field */document.getElementById('settings-api-key').focus()}
+function checkSetup(){}
+function skipSetup(){}
 
 /* ---- Claude API call ---- */
-async function callClaude(systemPrompt,userPrompt,apiKey){
+async function callClaude(systemPrompt,userPrompt){
   const trimmedPrompt=userPrompt.trim();
   if(!trimmedPrompt)throw new Error('Prompt is empty — nothing to send to Claude.');
-  const res=await fetch('https://api.anthropic.com/v1/messages',{
+  const res=await fetch(PROXY_URL,{
     method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8192,system:systemPrompt,messages:[{role:'user',content:trimmedPrompt}]})
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({system:systemPrompt,user:trimmedPrompt})
   });
   if(!res.ok){
     const d=await res.json().catch(()=>({}));
     const msg=d.error?.message||'HTTP '+res.status;
-    if(res.status===401||res.status===403)throw new Error('Invalid API key. Get your key at console.anthropic.com');
-    throw new Error('API Error: '+res.status+' '+msg);
+    if(res.status===529)throw new Error('Claude is overloaded right now. Please try again in a moment.');
+    throw new Error('AI error ('+res.status+'): '+msg);
   }
   const data=await res.json();
   const text=data.content?.[0]?.text||'';
@@ -640,7 +535,6 @@ function _applyWizStep(n){
   const btn=document.getElementById('wiz-next-btn');
   btn.textContent=n===6?'✨ Generate My Trip':'Next →';
   btn.classList.toggle('generate',n===6);
-  if(n===6){document.getElementById('wiz-no-key-note').style.display=getApiKey()?'none':'block';}
 }
 
 function showWizStep(n){
@@ -774,12 +668,10 @@ async function generateSkeleton(){
 }
 
 async function generateTrip(){
-  const apiKey=getApiKey();
-  if(!apiKey){generateSkeleton();return}
   closeWizard();showLoading('Planning your adventure…');
-  _retryGenWizData={apiKey,prompt:buildWizPrompt(),wizSnap:JSON.parse(JSON.stringify(wizData))};
+  _retryGenWizData={prompt:buildWizPrompt(),wizSnap:JSON.parse(JSON.stringify(wizData))};
   try{
-    const text=await callClaude(PLAN_SYSTEM,_retryGenWizData.prompt,apiKey);
+    const text=await callClaude(PLAN_SYSTEM,_retryGenWizData.prompt);
     const trip=parseJsonResponse(text);
     trip._meta={who:wizData.who,activities:wizData.activities,pace:wizData.pace,budgetLevel:wizData.budget};
     if(wizData.budgetTotal)trip.budget={total:wizData.budgetTotal,type:wizData.budgetAmtType};
@@ -836,12 +728,6 @@ function openImport(){
   const sel=document.getElementById('import-target-trip');
   sel.style.display='none';
   sel.innerHTML=_allTripsCache.map(t=>`<option value="${t.id}">${t.title}${t.dates?' ('+t.dates+')':''}</option>`).join('');
-  // Show/hide key section
-  const keySection=document.getElementById('import-key-section');
-  const keyExists=!!getApiKey();
-  keySection.style.display='block';
-  document.getElementById('import-key-connected').style.display=keyExists?'block':'none';
-  document.getElementById('import-key-needed').style.display=keyExists?'none':'block';
   _settingsOpener=document.activeElement;
   document.getElementById('import-overlay').classList.add('open');
   const tc=trapFocus(document.querySelector('#import-overlay .modal-card'));
@@ -870,12 +756,10 @@ function handleFileUpload(e){
 async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
   if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
-  const apiKey=getApiKey();
-  if(!apiKey){showErr('import-error','A Claude API key is required. Add one in Settings.');return}
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
-    const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text,apiKey);
+    const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
     const parsed=parseJsonResponse(resp);
     if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
     if(targetId){
@@ -993,20 +877,14 @@ window.addEventListener('popstate',function(e){
 /* ---- Overlay click to close ---- */
 document.getElementById('wizard-overlay').addEventListener('click',function(e){if(e.target===this)closeWizard()});
 document.getElementById('import-overlay').addEventListener('click',function(e){if(e.target===this)closeImport()});
-document.getElementById('settings-overlay').addEventListener('click',function(e){if(e.target===this)closeSettings()});
-document.getElementById('setup-overlay').addEventListener('click',function(e){if(e.target===this)skipSetup()});
 
 /* ---- Keyboard shortcuts ---- */
 document.addEventListener('keydown',function(e){
   const wizOpen=document.getElementById('wizard-overlay').classList.contains('open');
   const impOpen=document.getElementById('import-overlay').classList.contains('open');
-  const setOpen=document.getElementById('settings-overlay').classList.contains('open');
-  const setupOpen=document.getElementById('setup-overlay').classList.contains('open');
   if(e.key==='Escape'){
     if(wizOpen){history.back();return}
     if(impOpen)closeImport();
-    if(setOpen)closeSettings();
-    if(setupOpen)skipSetup();
     return;
   }
   if(e.key==='Enter'&&wizOpen&&document.activeElement?.tagName!=='TEXTAREA'&&document.activeElement?.tagName!=='BUTTON')wizNext();
@@ -1103,7 +981,6 @@ async function loadTrips(){
     </button>`;
 }
 
-updateConnUI();
 loadTrips();
 checkSetup();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}

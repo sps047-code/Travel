@@ -1,8 +1,9 @@
+<!-- SEASONS v2.0 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <title>Seasons — Searles Family Trips</title>
 <link rel="manifest" href="app.webmanifest">
 <meta name="theme-color" content="#1A2332">
@@ -15,6 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 :root{
   --ruby:#C23B3B;--ruby-tint:rgba(194,59,59,0.10);--ruby-border:rgba(194,59,59,0.22);
   --pine:#2E7D52;--pine-tint:rgba(46,125,82,0.10);--pine-border:rgba(46,125,82,0.22);
@@ -35,8 +37,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .brand-bar{width:36px;height:3px;background:linear-gradient(to right,var(--ruby),var(--pine),var(--river));border-radius:2px;margin-top:6px;animation:brandFadeUp 0.36s ease-out 0.22s both}
 .brand-tagline-text{font-family:var(--font-ui);font-size:10px;font-weight:400;color:rgba(253,252,250,0.38);letter-spacing:0.16em;text-transform:uppercase;animation:brandFadeUp 0.32s ease-out 0.28s both}
 .header-right{display:flex;align-items:center;gap:12px}
-.api-settings-btn{background:transparent;border:1px solid rgba(253,252,250,0.18);border-radius:var(--radius-sm);color:rgba(253,252,250,0.50);font-size:12px;font-family:var(--font-ui);cursor:pointer;padding:5px 11px;transition:all 0.2s;white-space:nowrap}
+.api-settings-btn{background:transparent;border:1px solid rgba(253,252,250,0.18);border-radius:var(--radius-sm);color:rgba(253,252,250,0.50);font-size:12px;font-family:var(--font-ui);cursor:pointer;padding:5px 11px;transition:all 0.2s;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .api-settings-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.40)}
+.api-conn-dot{font-size:8px;transition:color 0.2s}
+.api-conn-dot.connected{color:#4ade80}
+.api-conn-dot.disconnected{color:rgba(253,252,250,0.28)}
 @keyframes leafDrop{from{opacity:0;transform:scale(0.82) translateY(-8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes brandFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .page{max-width:960px;margin:0 auto;padding:36px 20px 64px}
@@ -51,7 +56,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .trip-meta-pill{font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--muted);background:var(--mist);padding:3px 10px;border-radius:20px;border:1px solid var(--border)}
 .trip-destinations{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
 .dest-tag{font-family:var(--font-ui);font-size:10.5px;font-weight:600;color:var(--ruby);background:var(--ruby-tint);padding:3px 9px;border-radius:20px}
-.trip-card-footer{padding:0 18px 18px}
+.trip-card-footer{padding:0 18px 18px;display:flex;align-items:center;gap:8px}
 .view-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:11px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:background 0.2s;letter-spacing:0.02em}
 .view-btn:hover{background:var(--ink-soft)}
 .add-card{background:transparent;border:2px dashed var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:36px 20px;cursor:pointer;transition:all 0.2s;color:var(--muted);min-height:180px;font-family:inherit;width:100%}
@@ -63,9 +68,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-card.river:hover .add-icon{background:rgba(43,108,176,0.18)}
 .add-label{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:0.01em}
 .add-sub{font-family:var(--font-ui);font-size:12px;opacity:0.7;text-align:center;line-height:1.4}
-.trip-card-footer{display:flex;align-items:center;gap:8px}
 .card-delete{width:36px;height:36px;flex-shrink:0;border-radius:var(--radius-md);background:transparent;border:1.5px solid var(--border);color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.18s;line-height:1}
 .card-delete:hover{background:var(--ruby-tint);border-color:var(--ruby-border);color:var(--ruby)}
+
+/* === Empty state === */
+.empty-state{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;padding:64px 24px;text-align:center}
+.empty-leaf{opacity:0.55;margin-bottom:20px}
+.empty-headline{font-family:var(--font-display);font-size:26px;font-weight:600;color:var(--ink);margin-bottom:10px}
+.empty-sub{font-family:var(--font-ui);font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:28px;max-width:360px}
+.empty-btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 
 /* === Shared modal/wizard styles === */
 .overlay{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.68);z-index:9000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
@@ -74,10 +85,13 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 @keyframes wizIn{from{opacity:0;transform:scale(0.95) translateY(14px)}to{opacity:1;transform:scale(1) translateY(0)}}
 .modal-close{position:absolute;top:16px;right:18px;background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--muted);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s}
 .modal-close:hover{background:var(--ruby-tint);color:var(--ruby)}
-.wiz-progress{display:flex;align-items:center;gap:7px;margin-bottom:30px}
-.wiz-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:all 0.28s}
-.wiz-dot.active{background:var(--ruby);transform:scale(1.35)}
-.wiz-dot.done{background:var(--pine)}
+
+/* Progress bar (replaces dots) */
+.wiz-progress{margin-bottom:28px}
+.wiz-prog-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:8px}
+.wiz-prog-fill{height:100%;background:linear-gradient(to right,var(--ruby),var(--pine));border-radius:2px;transition:width 0.3s ease}
+.wiz-prog-label{font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em}
+
 .wiz-step{display:none}.wiz-step.active{display:block}
 .wiz-emoji{font-size:38px;margin-bottom:10px;line-height:1;display:block}
 .wiz-question{font-family:var(--font-display);font-size:clamp(20px,4.5vw,26px);font-weight:600;color:var(--ink);letter-spacing:0.01em;line-height:1.25;margin-bottom:20px}
@@ -97,17 +111,16 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .chip-row{display:flex;flex-wrap:wrap;gap:8px}
 .chip{font-family:var(--font-ui);font-size:13px;font-weight:500;padding:9px 17px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);cursor:pointer;transition:all 0.18s;line-height:1.2;text-align:left}
 .chip:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
-.chip.active{background:var(--ruby);border-color:var(--ruby);color:white}
 .chip.multi:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
-.chip.multi.active{background:var(--river);border-color:var(--river);color:white}
+.chip.active,.chip.multi.active{background:var(--ink);border-color:var(--ink);color:white;transform:scale(1.02)}
+.chip.active:hover,.chip.multi.active:hover{background:var(--ink-soft);transform:scale(1.02)}
+.chip.active::after,.chip.multi.active::after{content:' ✓';font-size:10px;font-weight:700}
 .wiz-textarea{width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s;resize:vertical;min-height:90px;line-height:1.55}
 .wiz-textarea:focus{border-color:var(--ruby)}
 .wiz-textarea::placeholder{color:rgba(110,101,88,0.45)}
-.api-key-section{margin-top:22px;padding-top:20px;border-top:1px solid var(--border)}
-.api-key-label{font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;display:block;margin-bottom:7px}
-.api-key-sub{font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55}
-.api-key-sub a{color:var(--river);text-decoration:none}
-.api-key-sub a:hover{text-decoration:underline}
+.wiz-nokey-note{margin-top:16px;padding:12px 14px;background:var(--amber-tint);border:1.5px solid rgba(196,123,32,0.28);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;color:var(--amber);line-height:1.55}
+.wiz-nokey-note a{color:var(--river);text-decoration:none}
+.wiz-nokey-note a:hover{text-decoration:underline}
 .wiz-error{background:rgba(194,59,59,0.09);border:1.5px solid rgba(194,59,59,0.28);border-radius:var(--radius-md);padding:13px 16px;margin-top:18px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);line-height:1.5;display:none}
 .wiz-error.visible{display:block}
 .wiz-nav{display:flex;gap:10px;margin-top:28px;align-items:center}
@@ -120,7 +133,22 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .btn-primary.river{background:var(--river)}
 .btn-primary.river:hover{background:#1E5A9A}
 
-/* Import-specific */
+/* === Budget step === */
+.budget-calc{margin-top:14px;padding:14px 16px;background:var(--mist);border:1.5px solid var(--border);border-radius:var(--radius-md);display:flex;gap:20px;flex-wrap:wrap}
+.budget-calc-item{font-family:var(--font-ui);font-size:12px;color:var(--muted)}
+.budget-calc-item strong{font-size:15px;font-weight:600;color:var(--ink);display:block;margin-top:2px}
+.budget-input-wrap{position:relative;margin-top:4px}
+.budget-input-wrap .dollar-sign{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-family:var(--font-ui);font-size:15px;color:var(--muted);pointer-events:none}
+.budget-input-wrap .wiz-input{padding-left:28px}
+
+/* === Settings / Setup === */
+.conn-badge{font-family:var(--font-ui);font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:5px}
+.conn-badge-connected{background:var(--pine-tint);color:var(--pine);border:1px solid var(--pine-border)}
+.conn-badge-disconnected{background:rgba(110,101,88,0.10);color:var(--muted);border:1px solid var(--border)}
+.settings-key-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.settings-key-masked{font-family:monospace;font-size:12px;color:var(--muted);letter-spacing:0.05em}
+
+/* === Import === */
 .upload-label{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.2s;margin-bottom:12px}
 .upload-label:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
 .upload-label.has-file{border-color:var(--pine);color:var(--pine);background:var(--pine-tint)}
@@ -129,24 +157,80 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .import-mode-btn.active{border-color:var(--river);color:var(--river);background:var(--river-tint)}
 .import-trip-select{width:100%;padding:11px 12px;border:2px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s;margin-bottom:12px;display:none}
 .import-trip-select:focus{border-color:var(--river)}
+.api-key-section{margin-top:22px;padding-top:20px;border-top:1px solid var(--border)}
+.api-key-label{font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;display:block;margin-bottom:7px}
+.api-key-sub{font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55}
+.api-key-sub a{color:var(--river);text-decoration:none}
+.api-key-sub a:hover{text-decoration:underline}
 
 /* === Loading Overlay === */
-.ai-loading{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.94);z-index:9100;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px}
+.ai-loading{display:none;position:fixed;inset:0;background:rgba(26,35,50,0.94);z-index:9100;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;transition:background 0.5s}
 .ai-loading.open{display:flex}
 .loading-leaf{animation:leafGlow 2.2s ease-in-out infinite}
 @keyframes leafGlow{0%,100%{transform:scale(1) translateY(0);filter:brightness(1)}50%{transform:scale(1.07) translateY(-5px);filter:brightness(1.15)}}
-.loading-title{font-family:var(--font-display);font-size:28px;font-weight:600;color:#FDFCFA;letter-spacing:0.02em;text-align:center}
+.loading-title{font-family:var(--font-display);font-size:28px;font-weight:600;color:#FDFCFA;letter-spacing:0.02em;text-align:center;transition:color 0.4s}
 .loading-sub{font-family:var(--font-ui);font-size:14px;color:rgba(253,252,250,0.50);transition:opacity 0.45s;text-align:center;min-height:22px}
 .loading-dots{display:flex;gap:9px}
 .loading-dot{width:9px;height:9px;border-radius:50%;background:rgba(253,252,250,0.28);animation:dotPop 1.5s ease-in-out infinite}
 .loading-dot:nth-child(2){animation-delay:0.2s}.loading-dot:nth-child(3){animation-delay:0.4s}
 @keyframes dotPop{0%,80%,100%{transform:scale(0.7);opacity:0.35}40%{transform:scale(1.1);opacity:1}}
+.loading-error{display:none;text-align:center;max-width:380px}
+.loading-error p{font-family:var(--font-ui);font-size:13px;color:rgba(253,252,250,0.80);line-height:1.55;margin-bottom:18px}
+.loading-err-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.loading-err-btn{padding:10px 20px;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.loading-err-btn.primary{background:var(--ruby);color:white;border:none}
+.loading-err-btn.primary:hover{background:#A83232}
+.loading-err-btn.secondary{background:transparent;color:rgba(253,252,250,0.70);border:1.5px solid rgba(253,252,250,0.22)}
+.loading-err-btn.secondary:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.50)}
 
 @media(max-width:560px){.modal-card{padding:28px 22px 26px;border-radius:var(--radius-lg)}.wiz-question{font-size:20px}.wiz-date-row{grid-template-columns:1fr;gap:8px}.wiz-date-sep{display:none}}
-@media(max-width:480px){header{padding:14px 14px 12px}.page{padding:20px 12px 48px}.api-settings-btn{display:none}}
+@media(max-width:480px){
+  header{padding:14px 14px 12px}.page{padding:20px 12px 48px}.api-settings-btn{display:none}
+  .chip{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  #activities-chips{display:grid;grid-template-columns:1fr 1fr}
+  #activities-chips .chip{text-align:center}
+  .wiz-nav{flex-direction:column-reverse;gap:8px}
+  .btn-back,.btn-primary{width:100%;text-align:center}
+  .empty-btns{flex-direction:column;width:100%;max-width:300px}
+}
 </style>
 </head>
 <body>
+
+<!-- ====== SETUP OVERLAY (first run) ====== -->
+<div class="overlay" id="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+  <div class="modal-card" style="max-width:460px;text-align:center">
+    <img src="leaf-logo.png" width="52" height="62" alt="" aria-hidden="true" style="display:block;margin:0 auto 16px">
+    <div class="wiz-question" id="setup-title" style="font-size:clamp(22px,5vw,28px);text-align:center;margin-bottom:12px">Welcome to Seasons</div>
+    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6">Optionally add a Claude API key to let AI build your full itineraries with real stops and tips.</p>
+    <input type="password" class="wiz-input" id="setup-api-key" placeholder="sk-ant-… (optional)" autocomplete="off" style="text-align:left"/>
+    <div class="api-key-sub" style="margin-top:8px;text-align:left">Get your free key at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com →</a></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:24px">
+      <button class="btn-primary" style="flex:none" onclick="finishSetup()">Get Started →</button>
+      <button class="btn-back" onclick="skipSetup()" style="display:block;text-align:center;width:100%">Skip for now</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SETTINGS OVERLAY ====== -->
+<div class="overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="modal-card" style="max-width:440px">
+    <button class="modal-close" onclick="closeSettings()" aria-label="Close settings">&times;</button>
+    <div class="wiz-question" id="settings-title" style="font-size:22px;margin-bottom:24px">&#9881; Settings</div>
+    <div class="api-key-label">Claude API Key</div>
+    <div class="settings-key-row">
+      <span id="settings-conn-badge" class="conn-badge conn-badge-disconnected">Not Connected</span>
+      <span class="settings-key-masked" id="settings-key-masked"></span>
+    </div>
+    <div class="api-key-sub">Powers AI trip generation and packing lists. Usage-based pricing applies. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key →</a></div>
+    <input type="password" class="wiz-input" id="settings-api-key" placeholder="sk-ant-…" autocomplete="off" style="margin-bottom:12px"/>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="flex:none;padding:12px 24px" onclick="saveSettingsKey()">Save Key</button>
+      <button class="btn-back" id="settings-clear-btn" onclick="clearSettingsKey()" style="display:none">Remove</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <div class="header-inner">
     <div class="brand">
@@ -157,7 +241,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div class="header-right">
-      <button class="api-settings-btn" onclick="openKeySettings()">&#9881; API Key</button>
+      <button class="api-settings-btn" id="api-settings-btn" onclick="openSettings()">
+        &#9881; Settings <span class="api-conn-dot disconnected" id="api-conn-dot" aria-hidden="true">&#9679;</span>
+      </button>
       <span class="brand-tagline-text">Searles Family Trips</span>
     </div>
   </div>
@@ -165,42 +251,41 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 
 <div class="page">
   <div class="section-title">Upcoming &amp; Recent Trips</div>
-  <div class="trips-grid" id="trips-grid">
-    <div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px">Loading trips...</div>
-  </div>
+  <div class="trips-grid" id="trips-grid"></div>
 </div>
 
 <!-- ====== AI TRIP WIZARD ====== -->
-<div class="overlay" id="wizard-overlay">
+<div class="overlay" id="wizard-overlay" role="dialog" aria-modal="true" aria-labelledby="wiz-prog-label">
   <div class="modal-card">
-    <button class="modal-close" onclick="closeWizard()">&times;</button>
-    <div class="wiz-progress">
-      <div class="wiz-dot active"></div><div class="wiz-dot"></div><div class="wiz-dot"></div><div class="wiz-dot"></div><div class="wiz-dot"></div>
+    <button class="modal-close" onclick="closeWizard()" aria-label="Close wizard">&times;</button>
+    <div class="wiz-progress" aria-label="Wizard progress">
+      <div class="wiz-prog-track"><div class="wiz-prog-fill" id="wiz-prog-fill" style="width:16.7%"></div></div>
+      <div class="wiz-prog-label" id="wiz-prog-label">Step 1 of 6 — Destination</div>
     </div>
 
     <div class="wiz-step active" id="wstep-1">
-      <span class="wiz-emoji">&#127758;</span>
+      <span class="wiz-emoji" aria-hidden="true">&#127758;</span>
       <div class="wiz-question">Where are you headed?</div>
       <input type="text" class="wiz-input" id="w-dest" placeholder="Utah&#8217;s national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
       <div class="wiz-sublabel">When are you going?</div>
       <div class="wiz-date-row">
-        <input type="date" class="wiz-input-date" id="w-start"/>
-        <div class="wiz-date-sep">to</div>
-        <input type="date" class="wiz-input-date" id="w-end"/>
+        <input type="date" class="wiz-input-date" id="w-start" aria-label="Start date"/>
+        <div class="wiz-date-sep" aria-hidden="true">to</div>
+        <input type="date" class="wiz-input-date" id="w-end" aria-label="End date"/>
       </div>
     </div>
 
     <div class="wiz-step" id="wstep-2">
-      <span class="wiz-emoji">&#128197;</span>
+      <span class="wiz-emoji" aria-hidden="true">&#128197;</span>
       <div class="wiz-question">How long is the trip?</div>
-      <div class="stepper" id="days-stepper">
-        <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)">&#8722;</button>
-        <div class="stepper-val" id="days-val">3</div>
-        <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)">+</button>
+      <div class="stepper" id="days-stepper" role="group" aria-label="Number of days">
+        <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)" aria-label="Fewer days">&#8722;</button>
+        <div class="stepper-val" id="days-val" aria-live="polite" aria-atomic="true">3</div>
+        <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)" aria-label="More days">+</button>
       </div>
       <div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:8px" id="days-label">days</div>
       <div class="wiz-sublabel">Who&#8217;s coming?</div>
-      <div class="chip-row" id="who-chips">
+      <div class="chip-row" id="who-chips" role="group" aria-label="Travel group">
         <button class="chip" data-group="who" data-val="just the two of us">Just the two of us</button>
         <button class="chip" data-group="who" data-val="family with kids">Family with kids</button>
         <button class="chip" data-group="who" data-val="family without kids">Family without kids</button>
@@ -210,9 +295,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     </div>
 
     <div class="wiz-step" id="wstep-3">
-      <span class="wiz-emoji">&#127752;</span>
+      <span class="wiz-emoji" aria-hidden="true">&#127752;</span>
       <div class="wiz-question">What do you love? Pick all that apply.</div>
-      <div class="chip-row" id="activities-chips">
+      <div class="chip-row" id="activities-chips" role="group" aria-label="Interests">
         <button class="chip multi" data-val="hiking and national parks">&#129097; Hiking &amp; Parks</button>
         <button class="chip multi" data-val="fine dining and local food">&#127829; Fine Dining</button>
         <button class="chip multi" data-val="city exploring and neighborhoods">&#127963; City Exploring</button>
@@ -225,16 +310,16 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     </div>
 
     <div class="wiz-step" id="wstep-4">
-      <span class="wiz-emoji">&#9889;</span>
+      <span class="wiz-emoji" aria-hidden="true">&#9889;</span>
       <div class="wiz-question">What&#8217;s your travel style?</div>
       <div class="wiz-sublabel">Pace</div>
-      <div class="chip-row" id="pace-chips">
+      <div class="chip-row" id="pace-chips" role="group" aria-label="Travel pace">
         <button class="chip" data-group="pace" data-val="relaxed, 2-3 stops per day">&#128524; Easy-going</button>
         <button class="chip" data-group="pace" data-val="balanced, 4-5 stops per day">&#9878;&#65039; Balanced</button>
         <button class="chip" data-group="pace" data-val="adventure mode, 6-8 stops per day">&#127939; Adventure mode</button>
       </div>
-      <div class="wiz-sublabel">Budget</div>
-      <div class="chip-row" id="budget-chips">
+      <div class="wiz-sublabel">Budget level</div>
+      <div class="chip-row" id="budget-chips" role="group" aria-label="Budget level">
         <button class="chip" data-group="budget" data-val="budget-friendly">&#128176; Budget-friendly</button>
         <button class="chip" data-group="budget" data-val="mid-range">&#128179; Mid-range</button>
         <button class="chip" data-group="budget" data-val="splurge-worthy">&#10024; Splurge-worthy</button>
@@ -242,16 +327,34 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     </div>
 
     <div class="wiz-step" id="wstep-5">
-      <span class="wiz-emoji">&#128221;</span>
+      <span class="wiz-emoji" aria-hidden="true">&#128176;</span>
+      <div class="wiz-question">What&#8217;s your trip budget?</div>
+      <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.55">Optional &#8212; we&#8217;ll use this to tailor recommendations.</p>
+      <div class="chip-row" style="margin-bottom:14px" role="group" aria-label="Budget type">
+        <button class="chip active" id="btype-total" onclick="setBudgetType('total')">Total trip</button>
+        <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day</button>
+      </div>
+      <div class="budget-input-wrap">
+        <span class="dollar-sign" aria-hidden="true">$</span>
+        <input type="number" class="wiz-input" id="w-budget-amt" placeholder="e.g. 3000" min="0" step="50" oninput="updateBudgetCalc()" aria-label="Budget amount in dollars"/>
+      </div>
+      <div class="budget-calc" id="budget-calc" style="display:none" aria-live="polite">
+        <div class="budget-calc-item">Per day<strong id="calc-perday">—</strong></div>
+        <div class="budget-calc-item">Per person<strong id="calc-perperson">—</strong></div>
+      </div>
+    </div>
+
+    <div class="wiz-step" id="wstep-6">
+      <span class="wiz-emoji" aria-hidden="true">&#128221;</span>
       <div class="wiz-question">Anything else to know?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
-      <div class="api-key-section" id="wiz-key-section">
-        <span class="api-key-label">Claude API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pine)">(optional)</span></span>
-        <div class="api-key-sub">Add a key to let AI fill your full itinerary with real stops &amp; tips. Without one we create a blank trip you fill in yourself. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key at console.anthropic.com &#8594;</a></div>
-        <input type="password" class="wiz-input" id="w-api-key" placeholder="sk-ant-&#8230; (leave blank to build manually)" autocomplete="off"/>
+      <div class="wiz-nokey-note" id="wiz-no-key-note" style="display:none">
+        No API key set &#8212; we&#8217;ll create a blank trip you can fill in yourself.
+        <a href="#" onclick="event.preventDefault();closeWizard();openSettings()">Add your key in Settings &#8594;</a>
       </div>
-      <div class="wiz-error" id="wiz-error"></div>
     </div>
+
+    <div class="wiz-error" id="wiz-error" role="alert"></div>
 
     <div class="wiz-nav">
       <button class="btn-back" id="wiz-back-btn" onclick="wizBack()" style="display:none">&#8592; Back</button>
@@ -261,18 +364,18 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 </div>
 
 <!-- ====== IMPORT MODAL ====== -->
-<div class="overlay" id="import-overlay">
+<div class="overlay" id="import-overlay" role="dialog" aria-modal="true" aria-labelledby="import-title">
   <div class="modal-card">
-    <button class="modal-close" onclick="closeImport()">&times;</button>
-    <span class="wiz-emoji">&#128203;</span>
-    <div class="wiz-question">Import an Itinerary</div>
+    <button class="modal-close" onclick="closeImport()" aria-label="Close import">&times;</button>
+    <span class="wiz-emoji" aria-hidden="true">&#128203;</span>
+    <div class="wiz-question" id="import-title">Import an Itinerary</div>
     <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Paste anything &#8212; a travel agent email, Google Doc, notes app text, booking confirmations. AI will parse it into a full interactive itinerary.</p>
 
     <div class="import-mode-row">
       <button class="import-mode-btn active" id="mode-new" onclick="setImportMode('new')">&#10024; Create new trip</button>
       <button class="import-mode-btn" id="mode-append" onclick="setImportMode('append')">&#43; Add to existing trip</button>
     </div>
-    <select class="import-trip-select" id="import-target-trip"></select>
+    <select class="import-trip-select" id="import-target-trip" aria-label="Select trip to append to"></select>
 
     <label class="upload-label" id="upload-label">
       &#128206; Upload a .txt file
@@ -288,13 +391,17 @@ Drive to Zion NP (4 hrs)
 Check in Zion Lodge
 Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 
-    <div class="api-key-section" id="import-key-section">
-      <span class="api-key-label">Claude API Key</span>
-      <div class="api-key-sub">Required to parse your itinerary with AI. <a href="https://console.anthropic.com" target="_blank" rel="noopener">Get your key at console.anthropic.com &#8594;</a></div>
-      <input type="password" class="wiz-input" id="import-api-key" placeholder="sk-ant-&#8230;" autocomplete="off"/>
+    <div class="api-key-section" id="import-key-section" style="display:none">
+      <div id="import-key-connected" style="display:none">
+        <span style="font-family:var(--font-ui);font-size:12px;color:var(--pine)">&#10003; API key connected &#8212; ready to import.</span>
+      </div>
+      <div id="import-key-needed">
+        <span class="api-key-label">Claude API Key Required</span>
+        <div class="api-key-sub">A key is needed to parse your itinerary with AI. <a href="#" onclick="event.preventDefault();closeImport();openSettings()">Add your key in Settings &#8594;</a></div>
+      </div>
     </div>
 
-    <div class="wiz-error" id="import-error"></div>
+    <div class="wiz-error" id="import-error" role="alert"></div>
 
     <div class="wiz-nav">
       <button class="btn-back" onclick="closeImport()">Cancel</button>
@@ -304,15 +411,24 @@ Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 </div>
 
 <!-- Loading overlay -->
-<div class="ai-loading" id="ai-loading">
-  <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt=""/>
+<div class="ai-loading" id="ai-loading" aria-live="assertive" aria-label="Loading">
+  <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt="" aria-hidden="true"/>
   <div class="loading-title" id="loading-title">Planning your adventure&#8230;</div>
-  <div class="loading-sub" id="loading-sub">Claude is crafting your itinerary</div>
-  <div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
+  <div class="loading-sub" id="loading-sub">Claude is on it</div>
+  <div class="loading-dots" id="loading-dots">
+    <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
+  </div>
+  <div class="loading-error" id="loading-error">
+    <p id="loading-error-msg"></p>
+    <div class="loading-err-btns">
+      <button class="loading-err-btn primary" onclick="retryGenerate()">&#8635; Try again</button>
+      <button class="loading-err-btn secondary" onclick="createBlankFromLoading()">Create blank itinerary instead</button>
+    </div>
+  </div>
 </div>
 
 <script>
-const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON object. Do NOT use markdown, code fences, backticks, or any explanatory text. Begin your response with { and end with }. Any character before { or after } will break the app.
+const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON object. Do NOT use markdown, code fences, backticks, or any explanatory text. Begin your response with { and end with }.
 
 {
   "title": "Trip Name",
@@ -343,7 +459,6 @@ Rules:
 
 const PLAN_SYSTEM=`You are a meticulous trip planner. Given travel preferences, generate a complete day-by-day itinerary. `+TRIP_JSON_SCHEMA;
 
-/* Compact schema for import — omits generated notes/stars/tips to maximise stops within token limit */
 const IMPORT_SCHEMA=`CRITICAL: Respond with a single raw JSON object only. No markdown, no backticks, no prose. Start with { end with }.
 
 {
@@ -374,40 +489,103 @@ Rules:
 
 const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary. Your only job is to identify every day, every stop, its location coordinates, type, and time. Do not generate any descriptions or tips — leave notes and tip blank. `+IMPORT_SCHEMA;
 
-const LOADING_MSGS=['Researching the best local spots…','Plotting scenic routes…','Finding hidden gems…','Consulting the map…','Picking the perfect restaurants…','Building your day-by-day plan…','Adding insider tips…','Checking opening hours…','Almost there…'];
+const LOADING_MSGS=['Mapping your days…','Finding the best stops…','Building your itinerary…'];
+const GROUP_SIZE={'just the two of us':2,'family with kids':4,'family without kids':2,'friends group':4,'solo adventure':1};
+const WIZ_LABELS=['Destination','Group','Interests','Style','Budget','Review'];
 
-let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''},loadingTimer=null;
-let _allTripsCache=[];
-let _importMode='new';
+let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:'',budgetTotal:null,budgetAmtType:'total'};
+let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total';
+let _wizOpener=null,_settingsOpener=null,_retryGenWizData=null,_trapCleanup=null;
 
+/* ---- API Key ---- */
 function getApiKey(){return(localStorage.getItem('claude_api_key')||'').trim()}
-function saveApiKey(k){if(k)localStorage.setItem('claude_api_key',k.trim())}
+function saveApiKey(k){if(k){localStorage.setItem('claude_api_key',k.trim());updateConnUI()}}
+function clearApiKey(){localStorage.removeItem('claude_api_key');updateConnUI()}
 
-function openKeySettings(){
-  const cur=getApiKey(),masked=cur?cur.slice(0,8)+'…':'';
-  const nk=prompt('Claude API Key\n'+(masked?'Current: '+masked+'\n\n':'\n')+'Get your key at console.anthropic.com\nUsage-based pricing applies.','');
-  if(nk!==null&&nk.trim()){saveApiKey(nk);alert('API key saved!')}
+function updateConnUI(){
+  const key=getApiKey();
+  const dot=document.getElementById('api-conn-dot');
+  if(dot){dot.className='api-conn-dot '+(key?'connected':'disconnected')}
+  const badge=document.getElementById('settings-conn-badge');
+  if(badge){badge.textContent=key?'Connected':'Not Connected';badge.className='conn-badge '+(key?'conn-badge-connected':'conn-badge-disconnected')}
+  const masked=document.getElementById('settings-key-masked');
+  if(masked)masked.textContent=key?key.slice(0,8)+'••••••••':'';
+  const clearBtn=document.getElementById('settings-clear-btn');
+  if(clearBtn)clearBtn.style.display=key?'block':'none';
 }
+
+/* ---- Focus trap ---- */
+function trapFocus(el){
+  const sel='button:not([disabled]),input:not([disabled]),select,textarea,a[href],[tabindex]:not([tabindex="-1"])';
+  function handler(e){
+    if(e.key!=='Tab')return;
+    const nodes=[...el.querySelectorAll(sel)].filter(n=>n.offsetParent!==null);
+    if(!nodes.length)return;
+    const first=nodes[0],last=nodes[nodes.length-1];
+    if(e.shiftKey){if(document.activeElement===first){e.preventDefault();last.focus();}}
+    else{if(document.activeElement===last){e.preventDefault();first.focus();}}
+  }
+  el.addEventListener('keydown',handler);
+  return()=>el.removeEventListener('keydown',handler);
+}
+
+/* ---- Setup screen ---- */
+function checkSetup(){
+  if(!localStorage.getItem('seasons_setup_seen')){
+    document.getElementById('setup-overlay').classList.add('open');
+    setTimeout(()=>document.getElementById('setup-api-key').focus(),150);
+    _trapCleanup=trapFocus(document.querySelector('#setup-overlay .modal-card'));
+  }
+}
+function finishSetup(){
+  const k=document.getElementById('setup-api-key').value.trim();
+  if(k)saveApiKey(k);
+  localStorage.setItem('seasons_setup_seen','1');
+  document.getElementById('setup-overlay').classList.remove('open');
+  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
+  updateConnUI();
+}
+function skipSetup(){
+  localStorage.setItem('seasons_setup_seen','1');
+  document.getElementById('setup-overlay').classList.remove('open');
+  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
+}
+
+/* ---- Settings panel ---- */
+function openSettings(){
+  _settingsOpener=document.activeElement;
+  updateConnUI();
+  document.getElementById('settings-api-key').value='';
+  document.getElementById('settings-overlay').classList.add('open');
+  _trapCleanup=trapFocus(document.querySelector('#settings-overlay .modal-card'));
+  setTimeout(()=>document.getElementById('settings-api-key').focus(),150);
+}
+function closeSettings(){
+  document.getElementById('settings-overlay').classList.remove('open');
+  if(_trapCleanup){_trapCleanup();_trapCleanup=null}
+  if(_settingsOpener)_settingsOpener.focus();
+}
+function saveSettingsKey(){
+  const k=document.getElementById('settings-api-key').value.trim();
+  if(!k){showSettingsMsg('Please enter an API key.');return}
+  saveApiKey(k);
+  document.getElementById('settings-api-key').value='';
+  closeSettings();
+}
+function clearSettingsKey(){
+  if(!confirm('Remove your saved API key?'))return;
+  clearApiKey();
+}
+function showSettingsMsg(m){/* inline: just focus the field */document.getElementById('settings-api-key').focus()}
 
 /* ---- Claude API call ---- */
 async function callClaude(systemPrompt,userPrompt,apiKey){
-  /* Guard: Claude API rejects empty text content blocks */
   const trimmedPrompt=userPrompt.trim();
   if(!trimmedPrompt)throw new Error('Prompt is empty — nothing to send to Claude.');
   const res=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key':apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({
-      model:'claude-sonnet-4-6',
-      max_tokens:8192,
-      system:systemPrompt,
-      messages:[{role:'user',content:trimmedPrompt}]
-    })
+    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8192,system:systemPrompt,messages:[{role:'user',content:trimmedPrompt}]})
   });
   if(!res.ok){
     const d=await res.json().catch(()=>({}));
@@ -423,24 +601,19 @@ async function callClaude(systemPrompt,userPrompt,apiKey){
 
 function parseJsonResponse(text){
   console.log('[Claude raw]',text);
-  /* strip code fences */
   let t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
-  /* detect truncated response — no closing brace at all */
   if(!t.includes('}'))throw new Error('Trip itinerary too long for AI to finish. Try importing 7 days at a time.');
-  /* extract outermost { } */
   const js=t.indexOf('{'),je=t.lastIndexOf('}');
   if(js!==-1&&je>js)t=t.slice(js,je+1);
-  /* try direct parse */
   try{return JSON.parse(t)}catch(e1){}
-  /* auto-repair common issues */
   let fixed=t
-    .replace(/,\s*([}\]])/g,'$1')                    /* trailing commas */
-    .replace(/:\s*(latitude|longitude)\b/gi,':0')     /* literal placeholder words */
+    .replace(/,\s*([}\]])/g,'$1')
+    .replace(/:\s*(latitude|longitude)\b/gi,':0')
     .replace(/\bundefined\b/g,'null')
     .replace(/\bNaN\b/g,'null')
     .replace(/\bInfinity\b/g,'null')
-    .replace(/\/\/[^\n]*/g,'')                        /* // comments */
-    .replace(/\/\*[\s\S]*?\*\//g,'');                 /* /* comments */
+    .replace(/\/\/[^\n]*/g,'')
+    .replace(/\/\*[\s\S]*?\*\//g,'');
   try{return JSON.parse(fixed)}catch(e2){
     console.error('[Claude parse error]',e2.message,'\nRaw:',text.slice(0,800));
     const snippet=text.slice(0,200).replace(/</g,'&lt;');
@@ -460,49 +633,66 @@ function saveTrip(trip,prefix,destName,startDate,endDate){
 }
 
 /* ---- Wizard ---- */
+function _applyWizStep(n){
+  wizStep=n;
+  document.querySelectorAll('.wiz-step').forEach(el=>el.classList.remove('active'));
+  document.getElementById('wstep-'+n).classList.add('active');
+  document.getElementById('wiz-prog-fill').style.width=(n/6*100)+'%';
+  document.getElementById('wiz-prog-label').textContent='Step '+n+' of 6 — '+WIZ_LABELS[n-1];
+  document.getElementById('wiz-back-btn').style.display=n>1?'block':'none';
+  const btn=document.getElementById('wiz-next-btn');
+  btn.textContent=n===6?'✨ Generate My Trip':'Next →';
+  btn.classList.toggle('generate',n===6);
+  if(n===6){document.getElementById('wiz-no-key-note').style.display=getApiKey()?'none':'block';}
+}
+
+function showWizStep(n){
+  _applyWizStep(n);
+  history.pushState({wizOpen:true,step:n},'');
+}
+
 function openWizard(){
+  _wizOpener=document.activeElement;
   wizStep=1;
-  wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:''};
-  ['w-dest','w-start','w-end','w-notes','w-api-key'].forEach(id=>document.getElementById(id).value='');
+  wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:'',budgetTotal:null,budgetAmtType:'total'};
+  ['w-dest','w-start','w-end','w-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const budgetAmt=document.getElementById('w-budget-amt');if(budgetAmt)budgetAmt.value='';
   document.getElementById('days-val').textContent='3';
   document.getElementById('days-label').textContent='days';
   document.getElementById('days-minus').disabled=false;
   document.getElementById('days-plus').disabled=false;
-  document.getElementById('wiz-error').classList.remove('visible');
+  hideErr('wiz-error');
   document.querySelectorAll('#wizard-overlay .chip').forEach(c=>c.classList.remove('active'));
-  document.getElementById('wiz-key-section').style.display=getApiKey()?'none':'block';
-  showWizStep(1);
+  document.getElementById('btype-total').classList.add('active');
+  document.getElementById('btype-perday').classList.remove('active');
+  document.getElementById('budget-calc').style.display='none';
+  _budgetAmtType='total';
   document.getElementById('wizard-overlay').classList.add('open');
+  history.pushState({wizOpen:true,step:1},'');
+  _applyWizStep(1);
+  const tc=trapFocus(document.querySelector('#wizard-overlay .modal-card'));
+  document.getElementById('wizard-overlay')._trapCleanup=tc;
   setTimeout(()=>document.getElementById('w-dest').focus(),150);
 }
-function closeWizard(){document.getElementById('wizard-overlay').classList.remove('open')}
 
-function showWizStep(n){
-  wizStep=n;
-  document.querySelectorAll('.wiz-step').forEach(el=>el.classList.remove('active'));
-  document.getElementById('wstep-'+n).classList.add('active');
-  document.querySelectorAll('.wiz-dot').forEach((d,i)=>{d.classList.remove('active','done');if(i+1<n)d.classList.add('done');if(i+1===n)d.classList.add('active')});
-  document.getElementById('wiz-back-btn').style.display=n>1?'block':'none';
-  const btn=document.getElementById('wiz-next-btn');
-  btn.textContent=n===5?'✨ Generate My Trip':'Next →';
-  btn.classList.toggle('generate',n===5);
+function closeWizard(){
+  document.getElementById('wizard-overlay').classList.remove('open');
+  const tc=document.getElementById('wizard-overlay')._trapCleanup;
+  if(tc)tc();
+  if(_wizOpener)_wizOpener.focus();
 }
 
-function adjustDays(d){
-  wizData.days=Math.max(1,Math.min(14,wizData.days+d));
-  document.getElementById('days-val').textContent=wizData.days;
-  document.getElementById('days-minus').disabled=wizData.days<=1;
-  document.getElementById('days-plus').disabled=wizData.days>=14;
+function wizBack(){
+  hideErr('wiz-error');
+  if(wizStep>1)history.back();
 }
-
-function wizBack(){hideErr('wiz-error');if(wizStep>1)showWizStep(wizStep-1)}
 
 function wizNext(){
   const err=validateWizStep(wizStep);
   if(err){showErr('wiz-error',err);return}
   collectWizStep(wizStep);
   hideErr('wiz-error');
-  if(wizStep===5)generateTrip();else showWizStep(wizStep+1);
+  if(wizStep===6)generateTrip();else showWizStep(wizStep+1);
 }
 
 function validateWizStep(s){
@@ -517,10 +707,11 @@ function validateWizStep(s){
 
 function collectWizStep(s){
   if(s===1){wizData.dest=document.getElementById('w-dest').value.trim();wizData.startDate=document.getElementById('w-start').value;wizData.endDate=document.getElementById('w-end').value}
-  if(s===2){wizData.days=parseInt(document.getElementById('days-val').textContent,10);const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val}
+  if(s===2){wizData.days=parseInt(document.getElementById('days-val').textContent,10)||3;const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val}
   if(s===3)wizData.activities=[...document.querySelectorAll('#activities-chips .chip.active')].map(c=>c.dataset.val);
   if(s===4){const p=document.querySelector('#pace-chips .chip.active'),b=document.querySelector('#budget-chips .chip.active');if(p)wizData.pace=p.dataset.val;if(b)wizData.budget=b.dataset.val}
-  if(s===5){wizData.notes=document.getElementById('w-notes').value.trim();const k=document.getElementById('w-api-key').value.trim();if(k)saveApiKey(k)}
+  if(s===5){const amt=parseFloat(document.getElementById('w-budget-amt').value);wizData.budgetTotal=isNaN(amt)?null:amt;wizData.budgetAmtType=_budgetAmtType}
+  if(s===6)wizData.notes=document.getElementById('w-notes').value.trim();
 }
 
 function buildWizPrompt(){
@@ -530,13 +721,40 @@ function buildWizPrompt(){
   if(wizData.who)l.push('Traveling: '+wizData.who);
   if(wizData.activities.length)l.push('Interests: '+wizData.activities.join(', '));
   if(wizData.pace)l.push('Pace: '+wizData.pace);
-  if(wizData.budget)l.push('Budget: '+wizData.budget);
+  if(wizData.budget)l.push('Budget level: '+wizData.budget);
+  if(wizData.budgetTotal){
+    const amt='$'+wizData.budgetTotal.toLocaleString();
+    l.push('Budget amount: '+amt+' '+(wizData.budgetAmtType==='total'?'total':'per day'));
+  }
   if(wizData.notes)l.push('Notes: '+wizData.notes);
   return l.join('\n');
 }
 
+/* ---- Budget step ---- */
+function setBudgetType(type){
+  _budgetAmtType=type;
+  document.getElementById('btype-total').classList.toggle('active',type==='total');
+  document.getElementById('btype-perday').classList.toggle('active',type==='perday');
+  updateBudgetCalc();
+}
+function updateBudgetCalc(){
+  const amt=parseFloat(document.getElementById('w-budget-amt').value);
+  const calcEl=document.getElementById('budget-calc');
+  if(!amt||isNaN(amt)){calcEl.style.display='none';return}
+  const days=wizData.days||parseInt(document.getElementById('days-val').textContent,10)||3;
+  const groupSize=GROUP_SIZE[wizData.who]||2;
+  const total=_budgetAmtType==='total'?amt:amt*days;
+  const perDay=_budgetAmtType==='total'?amt/days:amt;
+  const perPerson=total/groupSize;
+  document.getElementById('calc-perday').textContent='$'+Math.round(perDay).toLocaleString()+'/day';
+  document.getElementById('calc-perperson').textContent='$'+Math.round(perPerson).toLocaleString()+'/person';
+  calcEl.style.display='flex';
+}
+
+/* ---- Trip generation ---- */
 async function generateSkeleton(){
   closeWizard();showLoading('Creating your trip…');
+  _retryGenWizData=null;
   try{
     let mapCenter=[20,0],mapZoom=4;
     try{
@@ -550,27 +768,57 @@ async function generateSkeleton(){
       if(sd){const d=new Date(sd);d.setDate(d.getDate()+i);sub=DN[d.getDay()]+' '+MN[d.getMonth()]+' '+d.getDate()+' • '+wizData.dest}
       return{title:'Day '+(i+1)+' — '+wizData.dest,subtitle:sub,tip:'',stops:[]};
     });
-    const id=saveTrip({title:wizData.dest+' Trip',mapCenter,mapZoom,days},'trip-',wizData.dest,wizData.startDate,wizData.endDate);
-    hideLoading();window.location.href='trip.html?id='+id;
-  }catch(e){hideLoading();openWizard();showWizStep(5);showErr('wiz-error',e.message)}
+    const tripData={title:wizData.dest+' Trip',mapCenter,mapZoom,days};
+    tripData._meta={who:wizData.who,activities:wizData.activities,pace:wizData.pace,budgetLevel:wizData.budget};
+    if(wizData.budgetTotal)tripData.budget={total:wizData.budgetTotal,type:wizData.budgetAmtType};
+    const id=saveTrip(tripData,'trip-',wizData.dest,wizData.startDate,wizData.endDate);
+    showSuccessAndRedirect(id);
+  }catch(e){showLoadingError(e.message)}
 }
 
 async function generateTrip(){
-  const apiKey=document.getElementById('w-api-key').value.trim()||getApiKey();
+  const apiKey=getApiKey();
   if(!apiKey){generateSkeleton();return}
-  saveApiKey(apiKey);
   closeWizard();showLoading('Planning your adventure…');
+  _retryGenWizData={apiKey,prompt:buildWizPrompt(),wizSnap:JSON.parse(JSON.stringify(wizData))};
   try{
-    const text=await callClaude(PLAN_SYSTEM,buildWizPrompt(),apiKey);
+    const text=await callClaude(PLAN_SYSTEM,_retryGenWizData.prompt,apiKey);
     const trip=parseJsonResponse(text);
+    trip._meta={who:wizData.who,activities:wizData.activities,pace:wizData.pace,budgetLevel:wizData.budget};
+    if(wizData.budgetTotal)trip.budget={total:wizData.budgetTotal,type:wizData.budgetAmtType};
     const id=saveTrip(trip,'ai-',wizData.dest,wizData.startDate,wizData.endDate);
-    hideLoading();window.location.href='trip.html?id='+id;
-  }catch(e){
-    hideLoading();
-    document.getElementById('wiz-key-section').style.display='block';
-    document.getElementById('wizard-overlay').classList.add('open');
-    showWizStep(5);showErr('wiz-error',e.message);
-  }
+    showSuccessAndRedirect(id);
+  }catch(e){showLoadingError(e.message)}
+}
+
+function showSuccessAndRedirect(id){
+  hideLoading();
+  const overlay=document.getElementById('ai-loading');
+  document.getElementById('loading-title').textContent='✓ Your itinerary is ready';
+  document.getElementById('loading-sub').textContent='Opening your trip…';
+  document.getElementById('loading-dots').style.display='none';
+  overlay.style.background='rgba(46,125,82,0.96)';
+  overlay.classList.add('open');
+  setTimeout(()=>{window.location.href='trip.html?id='+id},2000);
+}
+
+function showLoadingError(msg){
+  if(loadingTimer){clearInterval(loadingTimer);loadingTimer=null}
+  document.getElementById('loading-dots').style.display='none';
+  document.getElementById('loading-sub').style.display='none';
+  document.getElementById('loading-error-msg').textContent=msg;
+  document.getElementById('loading-error').style.display='block';
+}
+
+function retryGenerate(){
+  if(!_retryGenWizData)return;
+  wizData=Object.assign(wizData,_retryGenWizData.wizSnap);
+  generateTrip();
+}
+
+function createBlankFromLoading(){
+  hideLoading();
+  generateSkeleton();
 }
 
 /* ---- Import ---- */
@@ -583,23 +831,33 @@ function setImportMode(mode){
 function openImport(){
   _importMode='new';
   document.getElementById('import-text').value='';
-  document.getElementById('import-api-key').value='';
   document.getElementById('import-error').classList.remove('visible');
   document.getElementById('upload-label').classList.remove('has-file');
   document.getElementById('upload-label').innerHTML='&#128206; Upload a .txt file<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>';
-  document.getElementById('import-key-section').style.display=getApiKey()?'none':'block';
-  // Reset mode buttons
   document.getElementById('mode-new').classList.add('active');
   document.getElementById('mode-append').classList.remove('active');
-  // Populate trip selector
   const sel=document.getElementById('import-target-trip');
   sel.style.display='none';
   sel.innerHTML=_allTripsCache.map(t=>`<option value="${t.id}">${t.title}${t.dates?' ('+t.dates+')':''}</option>`).join('');
+  // Show/hide key section
+  const keySection=document.getElementById('import-key-section');
+  const keyExists=!!getApiKey();
+  keySection.style.display='block';
+  document.getElementById('import-key-connected').style.display=keyExists?'block':'none';
+  document.getElementById('import-key-needed').style.display=keyExists?'none':'block';
+  _settingsOpener=document.activeElement;
   document.getElementById('import-overlay').classList.add('open');
+  const tc=trapFocus(document.querySelector('#import-overlay .modal-card'));
+  document.getElementById('import-overlay')._trapCleanup=tc;
   setTimeout(()=>document.getElementById('import-text').focus(),150);
   document.getElementById('import-file').addEventListener('change',handleFileUpload);
 }
-function closeImport(){document.getElementById('import-overlay').classList.remove('open')}
+function closeImport(){
+  document.getElementById('import-overlay').classList.remove('open');
+  const tc=document.getElementById('import-overlay')._trapCleanup;
+  if(tc)tc();
+  if(_settingsOpener)_settingsOpener.focus();
+}
 
 function handleFileUpload(e){
   const file=e.target.files[0];if(!file)return;
@@ -615,9 +873,8 @@ function handleFileUpload(e){
 async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
   if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
-  const apiKey=document.getElementById('import-api-key').value.trim()||getApiKey();
-  if(!apiKey){showErr('import-error','A Claude API key is required to parse your itinerary. Get one at console.anthropic.com');return}
-  saveApiKey(apiKey);
+  const apiKey=getApiKey();
+  if(!apiKey){showErr('import-error','A Claude API key is required. Add one in Settings.');return}
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
@@ -625,7 +882,6 @@ async function importTrip(){
     const parsed=parseJsonResponse(resp);
     if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
     if(targetId){
-      // Append parsed days to the existing trip
       let existing=null;
       const saved=localStorage.getItem('tripState_'+targetId);
       if(saved){existing=JSON.parse(saved);}
@@ -644,7 +900,6 @@ async function importTrip(){
     }
   }catch(e){
     hideLoading();
-    document.getElementById('import-key-section').style.display='block';
     document.getElementById('import-overlay').classList.add('open');
     showErr('import-error',e.message);
   }
@@ -652,14 +907,20 @@ async function importTrip(){
 
 /* ---- Loading ---- */
 function showLoading(title){
+  if(loadingTimer){clearInterval(loadingTimer);loadingTimer=null}
+  const overlay=document.getElementById('ai-loading');
+  overlay.style.background='';
   document.getElementById('loading-title').textContent=title||'Working…';
-  document.getElementById('ai-loading').classList.add('open');
+  document.getElementById('loading-dots').style.display='flex';
+  document.getElementById('loading-sub').style.display='block';
+  document.getElementById('loading-error').style.display='none';
+  overlay.classList.add('open');
   const sub=document.getElementById('loading-sub');
-  let i=0;sub.textContent='Claude is on it';
+  let i=0;sub.textContent=LOADING_MSGS[0];sub.style.opacity='1';
   loadingTimer=setInterval(()=>{
     sub.style.opacity='0';
     setTimeout(()=>{i=(i+1)%LOADING_MSGS.length;sub.textContent=LOADING_MSGS[i];sub.style.opacity='1'},400);
-  },2800);
+  },2500);
 }
 function hideLoading(){
   document.getElementById('ai-loading').classList.remove('open');
@@ -679,6 +940,14 @@ function formatDates(s,e){
   }catch(ex){return s}
 }
 
+function adjustDays(d){
+  wizData.days=Math.max(1,Math.min(14,wizData.days+d));
+  document.getElementById('days-val').textContent=wizData.days;
+  document.getElementById('days-minus').disabled=wizData.days<=1;
+  document.getElementById('days-plus').disabled=wizData.days>=14;
+  updateBudgetCalc();
+}
+
 /* ---- Chip handlers ---- */
 document.querySelectorAll('.chip[data-group]').forEach(btn=>{
   btn.addEventListener('click',function(){
@@ -688,7 +957,7 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
 });
 document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
 
-/* ---- Date pickers: auto-fill end date and calculate days ---- */
+/* ---- Date pickers ---- */
 function updateDaysFromDates(){
   const s=document.getElementById('w-start').value;
   const e=document.getElementById('w-end').value;
@@ -700,12 +969,11 @@ function updateDaysFromDates(){
     document.getElementById('days-minus').disabled=diff<=1;
     document.getElementById('days-plus').disabled=diff>=14;
     document.getElementById('days-label').textContent='days (calculated from your dates)';
+    updateBudgetCalc();
   }
 }
-
 document.getElementById('w-start').addEventListener('change',function(){
   const s=this.value;if(!s)return;
-  // Default end date to the next day if not set or before start
   const endEl=document.getElementById('w-end');
   const next=new Date(s+'T00:00:00');next.setDate(next.getDate()+1);
   const nextStr=next.toISOString().split('T')[0];
@@ -714,19 +982,37 @@ document.getElementById('w-start').addEventListener('change',function(){
 });
 document.getElementById('w-end').addEventListener('change',updateDaysFromDates);
 
-/* ---- File upload ---- */
-document.getElementById('import-file').addEventListener('change',handleFileUpload);
+/* ---- Browser back / popstate ---- */
+window.addEventListener('popstate',function(e){
+  const wizOpen=document.getElementById('wizard-overlay').classList.contains('open');
+  if(e.state&&e.state.wizOpen){
+    if(!wizOpen)document.getElementById('wizard-overlay').classList.add('open');
+    _applyWizStep(e.state.step||1);
+  }else if(wizOpen){
+    closeWizard();
+  }
+});
 
 /* ---- Overlay click to close ---- */
 document.getElementById('wizard-overlay').addEventListener('click',function(e){if(e.target===this)closeWizard()});
 document.getElementById('import-overlay').addEventListener('click',function(e){if(e.target===this)closeImport()});
+document.getElementById('settings-overlay').addEventListener('click',function(e){if(e.target===this)closeSettings()});
+document.getElementById('setup-overlay').addEventListener('click',function(e){if(e.target===this)skipSetup()});
 
 /* ---- Keyboard shortcuts ---- */
 document.addEventListener('keydown',function(e){
   const wizOpen=document.getElementById('wizard-overlay').classList.contains('open');
   const impOpen=document.getElementById('import-overlay').classList.contains('open');
-  if(e.key==='Escape'){if(wizOpen)closeWizard();if(impOpen)closeImport();return}
-  if(e.key==='Enter'&&wizOpen&&document.activeElement?.tagName!=='TEXTAREA')wizNext();
+  const setOpen=document.getElementById('settings-overlay').classList.contains('open');
+  const setupOpen=document.getElementById('setup-overlay').classList.contains('open');
+  if(e.key==='Escape'){
+    if(wizOpen){history.back();return}
+    if(impOpen)closeImport();
+    if(setOpen)closeSettings();
+    if(setupOpen)skipSetup();
+    return;
+  }
+  if(e.key==='Enter'&&wizOpen&&document.activeElement?.tagName!=='TEXTAREA'&&document.activeElement?.tagName!=='BUTTON')wizNext();
 });
 
 /* ---- Delete trip ---- */
@@ -734,12 +1020,10 @@ function deleteTrip(id,title,isLocal){
   const msg=isLocal?'Delete "'+title+'"? This cannot be undone.':'Hide "'+title+'" from your list? (It can be restored by clearing your browser data.)';
   if(!confirm(msg))return;
   if(isLocal){
-    // Remove state and manifest entry
     localStorage.removeItem('tripState_'+id);
     const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
     localStorage.setItem('localTrips',JSON.stringify(local.filter(t=>t.id!==id)));
-  } else {
-    // Server trip: just hide it
+  }else{
     const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
     if(!hidden.includes(id)){hidden.push(id);localStorage.setItem('hiddenTrips',JSON.stringify(hidden))}
   }
@@ -748,14 +1032,34 @@ function deleteTrip(id,title,isLocal){
 
 /* ---- Load trips grid ---- */
 function lsGet(key,fallback){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}}
+
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
+  grid.innerHTML='';
+  const loadTimeout=setTimeout(()=>{
+    grid.innerHTML='<div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px;grid-column:1/-1">Loading trips…</div>';
+  },500);
   let serverTrips=[];
   try{const r=await fetch('trips/manifest.json');if(r.ok)serverTrips=await r.json()}catch(e){}
+  clearTimeout(loadTimeout);
   const local=lsGet('localTrips',[]);
   const hidden=lsGet('hiddenTrips',[]);
   const all=[...serverTrips,...local].filter(t=>!hidden.includes(t.id));
   _allTripsCache=all;
+
+  if(all.length===0){
+    grid.innerHTML=`<div class="empty-state">
+      <img src="leaf-logo.png" width="64" height="76" alt="" aria-hidden="true" class="empty-leaf"/>
+      <div class="empty-headline">Your next adventure starts here</div>
+      <p class="empty-sub">Plan a new trip with AI, or import an existing itinerary.</p>
+      <div class="empty-btns">
+        <button class="btn-primary" style="flex:none;padding:13px 24px" onclick="openWizard()">✨ Plan a New Trip</button>
+        <button class="btn-primary river" style="flex:none;padding:13px 24px" onclick="openImport()">&#128203; Import an Itinerary</button>
+      </div>
+    </div>`;
+    return;
+  }
+
   grid.innerHTML=all.map(t=>{
     const isServer=!t.local;
     const isReceived=t.local&&t.id.startsWith('shared-');
@@ -768,9 +1072,10 @@ async function loadTrips(){
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
     else               ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#9998; Yours</span>';
     const editNote=isServer?'<div style="font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:0 18px 10px;line-height:1.4">Your edits are saved locally — use Collaborate to edit with others.</div>':'';
+    const safeTitle=t.title.replace(/'/g,"\\'");
     const deleteBtn=isServer
-      ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
-      :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${t.title.replace(/'/g,"\\'")}',true)" title="Delete trip">&#128465;</button>`;
+      ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
+      :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',true)" title="Delete trip">&#128465;</button>`;
     return`<a class="trip-card" href="trip.html?id=${t.id}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
@@ -790,17 +1095,20 @@ async function loadTrips(){
     </a>`;
   }).join('')+`
     <button class="add-card" onclick="openWizard()">
-      <div class="add-icon">&#10024;</div>
+      <div class="add-icon" aria-hidden="true">&#10024;</div>
       <div class="add-label">Plan a New Trip</div>
       <div class="add-sub">Answer a few questions &amp; AI builds your itinerary</div>
     </button>
     <button class="add-card river" onclick="openImport()">
-      <div class="add-icon">&#128203;</div>
+      <div class="add-icon" aria-hidden="true">&#128203;</div>
       <div class="add-label">Import an Itinerary</div>
       <div class="add-sub">Paste or upload any text &amp; AI populates it</div>
     </button>`;
 }
+
+updateConnUI();
 loadTrips();
+checkSetup();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
 </script>
 </body>

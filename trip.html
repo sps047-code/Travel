@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <title>Seasons</title>
 <link rel="manifest" href="app.webmanifest">
 <meta name="theme-color" content="#1A2332">
@@ -224,6 +224,38 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .share-toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
 .import-banner{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:13px 18px;font-family:var(--font-ui);font-size:13px;color:var(--pine);margin:16px 16px 0;line-height:1.5;display:none}
 .import-banner.visible{display:block}
+.shared-trip-banner{background:var(--mist);border-bottom:1.5px solid var(--border);padding:11px 20px;font-family:var(--font-ui);font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.shared-trip-banner strong{color:var(--ink)}
+.shared-save-btn{padding:7px 16px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s;white-space:nowrap}
+.shared-save-btn:hover{background:#1a6640}
+/* Packing list */
+.pack-header-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.pack-prog{font-family:var(--font-ui);font-size:12px;color:var(--pine);font-weight:600}
+.pack-section{border:1.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden;margin-bottom:8px}
+.pack-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:var(--paper);cursor:pointer;font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--ink);transition:background 0.15s;user-select:none}
+.pack-section-hdr:hover{background:var(--mist)}
+.pack-section-hdr .pack-name{display:flex;align-items:center;gap:7px}
+.pack-count{font-size:11px;font-weight:500;color:var(--muted)}
+.pack-toggle{font-size:11px;color:var(--muted)}
+.pack-items{padding:2px 0 6px;display:none}
+.pack-items.open{display:block}
+.pack-item{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;transition:background 0.12s}
+.pack-item:hover{background:var(--mist)}
+.pack-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--pine);flex-shrink:0;cursor:pointer}
+.pack-item-text{font-family:var(--font-ui);font-size:13px;color:var(--ink);line-height:1.3;transition:all 0.2s}
+.pack-item.checked .pack-item-text{text-decoration:line-through;color:var(--muted)}
+.pack-gen-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.2s;margin-top:4px}
+.pack-gen-btn:hover{background:var(--ink-soft)}
+.pack-gen-btn.regen{background:transparent;color:var(--muted);border:1.5px solid var(--border)}
+.pack-gen-btn.regen:hover{border-color:var(--ruby);color:var(--ruby)}
+.pack-empty{text-align:center;padding:24px;font-family:var(--font-ui);font-size:13px;color:var(--muted);border:1.5px dashed var(--border);border-radius:var(--radius-md)}
+.pack-empty p{margin-bottom:14px;line-height:1.55}
+/* Budget card */
+.budget-ov-card{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:14px 20px;border-left:3px solid var(--pine)}
+.budget-ov-num{font-family:var(--font-display);font-size:26px;font-weight:600;color:var(--ink);line-height:1}
+.budget-ov-meta{font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-top:4px}
+/* Dialog accessibility */
+.modal-overlay .modal{outline:none}
 </style>
 </head>
 <body>
@@ -245,6 +277,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   </div>
 </header>
 <div class="import-banner" id="import-banner"></div>
+<div class="shared-trip-banner" id="shared-trip-banner" style="display:none">
+  <span><strong>&#128065; Shared view</strong> &#8212; you&#8217;re viewing a read-only copy of this trip.</span>
+  <button class="shared-save-btn" onclick="saveSharedTrip()">Save a copy &#8594;</button>
+</div>
 <div class="share-toast" id="share-toast"></div>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch;position:relative">
   <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
@@ -263,8 +299,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 <div id="map"></div>
 <div class="content" id="content-area"></div>
 <div class="modal-overlay" id="modal-overlay">
-  <div class="modal">
-    <div class="modal-title">Add a Stop</div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-overlay-title">
+    <div class="modal-title" id="modal-overlay-title">Add a Stop</div>
     <button class="modal-close" onclick="closeModal()">&#215;</button>
     <div class="search-wrap">
       <input type="text" class="search-input" id="place-search" placeholder="Search for a place..." autocomplete="off"/>
@@ -306,8 +342,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   </div>
 </div>
 <div class="modal-overlay" id="copy-modal">
-  <div class="modal" style="max-width:360px">
-    <div class="modal-title">Copy Stop to Day</div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="copy-modal-title" style="max-width:360px">
+    <div class="modal-title" id="copy-modal-title">Copy Stop to Day</div>
     <button class="modal-close" onclick="closeCopyModal()">&#215;</button>
     <div id="copy-day-btns" style="max-height:55vh;overflow-y:auto;margin-top:4px"></div>
   </div>
@@ -315,7 +351,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 
 <!-- Collaboration modal -->
 <div class="modal-overlay" id="collab-modal">
-  <div class="modal" style="max-width:400px">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="collab-modal-heading" style="max-width:400px">
     <button class="modal-close" onclick="closeCollabModal()">&#215;</button>
 
     <!-- Active state: session is live -->
@@ -335,7 +371,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 
     <!-- Idle state: choose start or join -->
     <div id="collab-idle-panel">
-      <div class="modal-title" style="margin-bottom:4px">&#128101; Collaborate</div>
+      <div class="modal-title" id="collab-modal-heading" style="margin-bottom:4px">&#128101; Collaborate</div>
       <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px">Edit this trip together in real time with your travel partner.</p>
 
       <!-- Start a session -->
@@ -361,6 +397,13 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 <script>
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
+const PACK_KEY='seasons_packing_'+tripId;
+let _isReadOnly=false;
+function getApiKey(){return(localStorage.getItem('claude_api_key')||'').trim()}
+function lsPack(val){
+  if(val===undefined){try{return JSON.parse(localStorage.getItem(PACK_KEY)||'null')}catch(e){return null}}
+  try{localStorage.setItem(PACK_KEY,JSON.stringify(val))}catch(e){}
+}
 /* ---- Collaboration config ----
    To enable real-time collaboration:
    1. Create a free Firebase project at console.firebase.google.com
@@ -934,14 +977,27 @@ function renderOverview(){
     '</div>'
   ).join('');
 
+  /* Budget card */
+  let budgetHtml='';
+  if(state.budget&&state.budget.total){
+    const bTotal=state.budget.type==='total'?state.budget.total:state.budget.total*state.days.length;
+    const bPerDay=state.budget.type==='total'?Math.round(bTotal/state.days.length):state.budget.total;
+    budgetHtml='<div class="budget-ov-card" style="margin-top:12px">'+
+      '<div class="budget-ov-num">$'+Math.round(bTotal).toLocaleString()+'</div>'+
+      '<div class="budget-ov-meta">Total budget · $'+bPerDay.toLocaleString()+'/day</div>'+
+      '</div>';
+  }
+
   return'<div class="ov-panel">'+
-    '<div class="ov-section">'+(state.title?'<div class="ov-trip-name">'+state.title+'</div>':'')+statsHtml+'</div>'+
+    '<div class="ov-section">'+(state.title?'<div class="ov-trip-name">'+state.title+'</div>':'')+statsHtml+budgetHtml+'</div>'+
     '<div class="ov-section"><div class="ov-heading">&#128197; Calendar</div><div class="cal-grid">'+calHtml+'</div></div>'+
     '<div class="ov-section"><div class="ov-heading">&#127970; Where You\'re Staying</div><div class="lodge-list">'+lodgeHtml+'</div></div>'+
     '<div class="ov-section"><div class="ov-heading">&#9989; Pre-Trip Checklist</div>'+
     '<div class="check-list">'+checkHtml+'</div>'+
     '<div class="add-check-row"><input type="text" id="new-check-input" class="add-check-input" placeholder="Add an item to book or pack..." onkeydown="if(event.key===\'Enter\')addCheckItem()"/><button class="add-check-btn" onclick="addCheckItem()">+ Add</button></div>'+
-    '</div></div>';
+    '</div>'+
+    '<div class="ov-section"><div class="ov-heading">&#128220; Packing List</div>'+renderPackingListHtml()+'</div>'+
+    '</div>';
 }
 
 function toggleCheckItem(id,done){
@@ -964,6 +1020,132 @@ function addCheckItem(){
 function deleteCheckItem(id){
   state.checklist=(state.checklist||[]).filter(i=>i.id!==id);saveState();
   const el=document.getElementById('chk-'+id);if(el)el.remove();
+}
+
+/* ---- Packing list ---- */
+const PACK_FALLBACK=[
+  {emoji:'🧳',name:'Essentials',items:['Passport / ID','Travel insurance docs','Credit cards & cash','Phone & charger','Portable battery','Medications','First aid kit']},
+  {emoji:'👕',name:'Clothing',items:['T-shirts (1 per day)','Pants / shorts','Underwear & socks','Comfortable walking shoes','Light jacket or layer','Sleepwear','Swimsuit','Rain jacket']},
+  {emoji:'🧴',name:'Toiletries',items:['Toothbrush & toothpaste','Deodorant','Sunscreen','Face wash','Hair brush','Razor']},
+  {emoji:'📱',name:'Tech & Comfort',items:['Camera','Universal adapter','Offline maps downloaded','Neck pillow & eye mask','Reusable water bottle','Snacks','Day bag']},
+];
+
+const PACK_PROMPT_SYSTEM='You are a travel packing expert. Generate a concise, trip-specific packing list as JSON. Return ONLY the JSON object, no markdown, no backticks. Format: {"categories":[{"emoji":"🧳","name":"Category","items":["item 1","item 2"]}]}. Use 4-6 categories, 6-12 items each. Tailor to the trip\'s destinations, activities, and duration.';
+
+function renderPackingListHtml(){
+  const stored=lsPack();
+  const categories=stored?stored.categories:null;
+  if(!categories){
+    const keyExists=!!getApiKey();
+    return'<div class="pack-empty">'+
+      '<p>Generate a personalized packing list tailored to this specific trip.</p>'+
+      (keyExists
+        ?'<button class="pack-gen-btn" onclick="generatePackingList()">&#10024; Generate Packing List with AI</button>'
+        :'<p style="font-size:12px">Add a Claude API key in Settings to generate with AI.</p>'+
+         '<button class="pack-gen-btn" style="background:var(--ink-soft)" onclick="loadFallbackPacking()">&#128220; Use standard template</button>'
+      )+
+      '</div>';
+  }
+  const checked=stored.checked||{};
+  const total=categories.reduce((n,c)=>n+c.items.length,0);
+  const checkedCount=Object.values(checked).filter(Boolean).length;
+  return'<div class="pack-header-row">'+
+    '<span class="pack-prog">'+checkedCount+' of '+total+' packed</span>'+
+    '<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:12px" onclick="generatePackingList()">&#8635; Regenerate</button>'+
+    '</div>'+
+    categories.map((cat,ci)=>{
+      const catChecked=cat.items.filter((_,ii)=>checked[ci+'-'+ii]).length;
+      return'<div class="pack-section">'+
+        '<div class="pack-section-hdr" onclick="togglePackSection('+ci+')" aria-expanded="true">'+
+        '<span class="pack-name">'+cat.emoji+' '+cat.name+'</span>'+
+        '<span class="pack-count">'+catChecked+'/'+cat.items.length+' <span class="pack-toggle" id="pack-tog-'+ci+'">&#9660;</span></span>'+
+        '</div>'+
+        '<div class="pack-items open" id="pack-cat-'+ci+'">'+
+        cat.items.map((item,ii)=>{
+          const key=ci+'-'+ii;
+          const isChecked=!!checked[key];
+          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+
+            '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
+            '<span class="pack-item-text">'+item+'</span>'+
+            '</label>';
+        }).join('')+
+        '</div></div>';
+    }).join('');
+}
+
+function togglePackSection(ci){
+  const items=document.getElementById('pack-cat-'+ci);
+  const tog=document.getElementById('pack-tog-'+ci);
+  if(!items)return;
+  const open=items.classList.toggle('open');
+  if(tog)tog.textContent=open?'▼':'▶';
+}
+
+function togglePackItem(key,checked){
+  let stored=lsPack()||{categories:PACK_FALLBACK,checked:{}};
+  if(!stored.checked)stored.checked={};
+  stored.checked[key]=checked;
+  lsPack(stored);
+  /* update UI without full rerender */
+  const label=document.querySelector('[onchange="togglePackItem(\''+key+'\',this.checked)"]')?.closest('.pack-item');
+  if(label)label.classList.toggle('checked',checked);
+  /* update progress */
+  const total=stored.categories.reduce((n,c)=>n+c.items.length,0);
+  const cnt=Object.values(stored.checked).filter(Boolean).length;
+  const prog=document.querySelector('.pack-prog');
+  if(prog)prog.textContent=cnt+' of '+total+' packed';
+}
+
+function loadFallbackPacking(){
+  lsPack({categories:PACK_FALLBACK,checked:{}});
+  switchDay(-1);
+}
+
+async function generatePackingList(){
+  const apiKey=getApiKey();
+  const btn=document.querySelector('.pack-gen-btn:not(.regen),.pack-gen-btn.regen');
+  if(btn){btn.textContent='Generating…';btn.disabled=true;}
+  try{
+    let prompt='Trip: '+(state.title||'Unknown trip')+'\n';
+    prompt+='Days: '+state.days.length+'\n';
+    if(state._meta){
+      if(state._meta.who)prompt+='Travelers: '+state._meta.who+'\n';
+      if(state._meta.activities&&state._meta.activities.length)prompt+='Interests: '+state._meta.activities.join(', ')+'\n';
+      if(state._meta.budgetLevel)prompt+='Budget: '+state._meta.budgetLevel+'\n';
+    }
+    const stopNames=state.days.flatMap(d=>d.stops.map(s=>s.name)).slice(0,12);
+    if(stopNames.length)prompt+='Key stops: '+stopNames.join(', ')+'\n';
+    const text=await callClaude(PACK_PROMPT_SYSTEM,prompt,apiKey);
+    let parsed;
+    try{
+      const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+      const js=t.indexOf('{'),je=t.lastIndexOf('}');
+      parsed=JSON.parse(js!==-1&&je>js?t.slice(js,je+1):t);
+    }catch(e){throw new Error('AI returned unexpected format for packing list');}
+    if(!parsed.categories||!parsed.categories.length)throw new Error('No categories returned');
+    lsPack({categories:parsed.categories,checked:{}});
+    switchDay(-1);
+  }catch(e){
+    if(!apiKey){
+      loadFallbackPacking();
+    }else{
+      showToast('Packing list error: '+e.message,4000);
+      if(btn){btn.textContent=btn.classList.contains('regen')?'↺ Regenerate':'✨ Generate Packing List with AI';btn.disabled=false;}
+    }
+  }
+}
+
+async function callClaude(systemPrompt,userPrompt,apiKey){
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2048,system:systemPrompt,messages:[{role:'user',content:userPrompt.trim()}]})
+  });
+  if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error('API Error: '+(d.error?.message||'HTTP '+res.status));}
+  const data=await res.json();
+  const text=data.content?.[0]?.text||'';
+  if(!text)throw new Error('Empty response from AI');
+  return text;
 }
 
 async function renderOverviewMap(){
@@ -1201,7 +1383,19 @@ function copyCollabCode(){
   navigator.clipboard.writeText(_collabCode).then(()=>showToast('Code '+_collabCode+' copied'));
 }
 
-/* ---- Trip sharing (URL-encoded, no backend needed) ---- */
+/* ---- lz-string lazy loader ---- */
+function _loadLzString(){
+  return new Promise((resolve,reject)=>{
+    if(window.LZString){resolve();return;}
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js';
+    s.onload=resolve;
+    s.onerror=()=>reject(new Error('Could not load lz-string library'));
+    document.head.appendChild(s);
+  });
+}
+
+/* ---- Trip sharing ---- */
 async function compressToBase64url(str){
   const bytes=new TextEncoder().encode(str);
   const cs=new CompressionStream('deflate-raw');
@@ -1227,29 +1421,76 @@ function showToast(msg,duration=3000){
 }
 async function shareTrip(){
   try{
-    /* Strip photo data URLs — they're too large for a URL */
+    await _loadLzString();
     const shareable=JSON.parse(JSON.stringify(state));
-    (shareable.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{if(s.photo&&s.photo.startsWith('data:'))delete s.photo;}));
-    const encoded=await compressToBase64url(JSON.stringify(shareable));
-    const url=location.origin+location.pathname+'?share='+encoded;
+    (shareable.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{if(s.customImage&&s.customImage.startsWith('data:'))delete s.customImage;}));
+    const json=JSON.stringify(shareable);
+    const encoded=LZString.compressToEncodedURIComponent(json);
+    const url=location.origin+location.pathname+'#trip='+encoded;
+    if(url.length>8000){showToast('&#9888; Link is very long — try removing photo attachments first',5000);return;}
+    if(navigator.share){
+      try{await navigator.share({title:state.title||'Trip Itinerary',url});return;}catch(e){/* fall through */}
+    }
     await navigator.clipboard.writeText(url);
-    showToast('&#128279; Link copied — anyone with it can open this trip');
+    showToast('&#128279; Link copied — anyone with it can view this trip');
   }catch(e){
     showToast('Could not copy link: '+e.message,4000);
   }
 }
 
+function saveSharedTrip(){
+  const newId='shared-'+Date.now().toString(36);
+  const tripCopy=JSON.parse(JSON.stringify(state));
+  localStorage.setItem('tripState_'+newId,JSON.stringify(tripCopy));
+  const entry={id:newId,title:tripCopy.title||'Shared Trip',dates:'',days:(tripCopy.days||[]).length,destinations:[],local:true};
+  const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
+  local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
+  location.replace('trip.html?id='+newId);
+}
+
+function _applyReadOnly(){
+  if(!_isReadOnly)return;
+  document.querySelectorAll('.add-stop-btn,.card-controls,.tab-add,.tab-remove,.tab-move').forEach(el=>el.style.display='none');
+  const collabBtn=document.getElementById('collab-btn');
+  if(collabBtn)collabBtn.style.display='none';
+}
+
 async function init(){
-  /* Handle incoming collab invite link */
+  /* Handle #trip= hash (read-only shared view) */
+  const hash=location.hash;
+  if(hash.startsWith('#trip=')){
+    try{
+      await _loadLzString();
+      const encoded=hash.slice(6);
+      const json=LZString.decompressFromEncodedURIComponent(encoded);
+      if(!json)throw new Error('Could not decode link');
+      const shared=JSON.parse(json);
+      state=shared;
+      _isReadOnly=true;
+      history.replaceState(null,'',location.pathname+'?id='+tripId);
+      if(state.title)document.title='Seasons — '+state.title+' (Shared)';
+      if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
+      currentDayIdx=-1;
+      renderAll();renderOverviewMap();loadTimezones();
+      _applyReadOnly();
+      new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
+      document.getElementById('shared-trip-banner').style.display='flex';
+      return;
+    }catch(e){
+      console.error('Hash trip decode failed',e);
+      history.replaceState(null,'',location.pathname);
+    }
+  }
+
+  /* Handle ?collab= invite link */
   const collabParam=new URLSearchParams(location.search).get('collab');
   if(collabParam){
     history.replaceState(null,'',location.pathname);
     document.getElementById('collab-join-input').value=collabParam;
-    // Wait for Firebase SDK then auto-join
     _firebaseReady().then(ok=>{if(ok)joinCollab();else openCollabModal();});
   }
 
-  /* Handle incoming shared trip link */
+  /* Handle legacy ?share= link (auto-save and redirect) */
   const shareParam=new URLSearchParams(location.search).get('share');
   if(shareParam){
     try{
@@ -1260,12 +1501,12 @@ async function init(){
       const entry={id:newId,title:shared.title||'Shared Trip',dates:'',days:(shared.days||[]).length,destinations:[],local:true};
       const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
       local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
-      /* Redirect to clean URL, then show banner */
       sessionStorage.setItem('justImported',shared.title||'Shared Trip');
       location.replace('trip.html?id='+newId);
       return;
     }catch(e){console.error('Share import failed',e);}
   }
+
   try{
     const saved=localStorage.getItem(LS_KEY);
     if(saved){state=JSON.parse(saved);}
@@ -1276,7 +1517,6 @@ async function init(){
   currentDayIdx=-1;
   renderAll();renderOverviewMap();loadTimezones();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
-  /* Show banner if this trip was just imported from a share link */
   const imported=sessionStorage.getItem('justImported');
   if(imported){
     sessionStorage.removeItem('justImported');

@@ -1,4 +1,4 @@
-const CACHE = 'seasons-v3';
+const CACHE = 'seasons-v4';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',

@@ -296,13 +296,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.55">Optional &#8212; we&#8217;ll use this to tailor recommendations.</p>
       <div class="chip-row" style="margin-bottom:14px" role="group" aria-label="Budget type">
         <button class="chip active" id="btype-total" onclick="setBudgetType('total')">Total trip</button>
-        <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day</button>
+        <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day (group)</button>
       </div>
       <div class="budget-input-wrap">
         <span class="dollar-sign" aria-hidden="true">$</span>
         <input type="number" class="wiz-input" id="w-budget-amt" placeholder="e.g. 3000" min="0" step="50" oninput="updateBudgetCalc()" aria-label="Budget amount in dollars"/>
       </div>
       <div class="budget-calc" id="budget-calc" style="display:none" aria-live="polite">
+        <div class="budget-calc-item">Total<strong id="calc-total">—</strong></div>
         <div class="budget-calc-item">Per day<strong id="calc-perday">—</strong></div>
         <div class="budget-calc-item">Per person<strong id="calc-perperson">—</strong></div>
       </div>
@@ -637,6 +638,7 @@ function updateBudgetCalc(){
   const total=_budgetAmtType==='total'?amt:amt*days;
   const perDay=_budgetAmtType==='total'?amt/days:amt;
   const perPerson=total/groupSize;
+  document.getElementById('calc-total').textContent='$'+Math.round(total).toLocaleString();
   document.getElementById('calc-perday').textContent='$'+Math.round(perDay).toLocaleString()+'/day';
   document.getElementById('calc-perperson').textContent='$'+Math.round(perPerson).toLocaleString()+'/person';
   calcEl.style.display='flex';

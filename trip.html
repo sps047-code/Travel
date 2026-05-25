@@ -324,6 +324,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="form-group"><label class="form-label">Lat</label><input type="text" class="form-input" id="f-lat" placeholder="Latitude"/></div>
       <div class="form-group"><label class="form-label">Lng</label><input type="text" class="form-input" id="f-lng" placeholder="Longitude"/></div>
       <div class="form-group full"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Optional notes..."></textarea></div>
+      <div class="form-group full"><label class="form-label">Reservation / Confirmation #</label><input type="text" class="form-input" id="f-reservation" placeholder="e.g. N87UGG, ABC123"/></div>
       <div class="form-group full">
         <label class="form-label">Photo (optional)</label>
         <input type="file" id="f-photo" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)"/>
@@ -645,6 +646,7 @@ function renderPanel(idx){
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
+      (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
@@ -810,7 +812,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-time','f-stars','f-lat','f-lng','f-notes'].forEach(id=>{document.getElementById(id).value=''});
+  ['place-search','f-name','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation'].forEach(id=>{document.getElementById(id).value=''});
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
   document.getElementById('search-results').innerHTML='';
@@ -831,6 +833,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-lat').value=s.lat||'';
   document.getElementById('f-lng').value=s.lng||'';
   document.getElementById('f-notes').value=s.notes||'';
+  document.getElementById('f-reservation').value=s.reservation||'';
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -898,7 +901,7 @@ function saveStop(){
   if(Math.abs(lat)>90||Math.abs(lng)>180){alert('Coordinates appear invalid. Lat must be -90 to 90, Lng must be -180 to 180.');return}
   const existingPhoto=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx].customImage:null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
-  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),alt:document.getElementById('f-alt').checked,customImage};
+  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,alt:document.getElementById('f-alt').checked,customImage};
   const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
   if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
   else{state.days[addingToDay].stops.push(stop);}

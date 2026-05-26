@@ -112,6 +112,21 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .hotel-bookend-icon{font-size:18px;flex-shrink:0;opacity:0.75}
 .hotel-bookend-label{font-family:var(--font-ui);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.10em;color:var(--pine);opacity:0.7;margin-bottom:2px}
 .hotel-bookend-name{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--pine)}
+.hotel-bookend-travel{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
+.hotel-bookend-dist{font-family:var(--font-ui);font-size:11px;color:var(--pine);opacity:0.85}
+.day-narr{background:linear-gradient(135deg,rgba(43,108,176,0.06) 0%,rgba(46,125,82,0.04) 100%);border:1.5px solid rgba(43,108,176,0.18);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px}
+.day-narr-label{font-family:var(--font-ui);font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--river);margin-bottom:7px;display:flex;align-items:center;justify-content:space-between}
+.day-narr-body{font-family:var(--font-display);font-size:15px;font-weight:400;color:var(--ink-soft);line-height:1.65;font-style:italic;min-height:20px}
+.day-narr-body.narr-loading{color:var(--muted);font-style:normal;font-size:13px;animation:narr-pulse 1.5s ease-in-out infinite}
+@keyframes narr-pulse{0%,100%{opacity:0.4}50%{opacity:0.9}}
+.day-narr-refresh{background:none;border:none;cursor:pointer;color:var(--river);font-size:11px;font-family:var(--font-ui);font-weight:600;padding:0;letter-spacing:0.03em;opacity:0.65;transition:opacity 0.2s;flex-shrink:0}
+.day-narr-refresh:hover{opacity:1}
+.stop-desc-btn{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:4px 10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:500;cursor:pointer;transition:all 0.2s}
+.stop-desc-btn:hover{border-color:var(--river);color:var(--river);background:var(--river-tint)}
+.stop-desc{font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);line-height:1.62;margin-top:8px;padding:9px 12px;background:var(--mist);border-radius:var(--radius-sm);border-left:2px solid rgba(43,108,176,0.35);display:flex;align-items:flex-start;gap:6px}
+.stop-desc-text{flex:1}
+.stop-desc-regen{background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;transition:color 0.2s;flex-shrink:0;line-height:1;margin-top:1px}
+.stop-desc-regen:hover{color:var(--river)}
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:4px}
 .add-stop-btn:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
 .leg-connector{display:flex;align-items:center;gap:6px;padding:3px 0;margin:-2px 0 2px 0;font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:0.01em}

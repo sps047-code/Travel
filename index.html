@@ -402,12 +402,13 @@ Rules:
 1. "type" must be exactly one of: hike, food, lodge, drive, flight, train
 2. "lat"/"lng" must be real numeric WGS84 coordinates — never 0, never strings, never the word "latitude"
 3. "stars" is a string like "4.5" or null
-4. Each day: 4-6 stops in chronological order, end with lodge unless flying home
-5. "tip": one sentence, 12 words max
-6. "notes" per stop: one sentence, 12 words max — be concise
-7. "mapCenter": geographic center of trip; "mapZoom": 6-10 by spread
-8. Day titles: "Day N — Description"; subtitle: short date + theme
-9. Return ONLY the JSON`;
+4. Every day must end with a lodge stop (that night's hotel/accommodation) unless it is the very last day and the group is flying home
+5. Day 2 onward must begin with a lodge stop representing departure from the previous night's hotel — use type: lodge, name: "Depart [Hotel Name]", same coordinates as the previous day's final lodge stop
+6. "tip": one sentence, 12 words max
+7. "notes" per stop: one sentence, 12 words max — be concise
+8. "mapCenter": geographic center of trip; "mapZoom": 6-10 by spread
+9. Day titles: "Day N — Description"; subtitle: short date + theme
+10. Return ONLY the JSON`;
 
 const PLAN_SYSTEM=`You are a meticulous trip planner. Given travel preferences, generate a complete day-by-day itinerary. `+TRIP_JSON_SCHEMA;
 

@@ -76,7 +76,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .stop-card:hover{box-shadow:0 4px 18px rgba(26,35,50,0.10);transform:translateY(-1px)}
 .stop-card.alt-stop{border-style:dashed;background:#FDFEFF}
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
-.dot-hike{background:var(--ruby)}.dot-food{background:var(--amber)}.dot-lodge{background:var(--pine)}.dot-drive{background:var(--river)}.dot-flight{background:#7B5EA7}.dot-train{background:var(--slate)}
+.dot-hike{background:#A32B2B}.dot-food{background:#8F5812}.dot-lodge{background:#1F5C3A}.dot-drive{background:#1A4F8A}.dot-flight{background:#523680}.dot-train{background:#2E3F47}
 .card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
 .card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:var(--border);font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
@@ -626,6 +626,7 @@ function renderTabs(){
 }
 
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
+function flightAwareLink(name){const m=(name||'').match(/\b([A-Z]{2,3})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
@@ -648,6 +649,7 @@ function renderPanel(idx){
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
+      (s.type==='flight'?flightAwareLink(s.name):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';
@@ -1033,7 +1035,7 @@ const PACK_FALLBACK=[
   {emoji:'📱',name:'Tech & Comfort',items:['Camera','Universal adapter','Offline maps downloaded','Neck pillow & eye mask','Reusable water bottle','Snacks','Day bag']},
 ];
 
-const PACK_PROMPT_SYSTEM='You are a travel packing expert. Generate a concise, trip-specific packing list as JSON. Return ONLY the JSON object, no markdown, no backticks. Format: {"categories":[{"emoji":"🧳","name":"Category","items":["item 1","item 2"]}]}. Use 4-6 categories, 6-12 items each. Tailor to the trip\'s destinations, activities, and duration.';
+const PACK_PROMPT_SYSTEM='You are a minimalist travel packing expert who helps people pack light and smart. Philosophy: one carry-on max, wear items multiple times, choose versatile pieces. Generate a trip-specific packing list as JSON. Return ONLY the JSON object, no markdown, no backticks. Format: {"categories":[{"emoji":"🧳","name":"Category","items":["item 1","item 2"]}]}. Use 5-7 categories. Rules: (1) Keep each category to 5-8 items max — ruthlessly cut anything non-essential. (2) Always include a "Local Essentials" category with region-specific items: correct power adapter type, local SIM or data plan advice, any required travel documents or visas, local customs items, currency tips, anything a seasoned traveler to that specific region would flag. (3) Clothing: recommend exact counts (e.g. "3 versatile tops") based on trip length — assume re-wearing and laundry. No "pack 7 shirts for a week." (4) Flag items people typically over-pack and remind them to leave those out. Tailor everything to the destinations, activities, climate, and duration.';
 
 function renderPackingListHtml(){
   const stored=lsPack();
@@ -1112,6 +1114,10 @@ async function generatePackingList(){
     }
     const stopNames=state.days.flatMap(d=>d.stops.map(s=>s.name)).slice(0,12);
     if(stopNames.length)prompt+='Key stops: '+stopNames.join(', ')+'\n';
+    const lodgeNames=state.days.flatMap(d=>d.stops.filter(s=>s.type==='lodge').map(s=>s.name));
+    if(lodgeNames.length)prompt+='Accommodations: '+lodgeNames.join(', ')+'\n';
+    const regions=[...new Set(state.days.flatMap(d=>d.stops.filter(s=>s.type==='lodge'||s.type==='hike'||s.type==='food').map(s=>s.name.split(/[—–,]/)[0].trim())))].slice(0,6);
+    if(regions.length)prompt+='Regions/destinations: '+regions.join(', ')+'\n';
     const text=await callClaude(PACK_PROMPT_SYSTEM,prompt);
     let parsed;
     try{

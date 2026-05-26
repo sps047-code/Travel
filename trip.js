@@ -267,9 +267,20 @@ function getHotelForDay(dayIdx){
   }
   return null;
 }
-function hotelBookendHtml(label,lodge){
+function hotelBookendHtml(label,lodge,otherStop){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div><div class="hotel-bookend-label">'+label+'</div><div class="hotel-bookend-name">'+nm+'</div></div></div>';
+  let travelHtml='';
+  if(otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
+    const dist=haversine(lodge.lat,lodge.lng,otherStop.lat,otherStop.lng);
+    const mi=dist<10?dist.toFixed(1):Math.round(dist);
+    const mins=Math.round(dist/0.5);
+    const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
+    const isStart=label.toLowerCase().startsWith('start');
+    const [oLat,oLng,dLat,dLng]=isStart?[lodge.lat,lodge.lng,otherStop.lat,otherStop.lng]:[otherStop.lat,otherStop.lng,lodge.lat,lodge.lng];
+    const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+oLat+','+oLng+'&destination='+dLat+','+dLng+'&travelmode=driving';
+    travelHtml='<div class="hotel-bookend-travel"><span class="hotel-bookend-dist">'+mi+' mi · '+tStr+' drive</span><a class="map-link" href="'+mapsUrl+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a></div>';
+  }
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+label+'</div><div class="hotel-bookend-name">'+nm+'</div>'+travelHtml+'</div></div>';
 }
 
 function renderPanel(idx){
@@ -282,49 +293,21 @@ function renderPanel(idx){
   const todayHotel=getHotelForDay(idx);
   const showStart=!!prevHotel&&!TRAVEL.has(firstType)&&day.stops.length>0;
   const showEnd=!!todayHotel&&!TRAVEL.has(lastType)&&!hasExplicitLodge&&day.stops.length>0;
-  let cards=showStart?hotelBookendHtml('Starting from',prevHotel):'';
+  let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
-    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
-      '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
-      '<div class="card-controls">'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
-      '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
-      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
-      '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
-      '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
-      (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
-      (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
-      (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
-      (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
-      (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
-      '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      '</div>';
+    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+'<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+'<div class="card-controls">'+'<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+'<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+'<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+'<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+'<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+'</div>'+'<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+'<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+(s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+(s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+(s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+'</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+(s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+(s.type==='flight'?flightAwareLink(s.name,s.notes):'')+(s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+'<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+(!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'"><button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button></div>':'')+'</div>';
     if(!isLast){
       const next=day.stops[si+1];
       const leg=legLabel(s,next);
       const tzc=tzChangeLabel(s,next);
       if(leg||tzc){
-        cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+
-          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+
-          '</div>';
+        cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+(tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+'</div>';
       }
     }
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
-  return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
-    renderDaySummary(day,idx)+
-    '<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel):'')+
-    '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
-    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
-    (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+
-    '</div>';
+  return'<div class="'+panelCls+'" id="panel-'+idx+'">'+'<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+renderDaySummary(day,idx)+(day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+'<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel,day.stops[day.stops.length-1]):'')+'<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+'<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+(day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+'</div>';
 }
 
 /* ---- Wikipedia stop images ---- */
@@ -353,8 +336,7 @@ async function fetchStopImage(name){
   const q=extractImageKeyword(name);
   if(!q||q.length<4){imgData[name]=null;return null}
   try{
-    const url='https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&generator=search&gsrsearch='+
-      encodeURIComponent(q)+'&gsrlimit=1&pithumbsize=500&format=json&origin=*';
+    const url='https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&generator=search&gsrsearch='+encodeURIComponent(q)+'&gsrlimit=1&pithumbsize=500&format=json&origin=*';
     const r=await fetch(url);
     if(!r.ok){imgData[name]=null;return null}
     const d=await r.json();
@@ -383,6 +365,99 @@ async function loadStopImages(){
   }
 }
 
+/* ---- Day narrative (AI) ---- */
+const NARR_LS='day_narr_v1';
+let narrData={};
+try{narrData=JSON.parse(localStorage.getItem(NARR_LS)||'{}')}catch(e){}
+const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. In 2-3 flowing, engaging sentences summarize what the group will experience today, written in second person. Be specific about the places, capture the spirit of the day\'s journey, and build excitement. Pure narrative prose — no bullet points, no headers. Under 80 words.';
+
+function dayNarrKey(dayIdx){
+  const day=state.days[dayIdx];if(!day)return null;
+  const sig=day.title+'|'+day.stops.map(s=>s.name+(s.notes||'')).join('|');
+  let h=0;for(let i=0;i<sig.length;i++)h=(h*31+sig.charCodeAt(i))&0xFFFFFFFF;
+  return tripId+'_'+dayIdx+'_'+h.toString(36);
+}
+
+async function loadDayNarrative(dayIdx){
+  const el=document.getElementById('day-narr-body-'+dayIdx);
+  if(!el)return;
+  const day=state.days[dayIdx];if(!day||!day.stops.length)return;
+  const key=dayNarrKey(dayIdx);if(!key)return;
+  if(narrData[key]){el.textContent=narrData[key];el.classList.remove('narr-loading');return;}
+  el.classList.add('narr-loading');el.textContent='Preparing your day briefing…';
+  try{
+    const stopList=day.stops.map(s=>s.name+(s.notes?' ('+s.notes+')':'')).join(', ');
+    const text=await callClaude(NARR_SYSTEM,'Day: '+day.title+'\nStops: '+stopList);
+    narrData[key]=text.trim();
+    try{localStorage.setItem(NARR_LS,JSON.stringify(narrData))}catch(e){}
+    const fresh=document.getElementById('day-narr-body-'+dayIdx);
+    if(fresh){fresh.textContent=narrData[key];fresh.classList.remove('narr-loading');}
+  }catch(e){
+    const fresh=document.getElementById('day-narr-body-'+dayIdx);
+    if(fresh){const box=fresh.closest('.day-narr');if(box)box.style.display='none';}
+  }
+}
+
+function refreshDayNarrative(dayIdx){
+  const key=dayNarrKey(dayIdx);
+  if(key)delete narrData[key];
+  try{localStorage.setItem(NARR_LS,JSON.stringify(narrData))}catch(e){}
+  loadDayNarrative(dayIdx);
+}
+
+/* ---- Stop descriptions (AI) ---- */
+const DESC_LS='stop_desc_v1';
+let descData={};
+try{descData=JSON.parse(localStorage.getItem(DESC_LS)||'{}')}catch(e){}
+const DESC_SYSTEM='You are a travel guidebook author writing in the style of Fodor\'s or Rick Steves. Write exactly 2-3 sentences about this location: what it is, why it matters, and what a visitor should look for. Be specific and evocative, not generic. Do not begin with the place name. Do not use markdown or bullet points.';
+
+function stopDescKey(name){return name.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,44);}
+
+function _renderDesc(wrap,text,dayIdx,stopIdx){
+  wrap.innerHTML='<div class="stop-desc"><span class="stop-desc-text">'+text+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+dayIdx+','+stopIdx+')" title="Regenerate">&#8635;</button></div>';
+}
+
+async function generateStopDesc(dayIdx,stopIdx){
+  const wrap=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);if(!wrap)return;
+  const stop=state.days[dayIdx]?.stops[stopIdx];if(!stop)return;
+  const key=stopDescKey(stop.name);
+  if(descData[key]){_renderDesc(wrap,descData[key],dayIdx,stopIdx);return;}
+  wrap.innerHTML='<span style="font-family:var(--font-ui);font-size:12px;color:var(--muted);animation:narr-pulse 1.5s ease-in-out infinite">Loading…</span>';
+  try{
+    const parts=[stop.name,'Type: '+stop.type];
+    if(stop.notes)parts.push('Notes: '+stop.notes);
+    if(stop.lat&&stop.lng)parts.push('Coordinates: '+Number(stop.lat).toFixed(3)+', '+Number(stop.lng).toFixed(3));
+    const text=await callClaude(DESC_SYSTEM,parts.join('\n'));
+    descData[key]=text.trim();
+    try{localStorage.setItem(DESC_LS,JSON.stringify(descData))}catch(e){}
+    const fresh=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);
+    if(fresh)_renderDesc(fresh,descData[key],dayIdx,stopIdx);
+  }catch(e){
+    const fresh=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);
+    if(fresh)fresh.innerHTML='<button class="stop-desc-btn" onclick="generateStopDesc('+dayIdx+','+stopIdx+')">&#10024; Describe</button>';
+  }
+}
+
+function refreshStopDesc(dayIdx,stopIdx){
+  const stop=state.days[dayIdx]?.stops[stopIdx];if(!stop)return;
+  const key=stopDescKey(stop.name);
+  delete descData[key];
+  try{localStorage.setItem(DESC_LS,JSON.stringify(descData))}catch(e){}
+  generateStopDesc(dayIdx,stopIdx);
+}
+
+function loadCachedStopDescs(){
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(['drive','flight','train'].includes(s.type))return;
+      const key=stopDescKey(s.name);
+      if(!descData[key])return;
+      const wrap=document.getElementById('stopdesc-'+di+'-'+si);
+      if(wrap&&!wrap.querySelector('.stop-desc'))_renderDesc(wrap,descData[key],di,si);
+    });
+  });
+}
+
 function renderAll(){
   renderTabs();
   if(currentDayIdx===-1){
@@ -390,6 +465,8 @@ function renderAll(){
   }else{
     document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
     loadStopImages();
+    loadCachedStopDescs();
+    if(currentDayIdx>=0)loadDayNarrative(currentDayIdx);
   }
 }
 
@@ -435,11 +512,11 @@ function openCopyModal(dayIdx,stopIdx){
     const startBtn=isLastLodge&&i===dayIdx+1
       ?'<button class="btn-primary" style="font-size:12px;padding:9px 14px;background:var(--pine);margin-bottom:6px;width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
       :'';
-    return'<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
-      '<div style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Day '+(i+1)+' — '+title+'</div>'+
-      startBtn+
-      '<button class="btn-cancel" style="font-size:12px;padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
-      '</div>';
+    return'<div style="padding:12px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Day '+(i+1)+' — '+title+'</div>'
+      +startBtn
+      +'<button class="btn-cancel" style="font-size:12px;padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'
+      +'</div>';
   }).join('');
   document.getElementById('copy-modal').classList.add('open');
 }
@@ -624,22 +701,22 @@ function renderOverview(){
   const lodges=[];
   state.days.forEach((day,di)=>day.stops.forEach(s=>{if(s.type==='lodge')lodges.push({di,day,s});}));
 
-  const statsHtml='<div class="ov-stats">'+
-    '<div class="ov-stat"><div class="ov-stat-num">'+state.days.length+'</div><div class="ov-stat-label">Days</div></div>'+
-    '<div class="ov-stat"><div class="ov-stat-num">'+totalStops+'</div><div class="ov-stat-label">Stops</div></div>'+
-    '<div class="ov-stat"><div class="ov-stat-num">'+lodges.length+'</div><div class="ov-stat-label">Nights</div></div>'+
-    '</div>';
+  const statsHtml='<div class="ov-stats">'
+    +'<div class="ov-stat"><div class="ov-stat-num">'+state.days.length+'</div><div class="ov-stat-label">Days</div></div>'
+    +'<div class="ov-stat"><div class="ov-stat-num">'+totalStops+'</div><div class="ov-stat-label">Stops</div></div>'
+    +'<div class="ov-stat"><div class="ov-stat-num">'+lodges.length+'</div><div class="ov-stat-label">Nights</div></div>'
+    +'</div>';
 
   const colors=['var(--ruby)','var(--pine)','var(--river)','var(--amber)'];
   const calHtml=state.days.map((day,di)=>{
     const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
-    return'<div class="cal-card" onclick="switchDay('+di+')" style="border-top:3px solid '+colors[di%4]+'">'+
-      '<div class="cal-day-num">Day '+(di+1)+'</div>'+
-      (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
-      '<div class="cal-theme">'+theme+'</div>'+
-      '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
-      '</div>';
+    return'<div class="cal-card" onclick="switchDay('+di+')" style="border-top:3px solid '+colors[di%4]+'">'
+      +'<div class="cal-day-num">Day '+(di+1)+'</div>'
+      +(datePart?'<div class="cal-date">'+datePart+'</div>':'')
+      +'<div class="cal-theme">'+theme+'</div>'
+      +'<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'
+      +'</div>';
   }).join('');
 
   const lodgeHtml=lodges.length?lodges.map(({di,day,s})=>{
@@ -647,19 +724,19 @@ function renderOverview(){
     const id='auto-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
-    return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
-      '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
-      '</div>';
+    return'<div class="lodge-card">'
+      +'<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'
+      +'<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'
+      +'<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'
+      +'</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
-    '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
-    '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')" >&#215;</button>':'')+
-    '</div>'
+    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'
+    +'<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'
+    +'<span class="check-text">'+item.text+'</span>'
+    +(!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')
+    +'</div>'
   ).join('');
 
   /* Budget card */
@@ -667,22 +744,22 @@ function renderOverview(){
   if(state.budget&&state.budget.total){
     const bTotal=state.budget.type==='total'?state.budget.total:state.budget.total*state.days.length;
     const bPerDay=state.budget.type==='total'?Math.round(bTotal/state.days.length):state.budget.total;
-    budgetHtml='<div class="budget-ov-card" style="margin-top:12px">'+
-      '<div class="budget-ov-num">$'+Math.round(bTotal).toLocaleString()+'</div>'+
-      '<div class="budget-ov-meta">Total budget · $'+bPerDay.toLocaleString()+'/day</div>'+
-      '</div>';
+    budgetHtml='<div class="budget-ov-card" style="margin-top:12px">'
+      +'<div class="budget-ov-num">$'+Math.round(bTotal).toLocaleString()+'</div>'
+      +'<div class="budget-ov-meta">Total budget · $'+bPerDay.toLocaleString()+'/day</div>'
+      +'</div>';
   }
 
-  return'<div class="ov-panel">'+
-    '<div class="ov-section">'+(state.title?'<div class="ov-trip-name">'+state.title+'</div>':'')+statsHtml+budgetHtml+'</div>'+
-    '<div class="ov-section"><div class="ov-heading">&#128197; Calendar</div><div class="cal-grid">'+calHtml+'</div></div>'+
-    '<div class="ov-section"><div class="ov-heading">&#127970; Where You\'re Staying</div><div class="lodge-list">'+lodgeHtml+'</div></div>'+
-    '<div class="ov-section"><div class="ov-heading">&#9989; Pre-Trip Checklist</div>'+
-    '<div class="check-list">'+checkHtml+'</div>'+
-    '<div class="add-check-row"><input type="text" id="new-check-input" class="add-check-input" placeholder="Add an item to book or pack..." onkeydown="if(event.key===\'Enter\')addCheckItem()"/><button class="add-check-btn" onclick="addCheckItem()">+ Add</button></div>'+
-    '</div>'+
-    '<div class="ov-section"><div class="ov-heading">&#128220; Packing List</div>'+renderPackingListHtml()+'</div>'+
-    '</div>';
+  return'<div class="ov-panel">'
+    +'<div class="ov-section">'+(state.title?'<div class="ov-trip-name">'+state.title+'</div>':'')+statsHtml+budgetHtml+'</div>'
+    +'<div class="ov-section"><div class="ov-heading">&#128197; Calendar</div><div class="cal-grid">'+calHtml+'</div></div>'
+    +'<div class="ov-section"><div class="ov-heading">&#127970; Where You\'re Staying</div><div class="lodge-list">'+lodgeHtml+'</div></div>'
+    +'<div class="ov-section"><div class="ov-heading">&#9989; Pre-Trip Checklist</div>'
+    +'<div class="check-list">'+checkHtml+'</div>'
+    +'<div class="add-check-row"><input type="text" id="new-check-input" class="add-check-input" placeholder="Add an item to book or pack..." onkeydown="if(event.key===\'Enter\')addCheckItem()"/><button class="add-check-btn" onclick="addCheckItem()">+ Add</button></div>'
+    +'</div>'
+    +'<div class="ov-section"><div class="ov-heading">&#128220; Packing List</div>'+renderPackingListHtml()+'</div>'
+    +'</div>';
 }
 
 function toggleCheckItem(id,done){
@@ -699,7 +776,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')" >&#215;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -721,35 +798,35 @@ function renderPackingListHtml(){
   const stored=lsPack();
   const categories=stored?stored.categories:null;
   if(!categories){
-    return'<div class="pack-empty">'+
-      '<p>Generate a personalized packing list tailored to this specific trip.</p>'+
-      '<button class="pack-gen-btn" onclick="generatePackingList()">&#10024; Generate Packing List with AI</button>'+
-      '</div>';
+    return'<div class="pack-empty">'
+      +'<p>Generate a personalized packing list tailored to this specific trip.</p>'
+      +'<button class="pack-gen-btn" onclick="generatePackingList()">&#10024; Generate Packing List with AI</button>'
+      +'</div>';
   }
   const checked=stored.checked||{};
   const total=categories.reduce((n,c)=>n+c.items.length,0);
   const checkedCount=Object.values(checked).filter(Boolean).length;
-  return'<div class="pack-header-row">'+
-    '<span class="pack-prog">'+checkedCount+' of '+total+' packed</span>'+
-    '<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:12px" onclick="generatePackingList()">&#8635; Regenerate</button>'+
-    '</div>'+
-    categories.map((cat,ci)=>{
+  return'<div class="pack-header-row">'
+    +'<span class="pack-prog">'+checkedCount+' of '+total+' packed</span>'
+    +'<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:12px" onclick="generatePackingList()">&#8635; Regenerate</button>'
+    +'</div>'
+    +categories.map((cat,ci)=>{
       const catChecked=cat.items.filter((_,ii)=>checked[ci+'-'+ii]).length;
-      return'<div class="pack-section">'+
-        '<div class="pack-section-hdr" onclick="togglePackSection('+ci+')" aria-expanded="true">'+
-        '<span class="pack-name">'+cat.emoji+' '+cat.name+'</span>'+
-        '<span class="pack-count">'+catChecked+'/'+cat.items.length+' <span class="pack-toggle" id="pack-tog-'+ci+'">&#9660;</span></span>'+
-        '</div>'+
-        '<div class="pack-items open" id="pack-cat-'+ci+'">'+
-        cat.items.map((item,ii)=>{
+      return'<div class="pack-section">'
+        +'<div class="pack-section-hdr" onclick="togglePackSection('+ci+')" aria-expanded="true">'
+        +'<span class="pack-name">'+cat.emoji+' '+cat.name+'</span>'
+        +'<span class="pack-count">'+catChecked+'/'+cat.items.length+' <span class="pack-toggle" id="pack-tog-'+ci+'">&#9660;</span></span>'
+        +'</div>'
+        +'<div class="pack-items open" id="pack-cat-'+ci+'">'
+        +cat.items.map((item,ii)=>{
           const key=ci+'-'+ii;
           const isChecked=!!checked[key];
-          return'<label class="pack-item'+(isChecked?' checked':'')+'" >'+
-            '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
-            '<span class="pack-item-text">'+item+'</span>'+
-            '</label>';
-        }).join('')+
-        '</div></div>';
+          return'<label class="pack-item'+(isChecked?' checked':'')+'">'
+            +'<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'
+            +'<span class="pack-item-text">'+item+'</span>'
+            +'</label>';
+        }).join('')
+        +'</div></div>';
     }).join('');
 }
 

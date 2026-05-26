@@ -1,7 +1,8 @@
-const CACHE = 'seasons-v8';
+const CACHE = 'seasons-v9';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
+  '/Travel/trip.js',
   '/Travel/app.webmanifest',
   '/Travel/icon-192.png',
   '/Travel/icon-512.png',

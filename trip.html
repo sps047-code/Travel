@@ -78,7 +78,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
 .dot-hike{background:#A32B2B}.dot-food{background:#8F5812}.dot-lodge{background:#1F5C3A}.dot-drive{background:#1A4F8A}.dot-flight{background:#523680}.dot-train{background:#2E3F47}
 .card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
-.card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:var(--border);font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
+.card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:#9A8E82;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
 .card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
 .card-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
@@ -98,6 +98,16 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .badge-flight{background:rgba(123,94,167,0.12);color:#7B5EA7}
 .badge-train{background:var(--slate-tint);color:var(--slate)}
 .badge-alt{background:rgba(43,108,176,0.10);color:var(--river)}
+.badge-booked{background:rgba(46,125,82,0.12);color:#1F5C3A;border:1px solid rgba(46,125,82,0.22)}
+.badge-tobook{background:rgba(196,123,32,0.12);color:#8F5812;border:1px solid rgba(196,123,32,0.22)}
+.day-summary{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;padding:10px 12px;background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md)}
+.day-sum-item{font-family:var(--font-ui);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.day-sum-sleep{background:var(--pine-tint);color:var(--pine);border:1px solid var(--pine-border)}
+.day-sum-flight{background:rgba(123,94,167,0.12);color:#523680;border:1px solid rgba(82,54,128,0.20)}
+.day-sum-train{background:var(--slate-tint);color:var(--slate);border:1px solid rgba(74,101,114,0.22)}
+.day-sum-drive{background:var(--river-tint);color:var(--river);border:1px solid var(--river-border)}
+.day-sum-book{background:var(--mist);color:var(--muted);border:1px solid var(--border)}
+.day-sum-book-warn{background:var(--amber-tint);color:var(--amber);border:1px solid rgba(196,123,32,0.22)}
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:4px}
 .add-stop-btn:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
 .leg-connector{display:flex;align-items:center;gap:6px;padding:3px 0;margin:-2px 0 2px 0;font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:0.01em}
@@ -626,7 +636,37 @@ function renderTabs(){
 }
 
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-function flightAwareLink(name){const m=(name||'').match(/\b([A-Z]{2,3})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
+function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
+
+const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
+function renderDaySummary(day,idx){
+  const chips=[];
+  const lodgeStop=[...day.stops].reverse().find(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
+  if(lodgeStop){
+    const nm=lodgeStop.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
+    chips.push('<span class="day-sum-item day-sum-sleep">&#127970; '+nm+'</span>');
+  }
+  const flightStops=day.stops.filter(s=>s.type==='flight');
+  const seen=new Set();
+  flightStops.forEach(s=>{
+    const m=(s.name+' '+(s.notes||'')).match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);
+    if(m&&!seen.has(m[1]+m[2])){seen.add(m[1]+m[2]);chips.push('<span class="day-sum-item day-sum-flight">&#9992; '+m[1]+' '+m[2]+'</span>');}
+  });
+  const trainCount=day.stops.filter(s=>s.type==='train').length;
+  if(trainCount>0)chips.push('<span class="day-sum-item day-sum-train">&#128642; '+trainCount+' train'+(trainCount>1?'s':'')+'</span>');
+  const hasCar=day.stops.some(s=>s.type==='drive'&&/pick.?up|rental/i.test(s.name));
+  if(hasCar)chips.push('<span class="day-sum-item day-sum-drive">&#128663; Car day</span>');
+  const bookedN=day.stops.filter(s=>s.reservation).length;
+  const toBookN=day.stops.filter(s=>!s.reservation&&(['lodge','flight','train'].includes(s.type)||_BOOK_KW.test(s.notes||''))&&!/^depart\b/i.test(s.name)).length;
+  if(bookedN>0||toBookN>0){
+    const parts=[];
+    if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
+    if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
+  }
+  if(chips.length===0)return'';
+  return'<div class="day-summary">'+chips.join('')+'</div>';
+}
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
@@ -647,9 +687,9 @@ function renderPanel(idx){
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+'</div>'+
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
-      (s.type==='flight'?flightAwareLink(s.name):'')+
+      (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       '</div>';
@@ -667,6 +707,7 @@ function renderPanel(idx){
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
+    renderDaySummary(day,idx)+
     '<div class="timeline">'+cards+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -913,29 +954,43 @@ function saveStop(){
 function generateChecklist(){
   const prev={};
   (state.checklist||[]).filter(i=>i.auto).forEach(i=>{prev[i.id]=i.done});
-  const items=[];const seen=new Set();
-  const hasFlights=state.days.some(d=>d.stops.some(s=>s.type==='flight'));
-  const hasTrains=state.days.some(d=>d.stops.some(s=>s.type==='train'));
-  if(hasFlights){
-    items.push({id:'auto-flights',text:'Book flights',done:prev['auto-flights']||false,auto:true});
-    items.push({id:'auto-car',text:'Reserve rental car',done:prev['auto-car']||false,auto:true});
+  const CK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
+  const typePri={flight:0,train:1,lodge:2,hike:3,food:4,drive:5};
+  const bookable=[];const seen=new Set();
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(/^depart\b/i.test(s.name))return;
+      const needs=s.reservation||['lodge','flight','train'].includes(s.type)||CK_KW.test(s.notes||'');
+      if(!needs)return;
+      const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
+      const key='auto-bk-'+s.type+'-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+      if(seen.has(key))return;seen.add(key);
+      const isDone=key in prev?prev[key]:!!s.reservation;
+      let text;
+      if(s.type==='flight')text='Flight: '+nm+(s.reservation?' · '+s.reservation:'');
+      else if(s.type==='train')text='Train: '+nm+(s.reservation?' · Ref '+s.reservation:'');
+      else if(s.type==='lodge')text='Hotel: '+nm+(s.reservation?' · '+s.reservation:'');
+      else text='Book: '+nm;
+      const urgent=/sells out|BOOK TIMED|BOOK NOW/i.test(s.notes||'');
+      if(urgent)text='⚠️ '+text;
+      bookable.push({id:key,text,done:isDone,auto:true,pri:typePri[s.type]??3,di,si,urgent});
+    });
+  });
+  bookable.sort((a,b)=>{
+    if(a.urgent!==b.urgent)return a.urgent?-1:1;
+    if(a.pri!==b.pri)return a.pri-b.pri;
+    return a.di-b.di||a.si-b.si;
+  });
+  if(bookable.length===0){
+    const items=[];
+    const hasF=state.days.some(d=>d.stops.some(s=>s.type==='flight'));
+    const hasT=state.days.some(d=>d.stops.some(s=>s.type==='train'));
+    if(hasF){items.push({id:'auto-flights',text:'Book flights',done:prev['auto-flights']||false,auto:true});items.push({id:'auto-car',text:'Reserve rental car',done:prev['auto-car']||false,auto:true});}
+    if(hasT)items.push({id:'auto-trains',text:'Book train tickets',done:prev['auto-trains']||false,auto:true});
+    items.push({id:'auto-insurance',text:'Review travel insurance',done:prev['auto-insurance']||false,auto:true});
+    return[...items,...(state.checklist||[]).filter(i=>!i.auto)];
   }
-  if(hasTrains)items.push({id:'auto-trains',text:'Book train tickets',done:prev['auto-trains']||false,auto:true});
-  state.days.forEach(d=>d.stops.filter(s=>s.type==='lodge').forEach(s=>{
-    const nm=s.name.replace(/\s*[—–].*/,'').trim();
-    if(seen.has(nm))return;seen.add(nm);
-    const id='auto-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
-    items.push({id,text:'Book lodging: '+nm,done:prev[id]||false,auto:true});
-  }));
-  const parkKw=['National Park','State Park','National Monument','National Forest',' NP'];
-  state.days.forEach(d=>d.stops.filter(s=>parkKw.some(k=>s.name.includes(k))).forEach(s=>{
-    const nm=s.name.replace(/\s*[—–].*/,'').replace(/\bNP\b/,'National Park').trim();
-    const pk='park-'+nm;if(seen.has(pk))return;seen.add(pk);
-    const id='auto-park-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
-    items.push({id,text:'Purchase park pass: '+nm,done:prev[id]||false,auto:true});
-  }));
-  items.push({id:'auto-insurance',text:'Review travel insurance options',done:prev['auto-insurance']||false,auto:true});
-  return [...items,...(state.checklist||[]).filter(i=>!i.auto)];
+  return[...bookable,...(state.checklist||[]).filter(i=>!i.auto)];
 }
 
 function renderOverview(){

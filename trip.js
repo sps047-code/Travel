@@ -254,7 +254,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+ parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -291,8 +291,8 @@ function renderPanel(idx){
   const hasExplicitLodge=day.stops.some(s=>s.type==='lodge');
   const prevHotel=getHotelForDay(idx-1);
   const todayHotel=getHotelForDay(idx);
-  const showStart=!!prevHotel&&!TRAVEL.has(firstType)&&day.stops.length>0;
-  const showEnd=!!todayHotel&&!TRAVEL.has(lastType)&&!hasExplicitLodge&&day.stops.length>0;
+  const showStart=!!prevHotel&&day.stops.length>0;
+  const showEnd=!!todayHotel&&!hasExplicitLodge&&day.stops.length>0;
   let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
@@ -315,7 +315,7 @@ function renderPanel(idx){
       (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      (!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'')+'</div>':'')+
+      (!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+( s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'')+'</div>':'')+
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];
@@ -786,7 +786,7 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+' </div>'+
       '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
@@ -796,11 +796,10 @@ function renderOverview(){
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')+
     '</div>'
   ).join('');
 
-  /* Budget card */
   let budgetHtml='';
   if(state.budget&&state.budget.total){
     const bTotal=state.budget.type==='total'?state.budget.total:state.budget.total*state.days.length;
@@ -837,7 +836,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -904,10 +903,8 @@ function togglePackItem(key,checked){
   if(!stored.checked)stored.checked={};
   stored.checked[key]=checked;
   lsPack(stored);
-  /* update UI without full rerender */
   const label=document.querySelector('[onchange="togglePackItem(\''+key+'\',this.checked)"]')?.closest('.pack-item');
   if(label)label.classList.toggle('checked',checked);
-  /* update progress */
   const total=stored.categories.reduce((n,c)=>n+c.items.length,0);
   const cnt=Object.values(stored.checked).filter(Boolean).length;
   const prog=document.querySelector('.pack-prog');
@@ -985,7 +982,6 @@ function downloadExcel(){
   if(typeof XLSX==='undefined'){alert('Excel library not loaded yet. Please wait a moment and try again.');return;}
   if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
   const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};
-  /* ---- Itinerary sheet ---- */
   const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Notes']];
   state.days.forEach((day,di)=>{
     const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
@@ -995,30 +991,16 @@ function downloadExcel(){
       rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','']);
     } else {
       day.stops.forEach((s,si)=>{
-        rows.push([
-          'Day '+(di+1),
-          datePart||theme,
-          si+1,
-          s.time||'',
-          s.name||'',
-          typeLabel[s.type]||s.type||'',
-          s.stars?parseFloat(s.stars)||s.stars:'',
-          s.notes||''
-        ]);
+        rows.push(['Day '+(di+1),datePart||theme,si+1,s.time||'',s.name||'',typeLabel[s.type]||s.type||'',s.stars?parseFloat(s.stars)||s.stars:'',s.notes||'']);
       });
     }
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:44}];
-  /* bold the header row */
   const hdrRange=XLSX.utils.decode_range(ws['!ref']);
-  for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){
-    const cell=XLSX.utils.encode_cell({r:0,c});
-    if(ws[cell])ws[cell].s={font:{bold:true}};
-  }
+  for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){const cell=XLSX.utils.encode_cell({r:0,c});if(ws[cell])ws[cell].s={font:{bold:true}};}
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Itinerary');
-  /* ---- Checklist sheet (if any items) ---- */
   if(state.checklist&&state.checklist.length){
     const chkRows=[['Item','Done']];
     state.checklist.forEach(c=>chkRows.push([c.text,c.done?'Yes':'']));
@@ -1078,7 +1060,6 @@ function _showCollabError(msg){
 function openCollabModal(){
   document.getElementById('collab-modal').classList.add('open');
   _showCollabError('');
-  /* Always reset button states so re-opening never shows a stale "Starting…" */
   const startBtn=document.getElementById('start-collab-btn');
   if(startBtn){startBtn.textContent='Start Session';startBtn.disabled=false;}
   const joinBtn=document.getElementById('join-collab-btn');
@@ -1094,7 +1075,6 @@ async function startCollab(){
   _showCollabError('');
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
-    /* Show the panel immediately — don't block on the write promise */
     _collabCode=_genCode();
     _collabRef=_fbDb.ref('trips/'+_collabCode);
     document.getElementById('collab-idle-panel').style.display='none';
@@ -1102,7 +1082,6 @@ async function startCollab(){
     document.getElementById('collab-code-display').textContent=_collabCode;
     btn.textContent='Start Session';btn.disabled=false;
     _updateCollabBtn();
-    /* Write to Firebase and start listening in the background */
     const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
     _collabRef.set(snap).then(()=>{
       _lastSyncAt=snap.updatedAt;
@@ -1125,7 +1104,6 @@ async function joinCollab(){
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
     const ref=_fbDb.ref('trips/'+raw);
-    /* Use .then()/.catch() to avoid Firebase compat promise not settling with await */
     ref.get().then(snap=>{
       if(!snap.exists()){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
       _collabCode=raw;_collabRef=ref;
@@ -1175,7 +1153,6 @@ function stopCollab(){
   clearTimeout(_syncTimer);
   if(_collabListener&&_collabRef)_collabRef.off('value',_collabListener);
   _collabRef=null;_collabCode=null;_collabListener=null;
-  /* Drop the db reference so the next session gets a fresh connection */
   if(_fbDb){try{_fbDb.goOffline();}catch(e){} _fbDb=null;}
   _updateCollabBtn();closeCollabModal();
   showToast('Session ended');
@@ -1246,7 +1223,7 @@ async function shareTrip(){
     const url=location.origin+location.pathname+'#trip='+encoded;
     if(url.length>8000){showToast('&#9888; Link is very long — try removing photo attachments first',5000);return;}
     if(navigator.share){
-      try{await navigator.share({title:state.title||'Trip Itinerary',url});return;}catch(e){/* fall through */}
+      try{await navigator.share({title:state.title||'Trip Itinerary',url});return;}catch(e){}
     }
     await navigator.clipboard.writeText(url);
     showToast('&#128279; Link copied — anyone with it can view this trip');
@@ -1278,7 +1255,6 @@ function reloadOriginal(){
 }
 
 async function init(){
-  /* Handle #trip= hash (read-only shared view) */
   const hash=location.hash;
   if(hash.startsWith('#trip=')){
     try{
@@ -1304,7 +1280,6 @@ async function init(){
     }
   }
 
-  /* Handle ?collab= invite link */
   const collabParam=new URLSearchParams(location.search).get('collab');
   if(collabParam){
     history.replaceState(null,'',location.pathname);
@@ -1312,7 +1287,6 @@ async function init(){
     _firebaseReady().then(ok=>{if(ok)joinCollab();else openCollabModal();});
   }
 
-  /* Handle legacy ?share= link (auto-save and redirect) */
   const shareParam=new URLSearchParams(location.search).get('share');
   if(shareParam){
     try{

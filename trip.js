@@ -260,9 +260,29 @@ function renderDaySummary(day,idx){
   return'<div class="day-summary">'+chips.join('')+'</div>';
 }
 
+function getHotelForDay(dayIdx){
+  for(let i=Math.min(dayIdx,state.days.length-1);i>=0;i--){
+    const lodge=state.days[i].stops.find(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
+    if(lodge)return lodge;
+  }
+  return null;
+}
+function hotelBookendHtml(label,lodge){
+  const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div><div class="hotel-bookend-label">'+label+'</div><div class="hotel-bookend-name">'+nm+'</div></div></div>';
+}
+
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
-  let cards='';
+  const TRAVEL=new Set(['flight','train','drive']);
+  const firstType=day.stops[0]?.type;
+  const lastType=day.stops[day.stops.length-1]?.type;
+  const hasExplicitLodge=day.stops.some(s=>s.type==='lodge');
+  const prevHotel=getHotelForDay(idx-1);
+  const todayHotel=getHotelForDay(idx);
+  const showStart=!!prevHotel&&!TRAVEL.has(firstType)&&day.stops.length>0;
+  const showEnd=!!todayHotel&&!TRAVEL.has(lastType)&&!hasExplicitLodge&&day.stops.length>0;
+  let cards=showStart?hotelBookendHtml('Starting from',prevHotel):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
@@ -274,7 +294,8 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+"</span><div class=\"card-main\">"+'<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
@@ -299,7 +320,7 @@ function renderPanel(idx){
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     renderDaySummary(day,idx)+
-    '<div class="timeline">'+cards+
+    '<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
     (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+
@@ -307,24 +328,29 @@ function renderPanel(idx){
 }
 
 /* ---- Wikipedia stop images ---- */
-const IMG_LS='stop_img_v3';
+const IMG_LS='stop_img_v4';
 let imgData={};
 try{imgData=JSON.parse(localStorage.getItem(IMG_LS)||'{}')}catch(e){}
 
-function cleanStopName(name){
-  return name
-    .replace(/\s*[—–]\s*.*/,'')
-    .replace(/\s*\([^)]*\)/g,'')
-    .replace(/\bNP\b/,'National Park')
-    .replace(/\bSP\b/,'State Park')
-    .replace(/\bNF\b/,'National Forest')
-    .replace(/\s+(Hike|Trail|BBQ|Restaurant|Cafe|Hotel|Motel|Inn|Buffet|Bar|Grill|Patio)\s*$/i,'')
-    .trim();
+function extractImageKeyword(name){
+  const GENERIC=/^(land(?:ing)?|drive|driving|train|flight|bus|depart(?:ure)?|arriv(?:e|al)|transfer|return|pick.?up|drop.?off|check.?in|check.?out|flying|fly)\b/i;
+  const FILLER=/\s+(dinner|lunch|breakfast|brunch|drinks|coffee|evening|morning|afternoon|tour|session|hike|trail|restaurant|cafe|hotel|motel|inn|buffet|bar|grill|patio)\s*$/i;
+  let s=name.replace(/\bNP\b/,'National Park').replace(/\bSP\b/,'State Park').replace(/\bNF\b/,'National Forest');
+  const segs=s.split(/\s*[—–]\s*|\s+-\s+/).map(p=>p.replace(/\s*\([^)]*\)/g,'').replace(FILLER,'').trim()).filter(p=>p.length>2);
+  for(const seg of segs){
+    if(seg.split(/\s+/).length<=2&&GENERIC.test(seg))continue;
+    const toM=seg.match(/^.+?\s+to\s+(.+)$/i);
+    if(toM)return toM[1].replace(/\s*\([^)]*\)/g,'').trim();
+    return seg.replace(/^(?:the|a|an)\s+/i,'');
+  }
+  const fb=name.match(/\bto\s+([A-Z][^,\n]+)/);
+  if(fb)return fb[1].replace(/\s*\([^)]*\)/g,'').trim();
+  return name.replace(/\s*[—–]\s*.*/,'').replace(/\s*\([^)]*\)/g,'').trim();
 }
 
 async function fetchStopImage(name){
   if(name in imgData)return imgData[name];
-  const q=cleanStopName(name);
+  const q=extractImageKeyword(name);
   if(!q||q.length<4){imgData[name]=null;return null}
   try{
     const url='https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&generator=search&gsrsearch='+
@@ -480,6 +506,14 @@ function closeModal(){document.getElementById('modal-overlay').classList.remove(
 document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal()});
 document.getElementById('copy-modal').addEventListener('click',function(e){if(e.target===this)closeCopyModal()});
 
+function formatAddress(item){
+  const a=item.address||{};
+  const city=a.city||a.town||a.village||a.hamlet||a.municipality||'';
+  const state=a.state||a.region||a.county||'';
+  const country=a.country||'';
+  return[city,state,country].filter(Boolean).join(', ');
+}
+
 let searchTimer=null;
 document.getElementById('place-search').addEventListener('input',function(){
   clearTimeout(searchTimer);
@@ -500,7 +534,7 @@ async function doSearch(q){
     el.dataset.results=JSON.stringify(data);
     el.innerHTML=data.map((item,i)=>{
       const name=item.name||item.display_name.split(',')[0];
-      const addr=item.display_name.split(',').slice(1,3).join(',').trim();
+      const addr=formatAddress(item);
       return'<div class="search-result-item" onclick="pickResult('+i+')"><div class="result-name">'+name+'</div><div class="result-addr">'+addr+'</div></div>';
     }).join('');
     el.classList.add('open');
@@ -621,10 +655,10 @@ function renderOverview(){
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
   const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+' id="chk-'+item.id+'">'+
+    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')" >&#215;</button>':'')+
     '</div>'
   ).join('');
 
@@ -665,7 +699,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')" >&#215;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -710,7 +744,7 @@ function renderPackingListHtml(){
         cat.items.map((item,ii)=>{
           const key=ci+'-'+ii;
           const isChecked=!!checked[key];
-          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+
+          return'<label class="pack-item'+(isChecked?' checked':'')+'" >'+
             '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
             '<span class="pack-item-text">'+item+'</span>'+
             '</label>';
@@ -922,7 +956,7 @@ async function startCollab(){
   _showCollabError('');
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
-    /* Show the panel immediately — don\'t block on the write promise */
+    /* Show the panel immediately — don't block on the write promise */
     _collabCode=_genCode();
     _collabRef=_fbDb.ref('trips/'+_collabCode);
     document.getElementById('collab-idle-panel').style.display='none';

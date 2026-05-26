@@ -254,7 +254,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+ parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -315,7 +315,7 @@ function renderPanel(idx){
       (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      (!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'"></div>':'')+
+      (!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'')+'</div>':'')+
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];
@@ -330,7 +330,7 @@ function renderPanel(idx){
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+' </div>'+
+    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     renderDaySummary(day,idx)+
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     '<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel,day.stops[day.stops.length-1]):'')+
@@ -480,12 +480,7 @@ function refreshDayNarrative(dayIdx){
 }
 
 /* ---- Stop descriptions (AI) ---- */
-const DESC_LS='stop_desc_v1';
-let descData={};
-try{descData=JSON.parse(localStorage.getItem(DESC_LS)||'{}')}catch(e){}
 const DESC_SYSTEM='You are a travel guidebook author writing in the style of Fodor\'s or Rick Steves. Write exactly 2-3 sentences about this location: what it is, why it matters, and what a visitor should look for. Be specific and evocative, not generic. Do not begin with the place name. Do not use markdown or bullet points.';
-
-function stopDescKey(name){return name.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,44);}
 
 function _renderDesc(wrap,text,dayIdx,stopIdx){
   wrap.innerHTML='<div class="stop-desc"><span class="stop-desc-text">'+text+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+dayIdx+','+stopIdx+')" title="Regenerate">&#8635;</button></div>';
@@ -494,18 +489,17 @@ function _renderDesc(wrap,text,dayIdx,stopIdx){
 async function generateStopDesc(dayIdx,stopIdx){
   const wrap=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);if(!wrap)return;
   const stop=state.days[dayIdx]?.stops[stopIdx];if(!stop)return;
-  const key=stopDescKey(stop.name);
-  if(descData[key]){_renderDesc(wrap,descData[key],dayIdx,stopIdx);return;}
+  if(stop.desc){_renderDesc(wrap,stop.desc,dayIdx,stopIdx);return;}
   wrap.innerHTML='<span style="font-family:var(--font-ui);font-size:12px;color:var(--muted);animation:narr-pulse 1.5s ease-in-out infinite">Loading…</span>';
   try{
     const parts=[stop.name,'Type: '+stop.type];
     if(stop.notes)parts.push('Notes: '+stop.notes);
     if(stop.lat&&stop.lng)parts.push('Coordinates: '+Number(stop.lat).toFixed(3)+', '+Number(stop.lng).toFixed(3));
     const text=await callClaude(DESC_SYSTEM,parts.join('\n'));
-    descData[key]=text.trim();
-    try{localStorage.setItem(DESC_LS,JSON.stringify(descData))}catch(e){}
+    stop.desc=text.trim();
+    saveState();
     const fresh=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);
-    if(fresh)_renderDesc(fresh,descData[key],dayIdx,stopIdx);
+    if(fresh)_renderDesc(fresh,stop.desc,dayIdx,stopIdx);
   }catch(e){
     const fresh=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);
     if(fresh)fresh.innerHTML='<button class="stop-desc-btn" onclick="generateStopDesc('+dayIdx+','+stopIdx+')">&#10024; Describe</button>';
@@ -514,33 +508,9 @@ async function generateStopDesc(dayIdx,stopIdx){
 
 function refreshStopDesc(dayIdx,stopIdx){
   const stop=state.days[dayIdx]?.stops[stopIdx];if(!stop)return;
-  const key=stopDescKey(stop.name);
-  delete descData[key];
-  try{localStorage.setItem(DESC_LS,JSON.stringify(descData))}catch(e){}
+  delete stop.desc;
+  saveState();
   generateStopDesc(dayIdx,stopIdx);
-}
-
-function loadCachedStopDescs(){
-  state.days.forEach((d,di)=>{
-    d.stops.forEach((s,si)=>{
-      if(['drive','flight','train'].includes(s.type))return;
-      const key=stopDescKey(s.name);
-      if(!descData[key])return;
-      const wrap=document.getElementById('stopdesc-'+di+'-'+si);
-      if(wrap&&!wrap.querySelector('.stop-desc'))_renderDesc(wrap,descData[key],di,si);
-    });
-  });
-}
-
-async function autoLoadStopDescs(dayIdx){
-  const day=state.days[dayIdx];if(!day)return;
-  for(let si=0;si<day.stops.length;si++){
-    const s=day.stops[si];
-    if(['drive','flight','train'].includes(s.type))continue;
-    const key=stopDescKey(s.name);
-    if(descData[key])continue;
-    await generateStopDesc(dayIdx,si);
-  }
 }
 
 function renderAll(){
@@ -550,8 +520,7 @@ function renderAll(){
   }else{
     document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
     loadStopImages();
-    loadCachedStopDescs();
-    if(currentDayIdx>=0){loadDayNarrative(currentDayIdx);autoLoadStopDescs(currentDayIdx);}
+    if(currentDayIdx>=0)loadDayNarrative(currentDayIdx);
   }
 }
 
@@ -728,13 +697,20 @@ function saveStop(){
   if(isNaN(lat)||isNaN(lng)){alert('Please select a search result or enter valid coordinates.');return}
   if(Math.abs(lat)>90&&Math.abs(lng)<=90){[lat,lng]=[lng,lat];}
   if(Math.abs(lat)>90||Math.abs(lng)>180){alert('Coordinates appear invalid. Lat must be -90 to 90, Lng must be -180 to 180.');return}
-  const existingPhoto=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx].customImage:null;
+  const existingStop=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]:null;
+  const existingPhoto=existingStop?.customImage||null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
   const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,alt:document.getElementById('f-alt').checked,customImage};
+  if(existingStop?.desc)stop.desc=existingStop.desc;
+  const isNew=!editingStop;
+  const newDayIdx=addingToDay;
   const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
   if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
   else{state.days[addingToDay].stops.push(stop);}
   saveState();closeModal();renderAll();if(affectedDay===currentDayIdx)renderDayMap(currentDayIdx);
+  if(isNew&&!['drive','flight','train'].includes(stop.type)){
+    generateStopDesc(newDayIdx,state.days[newDayIdx].stops.length-1);
+  }
 }
 
 /* ---- Overview ---- */
@@ -810,7 +786,7 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?(day.subtitle.split('·')[0]||day.subtitle.split('•')[0]).trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+' </div>'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
       '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
@@ -820,7 +796,7 @@ function renderOverview(){
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
     '</div>'
   ).join('');
 
@@ -861,7 +837,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -1366,6 +1342,19 @@ async function init(){
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;
+  /* one-time migration: move stop_desc_v1 cache into stop.desc */
+  try{
+    const old=JSON.parse(localStorage.getItem('stop_desc_v1')||'{}');
+    if(Object.keys(old).length){
+      let changed=false;
+      state.days.forEach(d=>d.stops.forEach(s=>{
+        if(s.desc)return;
+        const k=s.name.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,44);
+        if(old[k]){s.desc=old[k];changed=true;}
+      }));
+      if(changed){saveState();localStorage.removeItem('stop_desc_v1');}
+    }
+  }catch(e){}
   renderAll();renderOverviewMap();loadTimezones();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
   const imported=sessionStorage.getItem('justImported');

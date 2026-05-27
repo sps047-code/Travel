@@ -287,6 +287,16 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .budget-ov-meta{font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-top:4px}
 /* Dialog accessibility */
 .modal-overlay .modal{outline:none}
+/* Issue 1 — sticky tabs bar */
+#tabs-bar{position:sticky;z-index:999}
+/* Issue 2 — bus type */
+.dot-bus{background:#1D4E73}
+.badge-bus{background:rgba(29,78,115,0.12);color:#1D4E73}
+.day-sum-bus{background:rgba(29,78,115,0.12);color:#1D4E73;border:1px solid rgba(29,78,115,0.22)}
+/* Issue 3 — desc generate button in modal */
+.stop-desc-gen{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:5px 12px;background:var(--river-tint);color:var(--river);border:1px solid var(--river-border);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.stop-desc-gen:hover{background:var(--river);color:white}
+.stop-desc-gen:disabled{opacity:0.5;cursor:default;pointer-events:none}
 </style>
 </head>
 <body>
@@ -325,6 +335,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   <span class="legend-item"><span class="legend-dot" style="background:var(--river)"></span>Drive</span>
   <span class="legend-item"><span class="legend-dot" style="background:#7B5EA7"></span>Flight</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--slate)"></span>Train</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#1D4E73"></span>Bus</span>
 </div>
 <div id="route-status" class="route-status" style="display:none">Loading driving routes...</div>
 <div id="map"></div>
@@ -349,6 +360,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
           <option value="drive">Drive</option>
           <option value="flight">Flight</option>
           <option value="train">Train</option>
+          <option value="bus">Bus</option>
         </select>
       </div>
       <div class="form-group"><label class="form-label">Stars</label><input type="text" class="form-input" id="f-stars" placeholder="e.g. 4.5"/></div>
@@ -367,6 +379,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <button type="button" class="photo-remove-btn" id="photo-remove-btn" onclick="removePhoto(event)">&#215; Remove photo</button>
       </div>
       <div class="form-group full"><label class="check-row"><input type="checkbox" id="f-alt"/> Mark as alternate / optional stop</label></div>
+      <div class="form-group full" id="f-desc-section" style="display:none">
+        <label class="form-label" style="margin-bottom:4px">Guidebook Description</label>
+        <div id="f-desc-display" style="margin-bottom:8px;font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);line-height:1.62"></div>
+        <button type="button" class="stop-desc-gen" id="f-desc-btn" onclick="generateModalDesc()">&#10024; Generate Description</button>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>

@@ -33,10 +33,11 @@ function saveState(){
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
-const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572"};
+const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572",bus:"#1D4E73"};
 
 /* ---- Photo upload helpers ---- */
 let pendingPhoto=null; // null=no change, dataURL=new image
+let pendingDesc=null;  // null=no change, string=new/updated desc, ''=cleared
 function showPhotoPreview(src){
   const area=document.getElementById('photo-upload-area');
   const preview=document.getElementById('f-photo-preview');
@@ -70,6 +71,31 @@ async function handlePhotoUpload(input){
     reader.readAsDataURL(file);
   });
   pendingPhoto=dataUrl;showPhotoPreview(dataUrl);
+}
+
+async function generateModalDesc(){
+  const btn=document.getElementById('f-desc-btn');
+  const display=document.getElementById('f-desc-display');
+  if(!btn||!display)return;
+  const name=document.getElementById('f-name').value.trim();
+  if(!name){alert('Please enter a stop name first.');return;}
+  btn.disabled=true;btn.textContent='Generating…';display.textContent='';
+  try{
+    const type=document.getElementById('f-type').value;
+    const notes=document.getElementById('f-notes').value.trim();
+    const lat=parseFloat(document.getElementById('f-lat').value);
+    const lng=parseFloat(document.getElementById('f-lng').value);
+    const parts=[name,'Type: '+type];
+    if(notes)parts.push('Notes: '+notes);
+    if(!isNaN(lat)&&!isNaN(lng))parts.push('Coordinates: '+lat.toFixed(3)+', '+lng.toFixed(3));
+    const text=await callClaude(DESC_SYSTEM,parts.join('\n'));
+    pendingDesc=text.trim();
+    display.textContent=pendingDesc;
+    btn.textContent='✨ Regenerate Description';btn.disabled=false;
+  }catch(e){
+    display.textContent='Could not generate — try again.';
+    btn.textContent='✨ Generate Description';btn.disabled=false;
+  }
 }
 
 /* ---- Timezone support ---- */
@@ -120,10 +146,11 @@ function legLabel(a,b){
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
   const isFlight=a.type==='flight'||b.type==='flight';
   const isTrain=!isFlight&&(a.type==='train'||b.type==='train');
-  const speed=isFlight?8:isTrain?1.8:1.15;
+  const isBus=!isFlight&&!isTrain&&(a.type==='bus'||b.type==='bus');
+  const speed=isFlight?8:isTrain?1.8:isBus?1.4:1.15;
   const mins=Math.round(dist/speed);
   const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
-  const mode=isFlight?' flight':isTrain?' train':' drive';
+  const mode=isFlight?' flight':isTrain?' train':isBus?' bus':' drive';
   return mi+' mi · '+tStr+mode;
 }
 
@@ -191,6 +218,11 @@ async function renderDayMap(idx){
   }catch(e){st.style.display='none'}
 }
 
+function updateTabsTop(){
+  const hdr=document.querySelector('header');
+  const bar=document.getElementById('tabs-bar');
+  if(hdr&&bar)bar.style.top=hdr.offsetHeight+'px';
+}
 function tabsScroll(dir){
   const bar=document.getElementById('tabs-inner');
   bar.scrollBy({left:dir*160,behavior:'smooth'});
@@ -227,7 +259,7 @@ function renderTabs(){
   });
 }
 
-function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
+function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
 function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
 
 const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
@@ -246,10 +278,12 @@ function renderDaySummary(day,idx){
   });
   const trainCount=day.stops.filter(s=>s.type==='train').length;
   if(trainCount>0)chips.push('<span class="day-sum-item day-sum-train">&#128642; '+trainCount+' train'+(trainCount>1?'s':'')+'</span>');
+  const busCount=day.stops.filter(s=>s.type==='bus').length;
+  if(busCount>0)chips.push('<span class="day-sum-item day-sum-bus">&#128652; '+busCount+' bus'+(busCount>1?'es':'')+'</span>');
   const hasCar=day.stops.some(s=>s.type==='drive'&&/pick.?up|rental/i.test(s.name));
   if(hasCar)chips.push('<span class="day-sum-item day-sum-drive">&#128663; Car day</span>');
   const bookedN=day.stops.filter(s=>s.reservation).length;
-  const toBookN=day.stops.filter(s=>!s.reservation&&(['lodge','flight','train'].includes(s.type)||_BOOK_KW.test(s.notes||''))&&!/^depart\b/i.test(s.name)).length;
+  const toBookN=day.stops.filter(s=>!s.reservation&&(['lodge','flight','train','bus'].includes(s.type)||_BOOK_KW.test(s.notes||''))&&!/^depart\b/i.test(s.name)).length;
   if(bookedN>0||toBookN>0){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
@@ -314,16 +348,16 @@ function renderPanel(idx){
       '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
-      (['flight','train'].includes(s.type)&&(s.from||s.to)?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+(s.from||'—')+' → '+(s.to||'—')+'</div>':'')+
+      (['flight','train','bus'].includes(s.type)&&(s.from||s.to)?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+(s.from||'—')+' → '+(s.to||'—')+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
-      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
+      '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      (!['drive','flight','train'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'')+'</div>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span></div>':'')+'</div>':'')+
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];
@@ -421,18 +455,28 @@ async function fetchDayWeather(day){
   if(!coords)return null;
   const today=new Date();today.setHours(0,0,0,0);
   const diffDays=Math.round((date-today)/86400000);
-  if(diffDays<-1||diffDays>16)return{tooFarOut:true,month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng};
+  if(diffDays>16)return{tooFarOut:true,wxType:'climateAvg',month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng};
   const ds=date.toISOString().slice(0,10);
+  if(diffDays<0){
+    try{
+      const r=await fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
+      if(!r.ok)return null;
+      const d=await r.json();
+      if(!d.daily?.temperature_2m_max?.length)return null;
+      const precip=d.daily.precipitation_sum[0];
+      return{hi:Math.round(d.daily.temperature_2m_max[0]),lo:Math.round(d.daily.temperature_2m_min[0]),precip:precip!=null?Math.round(precip*10)/10:null,precipUnit:'mm',code:d.daily.weathercode[0],wxType:'historical',tooFarOut:false};
+    }catch(e){return null;}
+  }
   try{
     const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
     if(!r.ok)return null;
     const d=await r.json();
     if(!d.daily?.temperature_2m_max?.length)return null;
-    return{hi:Math.round(d.daily.temperature_2m_max[0]),lo:Math.round(d.daily.temperature_2m_min[0]),precip:d.daily.precipitation_probability_max[0],code:d.daily.weathercode[0],tooFarOut:false};
+    return{hi:Math.round(d.daily.temperature_2m_max[0]),lo:Math.round(d.daily.temperature_2m_min[0]),precip:d.daily.precipitation_probability_max[0],code:d.daily.weathercode[0],wxType:'forecast',tooFarOut:false};
   }catch(e){return null;}
 }
 
-const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F" — use the forecast data if provided in the prompt, otherwise estimate typical weather for this location and time of year. (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
+const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Forecast". End the weather line with the label from the prompt: "Forecast", "Historical", or "Climate Avg". Use the weather data if provided, otherwise estimate typical weather for this location and time of year and label it "Climate Avg". (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
 
 function _escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderNarrHtml(text){
@@ -465,9 +509,13 @@ async function loadDayNarrative(dayIdx){
     if(wx&&!wx.tooFarOut){
       const icon=WX_ICONS[wx.code]||'🌡️';
       const label=WX_LABELS[wx.code]||'';
-      userPrompt+='\nForecast: '+icon+' '+(label?label+' · ':'')+' High '+wx.hi+'°F / Low '+wx.lo+'°F'+(wx.precip>=15?' · '+wx.precip+'% rain':'');
+      const typeLabel=wx.wxType==='historical'?'Historical':'Forecast';
+      let precipNote='';
+      if(wx.wxType==='historical'){if(wx.precip!=null&&wx.precip>0)precipNote=' · '+wx.precip+'mm rain';}
+      else{if(wx.precip>=15)precipNote=' · '+wx.precip+'% rain';}
+      userPrompt+='\nWeather ('+typeLabel+'): '+icon+' '+(label?label+' · ':'')+' High '+wx.hi+'°F / Low '+wx.lo+'°F'+precipNote+'\nWeather label: '+typeLabel;
     }else if(wx?.tooFarOut){
-      userPrompt+='\nLocation: lat '+Number(wx.lat).toFixed(2)+', lon '+Number(wx.lng).toFixed(2)+'\nMonth: '+wx.month+'\n(No forecast available — please estimate typical weather for this location in '+wx.month+')';
+      userPrompt+='\nLocation: lat '+Number(wx.lat).toFixed(2)+', lon '+Number(wx.lng).toFixed(2)+'\nMonth: '+wx.month+'\nWeather label: Climate Avg\n(No forecast available — please estimate typical weather for this location in '+wx.month+')';
     }
     const text=await callClaude(NARR_SYSTEM,userPrompt);
     narrData[key]=text.trim();
@@ -616,6 +664,9 @@ function openAddStopModal(dayIdx){
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
   pendingPhoto=null;showPhotoPreview(null);document.getElementById('f-photo').value='';
+  pendingDesc=null;
+  const _dd=document.getElementById('f-desc-display');if(_dd)_dd.textContent='';
+  const _db=document.getElementById('f-desc-btn');if(_db){_db.textContent='✨ Generate Description';_db.disabled=false;}
   setModalMode(false);toggleTransitFields();
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('place-search').focus(),100);
@@ -638,13 +689,22 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
   pendingPhoto=s.customImage||null;showPhotoPreview(pendingPhoto);document.getElementById('f-photo').value='';
+  pendingDesc=null;
+  const _dd2=document.getElementById('f-desc-display');if(_dd2)_dd2.textContent=s.desc||'';
+  const _db2=document.getElementById('f-desc-btn');if(_db2){_db2.textContent=s.desc?'✨ Regenerate Description':'✨ Generate Description';_db2.disabled=false;}
   setModalMode(true);toggleTransitFields();
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('f-name').focus(),100);
 }
 
 function closeModal(){document.getElementById('modal-overlay').classList.remove('open')}
-function toggleTransitFields(){const t=document.getElementById('f-type').value;document.getElementById('f-transit-row').style.display=['flight','train'].includes(t)?'':'none';}
+function toggleTransitFields(){
+  const t=document.getElementById('f-type').value;
+  const isTransit=['flight','train','bus'].includes(t);
+  document.getElementById('f-transit-row').style.display=isTransit?'':'none';
+  const descSec=document.getElementById('f-desc-section');
+  if(descSec)descSec.style.display=isTransit?'none':'';
+}
 document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal()});
 document.getElementById('copy-modal').addEventListener('click',function(e){if(e.target===this)closeCopyModal()});
 
@@ -712,16 +772,12 @@ function saveStop(){
   const existingPhoto=existingStop?.customImage||null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
   const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,alt:document.getElementById('f-alt').checked,customImage};
-  if(existingStop?.desc)stop.desc=existingStop.desc;
-  const isNew=!editingStop;
-  const newDayIdx=addingToDay;
+  if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
+  else if(existingStop?.desc)stop.desc=existingStop.desc;
   const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
   if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
   else{state.days[addingToDay].stops.push(stop);}
   saveState();closeModal();renderAll();if(affectedDay===currentDayIdx)renderDayMap(currentDayIdx);
-  if(isNew&&!['drive','flight','train'].includes(stop.type)){
-    generateStopDesc(newDayIdx,state.days[newDayIdx].stops.length-1);
-  }
 }
 
 /* ---- Overview ---- */
@@ -1307,6 +1363,8 @@ async function init(){
       renderAll();renderOverviewMap();loadTimezones();
       _applyReadOnly();
       new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
+  new ResizeObserver(updateTabsTop).observe(document.querySelector('header'));
+  updateTabsTop();
       document.getElementById('shared-trip-banner').style.display='flex';
       return;
     }catch(e){
@@ -1368,6 +1426,8 @@ async function init(){
   }catch(e){}
   renderAll();renderOverviewMap();loadTimezones();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
+  new ResizeObserver(updateTabsTop).observe(document.querySelector('header'));
+  updateTabsTop();
   const imported=sessionStorage.getItem('justImported');
   if(imported){
     sessionStorage.removeItem('justImported');

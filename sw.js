@@ -21,7 +21,7 @@
 //      e.g. trip.html (HTML+CSS) + trip.js (JavaScript) — already done.
 // =============================================================================
 
-const CACHE = 'seasons-v12';
+const CACHE = 'seasons-v13';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',

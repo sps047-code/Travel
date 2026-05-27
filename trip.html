@@ -342,7 +342,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="form-group full"><label class="form-label">Name</label><input type="text" class="form-input" id="f-name" placeholder="Stop name"/></div>
       <div class="form-group"><label class="form-label">Time</label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM"/></div>
       <div class="form-group"><label class="form-label">Type</label>
-        <select class="form-select" id="f-type">
+        <select class="form-select" id="f-type" onchange="toggleTransitFields()">
           <option value="hike">Hike / Park</option>
           <option value="food">Food</option>
           <option value="lodge">Lodging</option>
@@ -354,6 +354,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="form-group"><label class="form-label">Stars</label><input type="text" class="form-input" id="f-stars" placeholder="e.g. 4.5"/></div>
       <div class="form-group"><label class="form-label">Lat</label><input type="text" class="form-input" id="f-lat" placeholder="Latitude"/></div>
       <div class="form-group"><label class="form-label">Lng</label><input type="text" class="form-input" id="f-lng" placeholder="Longitude"/></div>
+      <div class="form-group full" id="f-transit-row" style="display:none"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="form-label">From Station / Airport</label><input type="text" class="form-input" id="f-from" placeholder="e.g. Edinburgh Waverley"/></div><div><label class="form-label">To Station / Airport</label><input type="text" class="form-input" id="f-to" placeholder="e.g. Ely Station"/></div></div></div>
       <div class="form-group full"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Optional notes..."></textarea></div>
       <div class="form-group full"><label class="form-label">Reservation / Confirmation #</label><input type="text" class="form-input" id="f-reservation" placeholder="e.g. N87UGG, ABC123"/></div>
       <div class="form-group full">

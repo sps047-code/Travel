@@ -221,7 +221,7 @@ async function renderDayMap(idx){
 function updateTabsTop(){
   const hdr=document.querySelector('header');
   const bar=document.getElementById('tabs-bar');
-  if(hdr&&bar)bar.style.top=hdr.offsetHeight+'px';
+  if(hdr&&bar){bar.style.position='sticky';bar.style.top=hdr.offsetHeight+'px';}
 }
 function tabsScroll(dir){
   const bar=document.getElementById('tabs-inner');
@@ -259,6 +259,15 @@ function renderTabs(){
   });
 }
 
+function parsedTransitRoute(s){
+  if(s.from||s.to)return{from:s.from||'—',to:s.to||'—'};
+  const n=s.name;
+  const m=n.match(/—\s*(.+?)\s+to\s+(.+?)(?:\s*\||$)/i);
+  if(m)return{from:m[1].trim(),to:m[2].trim()};
+  const m2=n.match(/^(.+?)\s+to\s+(.+?)(?:\s*\||$)/i);
+  if(m2)return{from:m2[1].trim(),to:m2[2].trim()};
+  return null;
+}
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
 function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
 
@@ -337,6 +346,7 @@ function renderPanel(idx){
   let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
+    const _tr=['flight','train','bus'].includes(s.type)?parsedTransitRoute(s):null;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls">'+
@@ -348,7 +358,7 @@ function renderPanel(idx){
       '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
-      (['flight','train','bus'].includes(s.type)&&(s.from||s.to)?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+(s.from||'—')+' → '+(s.to||'—')+'</div>':'')+
+      (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
@@ -357,7 +367,7 @@ function renderPanel(idx){
       (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span></div>':'')+'</div>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];

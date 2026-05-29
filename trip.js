@@ -259,6 +259,20 @@ function renderTabs(){
   });
 }
 
+function dayDateStr(dayIdx){
+  const day=state.days[dayIdx];if(!day)return'';
+  const sub=day.subtitle||'';
+  const datePart=(sub.split('·')[0]||sub.split('•')[0]).trim();
+  if(!datePart)return'';
+  const d=new Date(datePart+' 12:00');
+  if(isNaN(d.getTime()))return'';
+  return d.toISOString().slice(0,10);
+}
+function findDayByDate(dateStr){
+  if(!dateStr)return -1;
+  for(let i=0;i<state.days.length;i++){if(dayDateStr(i)===dateStr)return i;}
+  return -1;
+}
 function parsedTransitRoute(s){
   if(s.from||s.to)return{from:s.from||'—',to:s.to||'—'};
   const n=s.name;
@@ -668,7 +682,8 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to'].forEach(id=>{document.getElementById(id).value=''});
+  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to'].forEach(id=>{document.getElementById(id).value=''});
+  document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
   document.getElementById('search-results').innerHTML='';
@@ -686,6 +701,7 @@ function openEditStopModal(dayIdx,stopIdx){
   const s=state.days[dayIdx].stops[stopIdx];
   document.getElementById('place-search').value='';
   document.getElementById('f-name').value=s.name||'';
+  document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-time').value=s.time||'';
   document.getElementById('f-type').value=s.type||'hike';
   document.getElementById('f-stars').value=s.stars||'';
@@ -784,10 +800,23 @@ function saveStop(){
   const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,alt:document.getElementById('f-alt').checked,customImage};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
-  const affectedDay=editingStop?editingStop.dayIdx:addingToDay;
-  if(editingStop){state.days[editingStop.dayIdx].stops[editingStop.stopIdx]=stop;}
-  else{state.days[addingToDay].stops.push(stop);}
-  saveState();closeModal();renderAll();if(affectedDay===currentDayIdx)renderDayMap(currentDayIdx);
+  const srcDayIdx=editingStop?editingStop.dayIdx:addingToDay;
+  const dateVal=document.getElementById('f-date').value;
+  const matched=findDayByDate(dateVal);
+  const destDayIdx=matched>=0?matched:srcDayIdx;
+  if(editingStop){
+    if(destDayIdx===srcDayIdx){
+      state.days[srcDayIdx].stops[editingStop.stopIdx]=stop;
+    }else{
+      state.days[srcDayIdx].stops.splice(editingStop.stopIdx,1);
+      state.days[destDayIdx].stops.push(stop);
+    }
+  }else{
+    state.days[destDayIdx].stops.push(stop);
+  }
+  saveState();closeModal();
+  if(destDayIdx!==currentDayIdx&&destDayIdx>=0){switchDay(destDayIdx);}
+  else{renderAll();if(srcDayIdx===currentDayIdx||destDayIdx===currentDayIdx)renderDayMap(currentDayIdx);}
 }
 
 /* ---- Overview ---- */

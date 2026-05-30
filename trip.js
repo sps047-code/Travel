@@ -1200,7 +1200,7 @@ async function startCollab(){
   _showCollabError('');
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
-    /* Show the panel immediately — don't block on the write promise */
+    _fbDb.goOnline();
     _collabCode=_genCode();
     _collabRef=_fbDb.ref('trips/'+_collabCode);
     document.getElementById('collab-idle-panel').style.display='none';
@@ -1208,13 +1208,16 @@ async function startCollab(){
     document.getElementById('collab-code-display').textContent=_collabCode;
     btn.textContent='Start Session';btn.disabled=false;
     _updateCollabBtn();
-    /* Write to Firebase and start listening in the background */
+    _watchCollab();
+    /* Write initial state; timeout so the host knows if Firebase isn't reachable */
     const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-    _collabRef.set(snap).then(()=>{
+    _withTimeout(
+      new Promise((resolve,reject)=>_collabRef.set(snap).then(resolve).catch(reject)),
+      10000,'Could not reach the collaboration server — check your connection.'
+    ).then(()=>{
       _lastSyncAt=snap.updatedAt;
-      _watchCollab();
     }).catch(e=>{
-      _showCollabError('Session started but sync failed: '+e.message);
+      _showCollabError('Session sync failed: '+e.message+' Your partner may not be able to join yet.');
     });
   }catch(e){
     _collabCode=null;_collabRef=null;
@@ -1230,9 +1233,12 @@ async function joinCollab(){
   _showCollabError('');
   try{
     if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
+    _fbDb.goOnline();
     const ref=_fbDb.ref('trips/'+raw);
-    /* Use .then()/.catch() to avoid Firebase compat promise not settling with await */
-    ref.get().then(snap=>{
+    _withTimeout(
+      new Promise((resolve,reject)=>ref.get().then(resolve).catch(reject)),
+      10000,'Could not reach the collaboration server — check your connection and try again.'
+    ).then(snap=>{
       if(!snap.exists()){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
       _collabCode=raw;_collabRef=ref;
       const data=snap.val();
@@ -1244,7 +1250,7 @@ async function joinCollab(){
       showToast('&#128101; Joined — you\'re now editing together');
       btn.textContent='Join';btn.disabled=false;
     }).catch(e=>{
-      _showCollabError('Could not read session: '+e.message);
+      _showCollabError('Could not join: '+e.message);
       btn.textContent='Join';btn.disabled=false;
     });
   }catch(e){

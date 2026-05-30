@@ -19,7 +19,9 @@
           "to": "London Gatwick (LGW)",
           "time": "8:30 PM",
           "stars": null,
-          "notes": "Norwegian Air flight Z0 784. Departs Orlando 8:30 PM. Arrives London Gatwick the next morning. Overnight transatlantic flight.",
+          "airline": "Norse Atlantic UK",
+          "flightNumber": "Z0 784",
+          "notes": "Norse Atlantic UK flight Z0 784. Departs Orlando 8:30 PM. Arrives London Gatwick the next morning. Overnight transatlantic flight.",
           "reservation": "Z0784"
         }
       ]
@@ -1058,7 +1060,9 @@
           "to": "Orlando International (MCO)",
           "time": "2:00 PM",
           "stars": null,
-          "notes": "Norwegian Air flight Z0 783. Departs 2:00 PM — HARD DEADLINE. ~9 hour flight home.",
+          "airline": "Norse Atlantic UK",
+          "flightNumber": "Z0 783",
+          "notes": "Norse Atlantic UK flight Z0 783. Departs 2:00 PM — HARD DEADLINE. ~9 hour flight home.",
           "reservation": "Z0783"
         }
       ]

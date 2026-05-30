@@ -329,7 +329,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">' +parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -389,7 +389,7 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+' </div>'+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
@@ -414,7 +414,7 @@ function renderPanel(idx){
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
-    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+' </div>'+
+    '<div class="day-header"><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
     renderDaySummary(day,idx)+
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     '<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel,day.stops[day.stops.length-1]):'')+
@@ -915,7 +915,7 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+' </div>'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
       '<div class="lodge-info"><div class="lodge-name">'+nm+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
@@ -925,7 +925,7 @@ function renderOverview(){
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
     '</div>'
   ).join('');
 
@@ -966,7 +966,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -1155,7 +1155,7 @@ function downloadExcel(){
     wsC['!cols']=[{wch:44},{wch:6}];
     XLSX.utils.book_append_sheet(wb,wsC,'Checklist');
   }
-  const filename=(state.title||'Itinerary').replace(/[/\\?%*:|"<>]/g,'-')+'.xlsx';
+  const filename=(state.title||'Itinerary').replace(/[\/\\?%*:|"<>]/g,'-')+'.xlsx';
   XLSX.writeFile(wb,filename);
 }
 
@@ -1285,10 +1285,7 @@ function stopCollab(){
   if(_collabPoll)clearInterval(_collabPoll);
   _collabPoll=null;_collabCode=null;
   saveState();
-  const _lt=JSON.parse(localStorage.getItem('localTrips')||'[]');
-  const _li=_lt.findIndex(t=>t.id===tripId);
-  if(_li>=0){_lt[_li].local=true;}else{_lt.push({id:tripId,title:state.title||tripId,local:true,created:Date.now()});}
-  localStorage.setItem('localTrips',JSON.stringify(_lt));
+  localStorage.setItem('_collabSaved_'+tripId,'1');
   _updateCollabBtn();closeCollabModal();
   showToast('Session ended — itinerary saved');
 }
@@ -1446,8 +1443,9 @@ async function init(){
   try{
     const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
     const isLocal=localTrips.some(t=>t.id===tripId&&t.local);
+    const collabSaved=!!localStorage.getItem('_collabSaved_'+tripId);
     const saved=localStorage.getItem(LS_KEY);
-    if(saved&&isLocal){state=JSON.parse(saved);}
+    if(saved&&(isLocal||collabSaved)){state=JSON.parse(saved);}
     else{
       if(saved){localStorage.removeItem(LS_KEY);}
       const r=await fetch('trips/'+tripId+'.json');state=await r.json();

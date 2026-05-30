@@ -283,7 +283,15 @@ function parsedTransitRoute(s){
   return null;
 }
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';const ident=m[1]+m[2];return'<a class="map-link" href="https://flightaware.com/live/flight/'+ident+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
+function flightAwareLink(name,notes){
+  const text=(name||'')+' '+(notes||'');
+  const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);
+  if(!m)return'';
+  /* IATA → ICAO lookup so FlightAware URLs resolve correctly */
+  const ICAO={'Z0':'UBT','DY':'NAX','BA':'BAW','AA':'AAL','DL':'DAL','UA':'UAL','VS':'VIR','AF':'AFR','KL':'KLM','LH':'DLH','IB':'IBE','LX':'SWR','OS':'AUA','AY':'FIN','SK':'SAS','TK':'THY','EK':'UAE','QR':'QTR','EY':'ETD','SQ':'SIA','CX':'CPA','AC':'ACA','WS':'WJA','EI':'EIN','FR':'RYR','U2':'EZY','LS':'EXS','W6':'WZZ','VY':'VLG','EW':'EWG','HV':'TRA','DE':'CFG','BY':'TOM','LM':'LOG','T3':'EZE','KM':'AMC','AZ':'AZA','TP':'TAP','SN':'DAT','LO':'LOT','OK':'CSA','A3':'AEE','OA':'OAL','BT':'BTI','JU':'ASL','OU':'CTN','FZ':'FDB','QF':'QFA','NZ':'ANZ','JL':'JAL','NH':'ANA','KE':'KAL','OZ':'AAR','CI':'CAL','BR':'EVA','TG':'THA','6E':'IGO','AI':'AIC','WN':'SWA','B6':'JBU','AS':'ASA','NK':'NKS','F9':'FFT','G4':'AAY','SY':'SCX','TS':'TSC','FI':'ICE','WB':'RWD','4U':'GWI','FR':'RYR','VX':'VRD','SV':'SVA','MS':'MSR','ET':'ETH','RJ':'RJA','GF':'GFA','WY':'OAS','PK':'PIA','TF':'ICB'};
+  const icao=ICAO[m[1]]||m[1];
+  return'<a class="map-link" href="https://www.flightaware.com/live/flight/'+icao+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';
+}
 
 const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
 function renderDaySummary(day,idx){

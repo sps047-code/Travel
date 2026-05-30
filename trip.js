@@ -283,14 +283,24 @@ function parsedTransitRoute(s){
   return null;
 }
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-function flightAwareLink(name,notes){
-  const text=(name||'')+' '+(notes||'');
-  const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);
-  if(!m)return'';
+function flightAwareLink(name,notes,flightNumber){
   /* IATA → ICAO lookup so FlightAware URLs resolve correctly */
-  const ICAO={'Z0':'UBT','DY':'NAX','BA':'BAW','AA':'AAL','DL':'DAL','UA':'UAL','VS':'VIR','AF':'AFR','KL':'KLM','LH':'DLH','IB':'IBE','LX':'SWR','OS':'AUA','AY':'FIN','SK':'SAS','TK':'THY','EK':'UAE','QR':'QTR','EY':'ETD','SQ':'SIA','CX':'CPA','AC':'ACA','WS':'WJA','EI':'EIN','FR':'RYR','U2':'EZY','LS':'EXS','W6':'WZZ','VY':'VLG','EW':'EWG','HV':'TRA','DE':'CFG','BY':'TOM','LM':'LOG','T3':'EZE','KM':'AMC','AZ':'AZA','TP':'TAP','SN':'DAT','LO':'LOT','OK':'CSA','A3':'AEE','OA':'OAL','BT':'BTI','JU':'ASL','OU':'CTN','FZ':'FDB','QF':'QFA','NZ':'ANZ','JL':'JAL','NH':'ANA','KE':'KAL','OZ':'AAR','CI':'CAL','BR':'EVA','TG':'THA','6E':'IGO','AI':'AIC','WN':'SWA','B6':'JBU','AS':'ASA','NK':'NKS','F9':'FFT','G4':'AAY','SY':'SCX','TS':'TSC','FI':'ICE','WB':'RWD','4U':'GWI','FR':'RYR','VX':'VRD','SV':'SVA','MS':'MSR','ET':'ETH','RJ':'RJA','GF':'GFA','WY':'OAS','PK':'PIA','TF':'ICB'};
-  const icao=ICAO[m[1]]||m[1];
-  return'<a class="map-link" href="https://www.flightaware.com/live/flight/'+icao+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';
+  const ICAO={'Z0':'UBT','DY':'NAX','BA':'BAW','AA':'AAL','DL':'DAL','UA':'UAL','VS':'VIR','AF':'AFR','KL':'KLM','LH':'DLH','IB':'IBE','LX':'SWR','OS':'AUA','AY':'FIN','SK':'SAS','TK':'THY','EK':'UAE','QR':'QTR','EY':'ETD','SQ':'SIA','CX':'CPA','AC':'ACA','WS':'WJA','EI':'EIN','FR':'RYR','U2':'EZY','LS':'EXS','W6':'WZZ','VY':'VLG','EW':'EWG','HV':'TRA','DE':'CFG','BY':'TOM','LM':'LOG','T3':'EZE','KM':'AMC','AZ':'AZA','TP':'TAP','SN':'DAT','LO':'LOT','OK':'CSA','A3':'AEE','OA':'OAL','BT':'BTI','JU':'ASL','OU':'CTN','FZ':'FDB','QF':'QFA','NZ':'ANZ','JL':'JAL','NH':'ANA','KE':'KAL','OZ':'AAR','CI':'CAL','BR':'EVA','TG':'THA','6E':'IGO','AI':'AIC','WN':'SWA','B6':'JBU','AS':'ASA','NK':'NKS','F9':'FFT','G4':'AAY','SY':'SCX','TS':'TSC','FI':'ICE','WB':'RWD','4U':'GWI','VX':'VRD','SV':'SVA','MS':'MSR','ET':'ETH','RJ':'RJA','GF':'GFA','WY':'OAS','PK':'PIA'};
+  let code,num;
+  if(flightNumber){
+    /* Use the explicit flight number field — strip spaces and parse */
+    const m=(flightNumber.trim()).match(/^([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})$/i);
+    if(!m)return'';
+    code=m[1].toUpperCase();num=m[2];
+  }else{
+    /* Fall back to parsing stop name/notes */
+    const text=(name||'')+' '+(notes||'');
+    const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);
+    if(!m)return'';
+    code=m[1];num=m[2];
+  }
+  const icao=ICAO[code]||code;
+  return'<a class="map-link" href="https://www.flightaware.com/live/flight/'+icao+num+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';
 }
 
 const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
@@ -386,7 +396,7 @@ function renderPanel(idx){
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
-      (s.type==='flight'?flightAwareLink(s.name,s.notes):'')+
+      (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
@@ -690,7 +700,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline'].forEach(id=>{document.getElementById(id).value=''});
+  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum'].forEach(id=>{document.getElementById(id).value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -720,6 +730,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-from').value=s.from||'';
   document.getElementById('f-to').value=s.to||'';
   document.getElementById('f-airline').value=s.airline||'';
+  document.getElementById('f-flightnum').value=s.flightNumber||'';
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -809,7 +820,7 @@ function saveStop(){
   const existingPhoto=existingStop?.customImage||null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
   const stopType=document.getElementById('f-type').value;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage};
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   const srcDayIdx=editingStop?editingStop.dayIdx:addingToDay;

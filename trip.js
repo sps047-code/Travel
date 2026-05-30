@@ -1154,13 +1154,15 @@ function _dbUrl(code){
 }
 async function _dbGet(code){
   const r=await fetch(_dbUrl(code));
-  if(r.status===401||r.status===403)throw new Error('Access denied — open Firebase Console → Realtime Database → Rules and set ".read": true, ".write": true');
+  if(r.status===404)throw new Error('Database not found — go to console.firebase.google.com → your project → Realtime Database → Create Database → test mode');
+  if(r.status===401||r.status===403)throw new Error('Access denied — go to Firebase Console → Realtime Database → Rules → set ".read": true, ".write": true → Publish');
   if(!r.ok)throw new Error('Server error '+r.status);
   return r.json();
 }
 async function _dbPut(code,data){
   const r=await fetch(_dbUrl(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(r.status===401||r.status===403)throw new Error('Access denied — open Firebase Console → Realtime Database → Rules and set ".read": true, ".write": true');
+  if(r.status===404)throw new Error('Database not found — go to console.firebase.google.com → your project → Realtime Database → Create Database → test mode');
+  if(r.status===401||r.status===403)throw new Error('Access denied — go to Firebase Console → Realtime Database → Rules → set ".read": true, ".write": true → Publish');
   if(!r.ok)throw new Error('Server error '+r.status);
   return r.json();
 }

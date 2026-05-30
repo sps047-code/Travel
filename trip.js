@@ -283,7 +283,7 @@ function parsedTransitRoute(s){
   return null;
 }
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+m[1]+m[2]+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
+function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+encodeURIComponent(m[1]+' '+m[2])+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
 
 const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
 function renderDaySummary(day,idx){
@@ -682,7 +682,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to'].forEach(id=>{document.getElementById(id).value=''});
+  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline'].forEach(id=>{document.getElementById(id).value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -711,6 +711,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-reservation').value=s.reservation||'';
   document.getElementById('f-from').value=s.from||'';
   document.getElementById('f-to').value=s.to||'';
+  document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -727,7 +728,9 @@ function closeModal(){document.getElementById('modal-overlay').classList.remove(
 function toggleTransitFields(){
   const t=document.getElementById('f-type').value;
   const isTransit=['flight','train','bus'].includes(t);
+  const isFlight=t==='flight';
   document.getElementById('f-transit-row').style.display=isTransit?'':'none';
+  document.getElementById('f-airline-row').style.display=isFlight?'':'none';
   const descSec=document.getElementById('f-desc-section');
   if(descSec)descSec.style.display=isTransit?'none':'';
 }
@@ -797,7 +800,8 @@ function saveStop(){
   const existingStop=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]:null;
   const existingPhoto=existingStop?.customImage||null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
-  const stop={name,lat,lng,type:document.getElementById('f-type').value,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,alt:document.getElementById('f-alt').checked,customImage};
+  const stopType=document.getElementById('f-type').value;
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   const srcDayIdx=editingStop?editingStop.dayIdx:addingToDay;

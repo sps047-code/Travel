@@ -1136,8 +1136,8 @@ function downloadExcel(){
   XLSX.writeFile(wb,filename);
 }
 
-/* ---- Collaboration (Firebase Realtime Database) ---- */
-let _fbDb=null,_collabRef=null,_collabCode=null,_collabListener=null;
+/* ---- Collaboration (Firebase REST API — no SDK, plain HTTPS + polling) ---- */
+let _collabCode=null,_collabPoll=null;
 let _lastSyncAt=0,_syncTimer=null;
 
 function _sessionId(){
@@ -1149,33 +1149,24 @@ function _genCode(){
   const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:6},()=>a[Math.floor(Math.random()*a.length)]).join('');
 }
-function _withTimeout(promise,ms,msg){
-  return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(msg)),ms))]);
+function _dbUrl(code){
+  return FIREBASE_CONFIG.databaseURL+'/trips/'+code+'.json';
 }
-function _loadFirebaseSDK(){
-  return new Promise((resolve,reject)=>{
-    if(window.firebase&&window.firebase.database){resolve();return;}
-    const s1=document.createElement('script');
-    s1.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js';
-    s1.onload=()=>{
-      const s2=document.createElement('script');
-      s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';
-      s2.onload=resolve;
-      s2.onerror=()=>reject(new Error('Failed to load Firebase database SDK. Check your connection.'));
-      document.head.appendChild(s2);
-    };
-    s1.onerror=()=>reject(new Error('Failed to load Firebase app SDK. Check your connection.'));
-    document.head.appendChild(s1);
-  });
+async function _dbGet(code){
+  const r=await fetch(_dbUrl(code));
+  if(r.status===401||r.status===403)throw new Error('Access denied — open Firebase Console → Realtime Database → Rules and set ".read": true, ".write": true');
+  if(!r.ok)throw new Error('Server error '+r.status);
+  return r.json();
 }
-async function _firebaseReady(){
-  if(!FIREBASE_CONFIG)return false;
-  if(_fbDb)return true;
-  await _withTimeout(_loadFirebaseSDK(),10000,'Firebase SDK took too long to load. Check your connection.');
-  if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
-  _fbDb=firebase.database();
-  _fbDb.goOnline();
-  return true;
+async function _dbPut(code,data){
+  const r=await fetch(_dbUrl(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(r.status===401||r.status===403)throw new Error('Access denied — open Firebase Console → Realtime Database → Rules and set ".read": true, ".write": true');
+  if(!r.ok)throw new Error('Server error '+r.status);
+  return r.json();
+}
+async function _dbPatch(code,data){
+  const r=await fetch(_dbUrl(code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok)return;
 }
 function _showCollabError(msg){
   const el=document.getElementById('collab-error');
@@ -1184,7 +1175,6 @@ function _showCollabError(msg){
 function openCollabModal(){
   document.getElementById('collab-modal').classList.add('open');
   _showCollabError('');
-  /* Always reset button states so re-opening never shows a stale "Starting…" */
   const startBtn=document.getElementById('start-collab-btn');
   if(startBtn){startBtn.textContent='Start Session';startBtn.disabled=false;}
   const joinBtn=document.getElementById('join-collab-btn');
@@ -1199,28 +1189,19 @@ async function startCollab(){
   btn.textContent='Starting…';btn.disabled=true;
   _showCollabError('');
   try{
-    if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
-    _fbDb.goOnline();
+    if(!FIREBASE_CONFIG)throw new Error('Collaboration requires a Firebase config in trip.html.');
     _collabCode=_genCode();
-    _collabRef=_fbDb.ref('trips/'+_collabCode);
+    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
+    await _dbPut(_collabCode,snap);
+    _lastSyncAt=snap.updatedAt;
     document.getElementById('collab-idle-panel').style.display='none';
     document.getElementById('collab-active-panel').style.display='';
     document.getElementById('collab-code-display').textContent=_collabCode;
     btn.textContent='Start Session';btn.disabled=false;
     _updateCollabBtn();
     _watchCollab();
-    /* Write initial state; timeout so the host knows if Firebase isn't reachable */
-    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-    _withTimeout(
-      new Promise((resolve,reject)=>_collabRef.set(snap).then(resolve).catch(reject)),
-      10000,'Could not reach the collaboration server — check your connection.'
-    ).then(()=>{
-      _lastSyncAt=snap.updatedAt;
-    }).catch(e=>{
-      _showCollabError('Session sync failed: '+e.message+' Your partner may not be able to join yet.');
-    });
   }catch(e){
-    _collabCode=null;_collabRef=null;
+    _collabCode=null;
     _showCollabError('Could not start session: '+e.message);
     btn.textContent='Start Session';btn.disabled=false;
   }
@@ -1232,51 +1213,42 @@ async function joinCollab(){
   btn.textContent='Joining…';btn.disabled=true;
   _showCollabError('');
   try{
-    if(!await _firebaseReady())throw new Error('Collaboration requires a Firebase config in trip.html.');
-    _fbDb.goOnline();
-    const ref=_fbDb.ref('trips/'+raw);
-    _withTimeout(
-      new Promise((resolve,reject)=>ref.get().then(resolve).catch(reject)),
-      10000,'Could not reach the collaboration server — check your connection and try again.'
-    ).then(snap=>{
-      if(!snap.exists()){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
-      _collabCode=raw;_collabRef=ref;
-      const data=snap.val();
-      state=data.state;
-      _lastSyncAt=data.updatedAt||0;
-      saveState();renderAll();
-      _watchCollab();_updateCollabBtn();
-      closeCollabModal();
-      showToast('&#128101; Joined — you\'re now editing together');
-      btn.textContent='Join';btn.disabled=false;
-    }).catch(e=>{
-      _showCollabError('Could not join: '+e.message);
-      btn.textContent='Join';btn.disabled=false;
-    });
+    if(!FIREBASE_CONFIG)throw new Error('Collaboration requires a Firebase config in trip.html.');
+    const data=await _dbGet(raw);
+    if(!data){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
+    _collabCode=raw;
+    state=data.state;
+    _lastSyncAt=data.updatedAt||0;
+    saveState();renderAll();
+    _watchCollab();_updateCollabBtn();
+    closeCollabModal();
+    showToast('&#128101; Joined — you\'re now editing together');
+    btn.textContent='Join';btn.disabled=false;
   }catch(e){
-    _showCollabError(e.message);
+    _showCollabError('Could not join: '+e.message);
     btn.textContent='Join';btn.disabled=false;
   }
 }
 function _watchCollab(){
-  if(_collabListener)_collabRef.off('value',_collabListener);
-  _collabListener=_collabRef.on('value',snap=>{
-    const data=snap&&snap.val();
-    if(!data)return;
-    if(data.by===_sessionId())return;
-    if((data.updatedAt||0)<=_lastSyncAt)return;
-    _lastSyncAt=data.updatedAt;
-    state=data.state;
-    renderAll();
-    showToast('&#9998; Your partner made a change');
-  });
+  if(_collabPoll)clearInterval(_collabPoll);
+  _collabPoll=setInterval(async()=>{
+    if(!_collabCode)return;
+    try{
+      const data=await _dbGet(_collabCode);
+      if(!data||data.by===_sessionId()||(data.updatedAt||0)<=_lastSyncAt)return;
+      _lastSyncAt=data.updatedAt;
+      state=data.state;
+      renderAll();
+      showToast('&#9998; Your partner made a change');
+    }catch(e){}
+  },3000);
 }
 function _syncCollab(){
-  if(!_collabRef)return;
+  if(!_collabCode)return;
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>{
     const ts=Date.now();_lastSyncAt=ts;
-    _collabRef.update({state:JSON.parse(JSON.stringify(state)),updatedAt:ts,by:_sessionId()});
+    _dbPatch(_collabCode,{state:JSON.parse(JSON.stringify(state)),updatedAt:ts,by:_sessionId()});
   },600);
 }
 function confirmStopCollab(){
@@ -1285,10 +1257,8 @@ function confirmStopCollab(){
 }
 function stopCollab(){
   clearTimeout(_syncTimer);
-  if(_collabListener&&_collabRef)_collabRef.off('value',_collabListener);
-  _collabRef=null;_collabCode=null;_collabListener=null;
-  /* Drop the db reference so the next session gets a fresh connection */
-  if(_fbDb){try{_fbDb.goOffline();}catch(e){} _fbDb=null;}
+  if(_collabPoll)clearInterval(_collabPoll);
+  _collabPoll=null;_collabCode=null;
   _updateCollabBtn();closeCollabModal();
   showToast('Session ended');
 }
@@ -1423,7 +1393,7 @@ async function init(){
   if(collabParam){
     history.replaceState(null,'',location.pathname);
     document.getElementById('collab-join-input').value=collabParam;
-    _firebaseReady().then(ok=>{if(ok)joinCollab();else openCollabModal();});
+    if(FIREBASE_CONFIG)joinCollab();else openCollabModal();
   }
 
   /* Handle legacy ?share= link (auto-save and redirect) */

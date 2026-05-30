@@ -283,7 +283,7 @@ function parsedTransitRoute(s){
   return null;
 }
 function badge(type){const l={hike:'Hike',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};return'<span class="badge badge-'+type+'">'+(l[type]||type)+'</span>'}
-function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';return'<a class="map-link" href="https://flightaware.com/live/flight/'+encodeURIComponent(m[1]+' '+m[2])+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
+function flightAwareLink(name,notes){const text=(name||'')+' '+(notes||'');const m=text.match(/\b([A-Z][A-Z0-9]{1,2})\s*(\d{1,4})\b/);if(!m)return'';const ident=m[1]+m[2];return'<a class="map-link" href="https://flightaware.com/live/flight/search?searchterm='+encodeURIComponent(ident)+'" target="_blank" rel="noopener">&#9992; FlightAware</a>';}
 
 const _BOOK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
 function renderDaySummary(day,idx){

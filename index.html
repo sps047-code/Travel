@@ -988,7 +988,6 @@ async function loadTrips(){
     else if(isAI)      ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#10024; AI</span>';
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
     else               ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#9998; Yours</span>';
-    const editNote=isServer?'<div style="font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:0 18px 10px;line-height:1.4">Your edits are saved locally — use Collaborate to edit with others.</div>':'';
     const safeTitle=t.title.replace(/'/g,"\\'");
     const deleteBtn=isServer
       ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
@@ -1004,7 +1003,6 @@ async function loadTrips(){
         </div>
         <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
       </div>
-      ${editNote}
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
         ${deleteBtn}

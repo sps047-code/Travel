@@ -1,19 +1,12 @@
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
 const PACK_KEY='seasons_packing_'+tripId;
-let _isReadOnly=false;
 const PROXY_URL='https://travel-ai-proxy.sps047.workers.dev';
 function lsPack(val){
   if(val===undefined){try{return JSON.parse(localStorage.getItem(PACK_KEY)||'null')}catch(e){return null}}
   try{localStorage.setItem(PACK_KEY,JSON.stringify(val))}catch(e){}
 }
-/* ---- Collaboration config ----
-   To enable real-time collaboration:
-   1. Create a free Firebase project at console.firebase.google.com
-   2. Add a Realtime Database (start in test mode)
-   3. Replace null below with your Firebase config object
-   4. (Optional) tighten security rules after testing
-*/
+/* ---- Firebase config (Family trip sync) ---- */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyC344fuoqnXG5RWN3hNMkCkr9GoHk6dozY",
   authDomain: "seasons-trips.firebaseapp.com",
@@ -25,9 +18,9 @@ const FIREBASE_CONFIG = {
 };
 
 let state,currentDayIdx=0,addingToDay=0,editingStop=null;
-function saveState(){
+function saveState(changeDesc=''){
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-  _syncCollab();
+  if(getTripType()==='family')_syncFamily(changeDesc);
 }
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
@@ -388,7 +381,7 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
@@ -407,7 +400,7 @@ function renderPanel(idx){
       const tzc=tzChangeLabel(s,next);
       if(leg||tzc){
         cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+
-          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+
+          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">⏱ '+tzc+'</span>':'')+
           '</div>';
       }
     }
@@ -925,7 +918,7 @@ function renderOverview(){
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">×</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
     '</div>'
   ).join('');
 
@@ -966,7 +959,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&#215;</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -1113,15 +1106,15 @@ async function renderOverviewMap(){
 function downloadExcel(){
   if(typeof XLSX==='undefined'){alert('Excel library not loaded yet. Please wait a moment and try again.');return;}
   if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
-  const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train'};
+  const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};
   /* ---- Itinerary sheet ---- */
-  const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Notes']];
+  const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Confirmation #','Airline','Flight #','Notes']];
   state.days.forEach((day,di)=>{
     const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
     const sub=day.subtitle||(day.title)||'';
     const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
     if(day.stops.length===0){
-      rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','']);
+      rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','','','','']);
     } else {
       day.stops.forEach((s,si)=>{
         rows.push([
@@ -1132,13 +1125,16 @@ function downloadExcel(){
           s.name||'',
           typeLabel[s.type]||s.type||'',
           s.stars?parseFloat(s.stars)||s.stars:'',
+          s.reservation||'',
+          s.airline||'',
+          s.flightNumber||'',
           s.notes||''
         ]);
       });
     }
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:44}];
+  ws['!cols']=[{wch:8},{wch:22},{wch:7},{wch:10},{wch:32},{wch:10},{wch:7},{wch:18},{wch:20},{wch:12},{wch:44}];
   /* bold the header row */
   const hdrRange=XLSX.utils.decode_range(ws['!ref']);
   for(let c=hdrRange.s.c;c<=hdrRange.e.c;c++){
@@ -1159,241 +1155,129 @@ function downloadExcel(){
   XLSX.writeFile(wb,filename);
 }
 
-/* ---- Collaboration (Firebase REST API — no SDK, plain HTTPS + polling) ---- */
-let _collabCode=null,_collabPoll=null;
-let _lastSyncAt=0,_syncTimer=null;
+/* ---- Family trip sync (Firebase REST, polling) ---- */
+const BUILT_IN=['utah','ny-fall','london-scotland'];
 
 function _sessionId(){
   let id=sessionStorage.getItem('_csid');
   if(!id){id=Math.random().toString(36).slice(2,8);sessionStorage.setItem('_csid',id);}
   return id;
 }
-function _genCode(){
-  const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({length:6},()=>a[Math.floor(Math.random()*a.length)]).join('');
-}
-function _dbUrl(code){
-  return FIREBASE_CONFIG.databaseURL+'/trips/'+code+'.json';
-}
-async function _dbGet(code){
-  const r=await fetch(_dbUrl(code)+'?nc='+Date.now(),{cache:'no-store'});
-  if(r.status===404)throw new Error('Database not found — go to console.firebase.google.com → your project → Realtime Database → Create Database → test mode');
-  if(r.status===401||r.status===403)throw new Error('Access denied — go to Firebase Console → Realtime Database → Rules → set ".read": true, ".write": true → Publish');
-  if(!r.ok)throw new Error('Server error '+r.status);
+
+function getTripType(){return (state&&state.tripType)||(BUILT_IN.includes(tripId)?'family':'solo');}
+
+function _familyBase(){return FIREBASE_CONFIG.databaseURL+'/family/'+tripId;}
+
+let _familySyncTimer=null,_familyPoll=null,_lastFamilyAt=0,_presenceTimer=null;
+
+async function _dbFamilyGetAll(){
+  const r=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
+  if(!r.ok)throw new Error('Firebase '+r.status);
   return r.json();
 }
-async function _dbPut(code,data){
-  const r=await fetch(_dbUrl(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(r.status===404)throw new Error('Database not found — go to console.firebase.google.com → your project → Realtime Database → Create Database → test mode');
-  if(r.status===401||r.status===403)throw new Error('Access denied — go to Firebase Console → Realtime Database → Rules → set ".read": true, ".write": true → Publish');
-  if(!r.ok)throw new Error('Server error '+r.status);
-  return r.json();
+async function _dbFamilyPut(subpath,data){
+  const r=await fetch(_familyBase()+subpath+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok)console.warn('[family] PUT failed:',r.status);
 }
-async function _dbPatch(code,data){
-  const r=await fetch(_dbUrl(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(!r.ok)console.warn('[collab] sync failed:',r.status);
+async function _dbFamilyDelete(subpath){
+  await fetch(_familyBase()+subpath+'.json',{method:'DELETE',keepalive:true}).catch(()=>{});
 }
-function _showCollabError(msg){
-  const el=document.getElementById('collab-error');
-  el.textContent=msg;el.style.display=msg?'block':'none';
+
+function _syncFamily(changeDesc){
+  clearTimeout(_familySyncTimer);
+  _familySyncTimer=setTimeout(async()=>{
+    const ts=Date.now();_lastFamilyAt=ts;
+    await _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
+    await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:changeDesc||''}).catch(()=>{});
+  },600);
 }
-function openCollabModal(){
-  document.getElementById('collab-modal').classList.add('open');
-  _showCollabError('');
-  const startBtn=document.getElementById('start-collab-btn');
-  if(startBtn){startBtn.textContent='Start Session';startBtn.disabled=false;}
-  const joinBtn=document.getElementById('join-collab-btn');
-  if(joinBtn){joinBtn.textContent='Join';joinBtn.disabled=false;}
-  document.getElementById('collab-active-panel').style.display=_collabCode?'':'none';
-  document.getElementById('collab-idle-panel').style.display=_collabCode?'none':'';
-  if(_collabCode)document.getElementById('collab-code-display').textContent=_collabCode;
+
+function _startPresence(){
+  _dbFamilyPut('/presence/'+_sessionId(),{at:Date.now()}).catch(()=>{});
+  _presenceTimer=setInterval(()=>_dbFamilyPut('/presence/'+_sessionId(),{at:Date.now()}).catch(()=>{}),30000);
+  window.addEventListener('beforeunload',_cleanupPresence);
 }
-function closeCollabModal(){document.getElementById('collab-modal').classList.remove('open');}
-async function startCollab(){
-  const btn=document.getElementById('start-collab-btn');
-  btn.textContent='Starting…';btn.disabled=true;
-  _showCollabError('');
-  try{
-    if(!FIREBASE_CONFIG)throw new Error('Collaboration requires a Firebase config in trip.html.');
-    _collabCode=_genCode();
-    const snap={state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId()};
-    await _dbPut(_collabCode,snap);
-    _lastSyncAt=snap.updatedAt;
-    document.getElementById('collab-idle-panel').style.display='none';
-    document.getElementById('collab-active-panel').style.display='';
-    document.getElementById('collab-code-display').textContent=_collabCode;
-    btn.textContent='Start Session';btn.disabled=false;
-    _updateCollabBtn();
-    _watchCollab();
-  }catch(e){
-    _collabCode=null;
-    _showCollabError('Could not start session: '+e.message);
-    btn.textContent='Start Session';btn.disabled=false;
-  }
+function _stopPresence(){
+  clearInterval(_presenceTimer);_presenceTimer=null;
+  _dbFamilyDelete('/presence/'+_sessionId());
+  window.removeEventListener('beforeunload',_cleanupPresence);
 }
-async function joinCollab(){
-  const raw=document.getElementById('collab-join-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if(raw.length<6){_showCollabError('Please enter the full 6-character code.');return;}
-  const btn=document.getElementById('join-collab-btn');
-  btn.textContent='Joining…';btn.disabled=true;
-  _showCollabError('');
-  try{
-    if(!FIREBASE_CONFIG)throw new Error('Collaboration requires a Firebase config in trip.html.');
-    const data=await _dbGet(raw);
-    if(!data){_showCollabError('Code not found — double-check with your partner.');btn.textContent='Join';btn.disabled=false;return;}
-    _collabCode=raw;
-    state=data.state;
-    _lastSyncAt=data.updatedAt||0;
-    saveState();renderAll();
-    _watchCollab();_updateCollabBtn();
-    closeCollabModal();
-    showToast('&#128101; Joined — you\'re now editing together');
-    btn.textContent='Join';btn.disabled=false;
-  }catch(e){
-    _showCollabError('Could not join: '+e.message);
-    btn.textContent='Join';btn.disabled=false;
-  }
+function _cleanupPresence(){
+  _dbFamilyDelete('/presence/'+_sessionId());
 }
-function _watchCollab(){
-  if(_collabPoll)clearInterval(_collabPoll);
-  _collabPoll=setInterval(async()=>{
-    if(!_collabCode)return;
+
+function _watchFamily(){
+  if(_familyPoll)clearInterval(_familyPoll);
+  _familyPoll=setInterval(async()=>{
     try{
-      const data=await _dbGet(_collabCode);
+      const data=await _dbFamilyGetAll();
       if(!data)return;
-      if(data.ended&&data.by!==_sessionId()){
+      const now=Date.now();
+      const presence=data.presence||{};
+      const active=Object.values(presence).filter(p=>p&&(now-p.at)<90000);
+      _updatePresenceCount(active.length);
+      const lc=data.lastChange;
+      if(lc&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
+        _lastFamilyAt=lc.at;
         state=data.state;
-        saveState();localStorage.setItem('_collabSaved_'+tripId,'1');
-        clearInterval(_collabPoll);_collabPoll=null;_collabCode=null;
-        renderAll();_updateCollabBtn();
-        showToast('Session ended by your partner — changes saved');
-        return;
+        try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+        renderAll();
+        showToast('✎ Change: '+(lc.desc||'itinerary updated'));
       }
-      if(data.by===_sessionId()||(data.updatedAt||0)<=_lastSyncAt)return;
-      _lastSyncAt=data.updatedAt;
-      state=data.state;
-      saveState();localStorage.setItem('_collabSaved_'+tripId,'1');
-      renderAll();
-      showToast('&#9998; Your partner made a change');
     }catch(e){}
   },3000);
 }
-function _syncCollab(){
-  if(!_collabCode)return;
-  clearTimeout(_syncTimer);
-  _syncTimer=setTimeout(()=>{
-    const ts=Date.now();_lastSyncAt=ts;
-    _dbPatch(_collabCode,{state:JSON.parse(JSON.stringify(state)),updatedAt:ts,by:_sessionId()});
-  },600);
+
+function _startFamily(){_watchFamily();_startPresence();}
+function _stopFamily(){
+  if(_familyPoll){clearInterval(_familyPoll);_familyPoll=null;}
+  _stopPresence();
 }
-function confirmStopCollab(){
-  if(!confirm('End the live session? Your partner will stop receiving updates.'))return;
-  stopCollab();
+
+function _updatePresenceCount(n){
+  const el=document.getElementById('presence-count');
+  if(!el)return;
+  if(n>1){el.innerHTML='&#128065; '+n+' viewing';el.style.display='inline';}
+  else{el.innerHTML='';el.style.display='none';}
 }
-function stopCollab(){
-  clearTimeout(_syncTimer);
-  if(_collabPoll)clearInterval(_collabPoll);
-  _collabPoll=null;
-  const code=_collabCode;
-  _collabCode=null;
-  if(code){
-    _dbPut(code,{state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId(),ended:true}).catch(()=>{});
-  }
-  saveState();
-  localStorage.setItem('_collabSaved_'+tripId,'1');
-  _updateCollabBtn();closeCollabModal();
-  showToast('Session ended — itinerary saved');
+
+function _updateTypeBadge(){
+  const el=document.getElementById('trip-type-badge');
+  if(!el)return;
+  const t=getTripType();
+  el.innerHTML=t==='family'?'&#127968; Family':'&#128100; Solo';
+  el.style.color=t==='family'?'var(--river)':'var(--amber)';
+  el.style.background=t==='family'?'var(--river-tint)':'var(--amber-tint)';
+  el.style.borderColor=t==='family'?'var(--river-border)':'rgba(196,123,32,0.22)';
 }
-function _updateCollabBtn(){
-  const btn=document.getElementById('collab-btn');
-  if(_collabCode){
-    btn.innerHTML='<span class="collab-live-dot"></span> Live: '+_collabCode;
-    btn.classList.add('collab-live');
+
+function toggleTripType(){
+  const current=getTripType();
+  const next=current==='family'?'solo':'family';
+  const msg=next==='family'
+    ?'Switch to Family mode? This trip will sync to the cloud and be visible to everyone.'
+    :'Switch to Solo mode? This trip will only be saved on this device.';
+  if(!confirm(msg))return;
+  state.tripType=next;
+  if(next==='family'){
+    localStorage.setItem('tripFamily_'+tripId,'1');
+    _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
+    _dbFamilyPut('/lastChange',{at:Date.now(),by:_sessionId(),desc:'Switched to Family mode'}).catch(()=>{});
+    _startFamily();
+    showToast('&#127968; Now Family — changes sync to cloud');
   }else{
-    btn.innerHTML='&#128101; Collaborate';
-    btn.classList.remove('collab-live');
+    localStorage.removeItem('tripFamily_'+tripId);
+    _stopFamily();
+    showToast('&#128100; Now Solo — saved on this device only');
   }
-}
-function copyCollabInvite(){
-  if(!_collabCode)return;
-  const url=location.origin+location.pathname+'?collab='+_collabCode;
-  navigator.clipboard.writeText(url).then(()=>showToast('&#128279; Invite link copied — send it to your partner'));
-}
-function copyCollabCode(){
-  if(!_collabCode)return;
-  navigator.clipboard.writeText(_collabCode).then(()=>showToast('Code '+_collabCode+' copied'));
+  try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+  _updateTypeBadge();
 }
 
-/* ---- lz-string lazy loader ---- */
-function _loadLzString(){
-  return new Promise((resolve,reject)=>{
-    if(window.LZString){resolve();return;}
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js';
-    s.onload=resolve;
-    s.onerror=()=>reject(new Error('Could not load lz-string library'));
-    document.head.appendChild(s);
-  });
-}
-
-/* ---- Trip sharing ---- */
-async function compressToBase64url(str){
-  const bytes=new TextEncoder().encode(str);
-  const cs=new CompressionStream('deflate-raw');
-  const writer=cs.writable.getWriter();
-  writer.write(bytes);writer.close();
-  const buf=await new Response(cs.readable).arrayBuffer();
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
-}
-async function decompressFromBase64url(b64url){
-  const b64=b64url.replace(/-/g,'+').replace(/_/g,'/');
-  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
-  const ds=new DecompressionStream('deflate-raw');
-  const writer=ds.writable.getWriter();
-  writer.write(bytes);writer.close();
-  const buf=await new Response(ds.readable).arrayBuffer();
-  return new TextDecoder().decode(buf);
-}
 function showToast(msg,duration=3000){
   const t=document.getElementById('share-toast');
-  t.textContent=msg;t.classList.add('visible');
+  t.innerHTML=msg;t.classList.add('visible');
   setTimeout(()=>t.classList.remove('visible'),duration);
-}
-async function shareTrip(){
-  try{
-    await _loadLzString();
-    const shareable=JSON.parse(JSON.stringify(state));
-    (shareable.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{if(s.customImage&&s.customImage.startsWith('data:'))delete s.customImage;}));
-    const json=JSON.stringify(shareable);
-    const encoded=LZString.compressToEncodedURIComponent(json);
-    const url=location.origin+location.pathname+'#trip='+encoded;
-    if(url.length>8000){showToast('&#9888; Link is very long — try removing photo attachments first',5000);return;}
-    if(navigator.share){
-      try{await navigator.share({title:state.title||'Trip Itinerary',url});return;}catch(e){/* fall through */}
-    }
-    await navigator.clipboard.writeText(url);
-    showToast('&#128279; Link copied — anyone with it can view this trip');
-  }catch(e){
-    showToast('Could not copy link: '+e.message,4000);
-  }
-}
-
-function saveSharedTrip(){
-  const newId='shared-'+Date.now().toString(36);
-  const tripCopy=JSON.parse(JSON.stringify(state));
-  localStorage.setItem('tripState_'+newId,JSON.stringify(tripCopy));
-  const entry={id:newId,title:tripCopy.title||'Shared Trip',dates:'',days:(tripCopy.days||[]).length,destinations:[],local:true};
-  const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-  local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
-  location.replace('trip.html?id='+newId);
-}
-
-function _applyReadOnly(){
-  if(!_isReadOnly)return;
-  document.querySelectorAll('.add-stop-btn,.card-controls,.tab-add,.tab-remove,.tab-move').forEach(el=>el.style.display='none');
-  const collabBtn=document.getElementById('collab-btn');
-  if(collabBtn)collabBtn.style.display='none';
 }
 
 function reloadOriginal(){
@@ -1402,70 +1286,46 @@ function reloadOriginal(){
 }
 
 async function init(){
-  /* Handle #trip= hash (read-only shared view) */
-  const hash=location.hash;
-  if(hash.startsWith('#trip=')){
+  const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
+  const isLocal=localTrips.some(t=>t.id===tripId);
+  const isFamilyOverride=localStorage.getItem('tripFamily_'+tripId)==='1';
+  const isFamily=isFamilyOverride||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
+
+  if(isFamily){
     try{
-      await _loadLzString();
-      const encoded=hash.slice(6);
-      const json=LZString.decompressFromEncodedURIComponent(encoded);
-      if(!json)throw new Error('Could not decode link');
-      const shared=JSON.parse(json);
-      state=shared;
-      _isReadOnly=true;
-      history.replaceState(null,'',location.pathname+'?id='+tripId);
-      if(state.title)document.title='Seasons — '+state.title+' (Shared)';
-      if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
-      currentDayIdx=-1;
-      renderAll();renderOverviewMap();loadTimezones();
-      _applyReadOnly();
-      new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
-  new ResizeObserver(updateTabsTop).observe(document.querySelector('header'));
-  updateTabsTop();
-      document.getElementById('shared-trip-banner').style.display='flex';
-      return;
+      const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
+      const data=await raw.json();
+      if(data&&data.state){
+        state=data.state;
+        _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
+        try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+      }else{
+        const saved=localStorage.getItem(LS_KEY);
+        if(saved){state=JSON.parse(saved);}
+        else{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
+        state.tripType='family';
+        _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
+      }
     }catch(e){
-      console.error('Hash trip decode failed',e);
-      history.replaceState(null,'',location.pathname);
+      const saved=localStorage.getItem(LS_KEY);
+      if(saved){state=JSON.parse(saved);}
+      else{
+        try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
+        catch(e2){state={days:[],title:'Trip'};}
+      }
     }
-  }
-
-  /* Handle ?collab= invite link */
-  const collabParam=new URLSearchParams(location.search).get('collab');
-  if(collabParam){
-    history.replaceState(null,'',location.pathname);
-    document.getElementById('collab-join-input').value=collabParam;
-    if(FIREBASE_CONFIG)joinCollab();else openCollabModal();
-  }
-
-  /* Handle legacy ?share= link (auto-save and redirect) */
-  const shareParam=new URLSearchParams(location.search).get('share');
-  if(shareParam){
-    try{
-      const json=await decompressFromBase64url(shareParam);
-      const shared=JSON.parse(json);
-      const newId='shared-'+Date.now().toString(36);
-      localStorage.setItem('tripState_'+newId,JSON.stringify(shared));
-      const entry={id:newId,title:shared.title||'Shared Trip',dates:'',days:(shared.days||[]).length,destinations:[],local:true};
-      const local=JSON.parse(localStorage.getItem('localTrips')||'[]');
-      local.push(entry);localStorage.setItem('localTrips',JSON.stringify(local));
-      sessionStorage.setItem('justImported',shared.title||'Shared Trip');
-      location.replace('trip.html?id='+newId);
-      return;
-    }catch(e){console.error('Share import failed',e);}
-  }
-
-  try{
-    const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
-    const isLocal=localTrips.some(t=>t.id===tripId&&t.local);
-    const collabSaved=!!localStorage.getItem('_collabSaved_'+tripId);
+    if(!state.tripType)state.tripType='family';
+    _startFamily();
+  }else{
     const saved=localStorage.getItem(LS_KEY);
-    if(saved&&(isLocal||collabSaved)){state=JSON.parse(saved);}
+    if(saved){state=JSON.parse(saved);}
     else{
-      if(saved){localStorage.removeItem(LS_KEY);}
-      const r=await fetch('trips/'+tripId+'.json');state=await r.json();
+      try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
+      catch(e){state={days:[],title:'Trip'};}
     }
-  }catch(e){state={days:[],title:'Trip'};}
+    if(!state.tripType)state.tripType='solo';
+  }
+
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;
@@ -1483,6 +1343,7 @@ async function init(){
     }
   }catch(e){}
   renderAll();renderOverviewMap();loadTimezones();
+  _updateTypeBadge();
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
   new ResizeObserver(updateTabsTop).observe(document.querySelector('header'));
   updateTabsTop();
@@ -1490,7 +1351,7 @@ async function init(){
   if(imported){
     sessionStorage.removeItem('justImported');
     const b=document.getElementById('import-banner');
-    b.textContent='&#10003; "'+imported+'" was added to your trips. You can now edit it independently.';
+    b.innerHTML='✓ "'+imported+'" was added to your trips. You can now edit it independently.';
     b.classList.add('visible');
     setTimeout(()=>b.classList.remove('visible'),6000);
   }

@@ -374,7 +374,7 @@ function renderPanel(idx){
   const prevHotel=getHotelForDay(idx-1);
   const todayHotel=getNextHotelForDay(idx);
   const showStart=!!prevHotel&&day.stops.length>0;
-  const showEnd=!!todayHotel&&day.stops.length>0;
+  const showEnd=!!todayHotel&&day.stops.length>0&&!hasExplicitLodge;
   let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;

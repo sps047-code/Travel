@@ -322,7 +322,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">' +parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -380,7 +380,7 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
       '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
+      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+' </div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
@@ -1002,8 +1002,7 @@ function renderPackingListHtml(){
         cat.items.map((item,ii)=>{
           const key=ci+'-'+ii;
           const isChecked=!!checked[key];
-          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+
-            '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
+          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+'<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
             '<span class="pack-item-text">'+item+'</span>'+
             '</label>';
         }).join('')+

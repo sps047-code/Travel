@@ -242,23 +242,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .map-link:hover{background:var(--river);color:white}
 .dl-btn{font-family:var(--font-ui);font-size:12px;font-weight:500;color:rgba(253,252,250,0.6);background:transparent;border:1px solid rgba(253,252,250,0.15);border-radius:var(--radius-sm);cursor:pointer;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;line-height:1}
 .dl-btn:hover{color:#FDFCFA;border-color:rgba(253,252,250,0.35)}
-.dl-btn.collab-live{color:#4ade80;border-color:rgba(74,222,128,0.35);gap:6px}
-.collab-live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4ade80;animation:collabPulse 2s ease-in-out infinite}
-@keyframes collabPulse{0%,100%{opacity:1}50%{opacity:0.35}}
-.collab-code-box{font-family:var(--font-display);font-size:32px;font-weight:600;letter-spacing:0.22em;color:var(--ink);text-align:center;padding:14px;border:2px dashed var(--border);border-radius:var(--radius-md);margin:14px 0;cursor:pointer;transition:border-color 0.2s;user-select:all}
-.collab-code-box:hover{border-color:var(--pine)}
-.collab-or{text-align:center;font-family:var(--font-ui);font-size:11px;color:var(--border);margin:16px 0;overflow:hidden}
-.collab-or::before,.collab-or::after{content:'——————————';letter-spacing:2px}
-.collab-status-bar{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:11px 14px;font-family:var(--font-ui);font-size:13px;color:var(--pine);display:flex;align-items:center;gap:8px;margin-bottom:14px}
-.collab-join-row{display:flex;gap:8px;margin-top:8px}
 .share-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#FDFCFA;font-family:var(--font-ui);font-size:13px;font-weight:500;padding:11px 20px;border-radius:var(--radius-md);box-shadow:0 6px 24px rgba(26,35,50,0.28);z-index:9999;transition:transform 0.28s cubic-bezier(0.34,1.2,0.64,1),opacity 0.28s;opacity:0;pointer-events:none;white-space:nowrap}
 .share-toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
 .import-banner{background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);padding:13px 18px;font-family:var(--font-ui);font-size:13px;color:var(--pine);margin:16px 16px 0;line-height:1.5;display:none}
 .import-banner.visible{display:block}
-.shared-trip-banner{background:var(--mist);border-bottom:1.5px solid var(--border);padding:11px 20px;font-family:var(--font-ui);font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.shared-trip-banner strong{color:var(--ink)}
-.shared-save-btn{padding:7px 16px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s;white-space:nowrap}
-.shared-save-btn:hover{background:#1a6640}
 /* Packing list */
 .pack-header-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .pack-prog{font-family:var(--font-ui);font-size:12px;color:var(--pine);font-weight:600}
@@ -310,18 +297,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
-      <button class="dl-btn" id="collab-btn" onclick="openCollabModal()" title="Collaborate with others in real time">&#128101;<span class="dl-label"> Collaborate</span></button>
-      <button class="dl-btn" onclick="shareTrip()" title="Copy shareable link to clipboard">&#128279;<span class="dl-label"> Share</span></button>
+      <button id="trip-type-badge" onclick="toggleTripType()" title="Click to switch trip type" style="font-family:var(--font-ui);font-size:11px;font-weight:600;letter-spacing:0.04em;padding:4px 9px;border-radius:6px;border:1px solid;cursor:pointer;white-space:nowrap;background:transparent">&#127968; Family</button>
+      <span id="presence-count" style="font-family:var(--font-ui);font-size:11px;color:rgba(253,252,250,0.6);display:none"></span>
       <button class="dl-btn" onclick="downloadExcel()" title="Download full itinerary as Excel">&#11015;<span class="dl-label"> Excel</span></button>
-<a href="index.html" class="back-link">&#8592;<span class="dl-label"> All Trips</span></a>
+      <a href="index.html" class="back-link">&#8592;<span class="dl-label"> All Trips</span></a>
     </div>
   </div>
 </header>
 <div class="import-banner" id="import-banner"></div>
-<div class="shared-trip-banner" id="shared-trip-banner" style="display:none">
-  <span><strong>&#128065; Shared view</strong> &#8212; you&#8217;re viewing a read-only copy of this trip.</span>
-  <button class="shared-save-btn" onclick="saveSharedTrip()">Save a copy &#8594;</button>
-</div>
 <div class="share-toast" id="share-toast"></div>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch">
   <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
@@ -401,51 +384,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   </div>
 </div>
 
-<!-- Collaboration modal -->
-<div class="modal-overlay" id="collab-modal">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="collab-modal-heading" style="max-width:400px">
-    <button class="modal-close" onclick="closeCollabModal()">&#215;</button>
-
-    <!-- Active state: session is live -->
-    <div id="collab-active-panel" style="display:none">
-      <div class="modal-title" style="margin-bottom:6px">&#128101; Live Session</div>
-      <div class="collab-status-bar"><span class="collab-live-dot"></span> Your trip is syncing in real time</div>
-      <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:10px;line-height:1.5">Share this code or link with anyone you want to edit together:</p>
-      <div class="collab-code-box" id="collab-code-display">——</div>
-      <div style="display:flex;gap:8px;margin-bottom:20px">
-        <button class="btn-primary" style="background:var(--pine)" onclick="copyCollabInvite()">&#128279; Copy Invite Link</button>
-        <button class="btn-cancel" onclick="copyCollabCode()">Copy Code</button>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:16px">
-        <button class="btn-cancel" style="width:100%;color:var(--ruby);border-color:var(--ruby-border)" onclick="confirmStopCollab()">&#9899; End Session</button>
-      </div>
-    </div>
-
-    <!-- Idle state: choose start or join -->
-    <div id="collab-idle-panel">
-      <div class="modal-title" id="collab-modal-heading" style="margin-bottom:4px">&#128101; Collaborate</div>
-      <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px">Edit this trip together in real time with your travel partner.</p>
-
-      <!-- Start a session -->
-      <div style="background:var(--mist);border-radius:var(--radius-md);padding:16px;margin-bottom:12px">
-        <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:6px">Start a new session</div>
-        <p style="font-family:var(--font-ui);font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">You&rsquo;ll get a code to share with your partner.</p>
-        <button class="btn-primary" style="width:100%" id="start-collab-btn" onclick="startCollab()">Start Session</button>
-      </div>
-
-      <!-- Join a session -->
-      <div style="background:var(--mist);border-radius:var(--radius-md);padding:16px">
-        <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:6px">Join someone&rsquo;s session</div>
-        <p style="font-family:var(--font-ui);font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Enter the 6-character code your partner shared with you.</p>
-        <div class="collab-join-row">
-          <input class="form-input" id="collab-join-input" placeholder="e.g. RXKP4T" maxlength="8" style="flex:1;text-transform:uppercase;letter-spacing:0.14em;font-size:16px;font-family:var(--font-display);font-weight:600" oninput="this.value=this.value.toUpperCase()"/>
-          <button class="btn-primary" id="join-collab-btn" style="flex:0 0 auto;padding:9px 18px;background:var(--river)" onclick="joinCollab()">Join</button>
-        </div>
-      </div>
-    </div>
-    <div id="collab-error" style="font-family:var(--font-ui);font-size:12px;color:var(--ruby);margin-top:10px;padding:0 2px;display:none"></div>
-  </div>
-</div>
 <script src="trip.js"></script>
 </body>
 </html>

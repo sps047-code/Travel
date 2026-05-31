@@ -360,14 +360,12 @@ function hotelBookendHtml(label,lodge,otherStop){
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
-  const TRAVEL=new Set(['flight','train','drive']);
-  const firstType=day.stops[0]?.type;
-  const lastType=day.stops[day.stops.length-1]?.type;
-  const hasExplicitLodge=day.stops.some(s=>s.type==='lodge');
+  const isTravelDay=day.stops.some(s=>['flight','train','bus'].includes(s.type));
+  const hasCheckInLodge=day.stops.some(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
   const prevHotel=getHotelForDay(idx-1);
   const todayHotel=getNextHotelForDay(idx);
-  const showStart=!!prevHotel&&day.stops.length>0;
-  const showEnd=!!todayHotel&&day.stops.length>0&&!hasExplicitLodge;
+  const showStart=!isTravelDay&&!!prevHotel&&day.stops.length>0;
+  const showEnd=!isTravelDay&&!!todayHotel&&day.stops.length>0&&!hasCheckInLodge;
   let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;

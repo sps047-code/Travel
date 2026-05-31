@@ -329,7 +329,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">' +parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -388,7 +388,7 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
+      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+'</span><div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
@@ -925,7 +925,7 @@ function renderOverview(){
     '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
     '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&#215;</button>':'')+
+    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
     '</div>'
   ).join('');
 
@@ -966,7 +966,7 @@ function addCheckItem(){
   state.checklist.push(item);saveState();input.value='';
   const list=document.querySelector('.check-list');
   if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">×</button>';
+    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
     list.appendChild(el);}
 }
 function deleteCheckItem(id){
@@ -1176,7 +1176,7 @@ function _dbUrl(code){
   return FIREBASE_CONFIG.databaseURL+'/trips/'+code+'.json';
 }
 async function _dbGet(code){
-  const r=await fetch(_dbUrl(code));
+  const r=await fetch(_dbUrl(code)+'?nc='+Date.now(),{cache:'no-store'});
   if(r.status===404)throw new Error('Database not found — go to console.firebase.google.com → your project → Realtime Database → Create Database → test mode');
   if(r.status===401||r.status===403)throw new Error('Access denied — go to Firebase Console → Realtime Database → Rules → set ".read": true, ".write": true → Publish');
   if(!r.ok)throw new Error('Server error '+r.status);
@@ -1190,8 +1190,8 @@ async function _dbPut(code,data){
   return r.json();
 }
 async function _dbPatch(code,data){
-  const r=await fetch(_dbUrl(code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(!r.ok)return;
+  const r=await fetch(_dbUrl(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok)console.warn('[collab] sync failed:',r.status);
 }
 function _showCollabError(msg){
   const el=document.getElementById('collab-error');
@@ -1260,10 +1260,20 @@ function _watchCollab(){
     if(!_collabCode)return;
     try{
       const data=await _dbGet(_collabCode);
-      if(!data||data.by===_sessionId()||(data.updatedAt||0)<=_lastSyncAt)return;
+      if(!data)return;
+      if(data.ended&&data.by!==_sessionId()){
+        state=data.state;
+        saveState();localStorage.setItem('_collabSaved_'+tripId,'1');
+        clearInterval(_collabPoll);_collabPoll=null;_collabCode=null;
+        renderAll();_updateCollabBtn();
+        showToast('Session ended by your partner — changes saved');
+        return;
+      }
+      if(data.by===_sessionId()||(data.updatedAt||0)<=_lastSyncAt)return;
       _lastSyncAt=data.updatedAt;
       state=data.state;
-      saveState();renderAll();
+      saveState();localStorage.setItem('_collabSaved_'+tripId,'1');
+      renderAll();
       showToast('&#9998; Your partner made a change');
     }catch(e){}
   },3000);
@@ -1283,7 +1293,12 @@ function confirmStopCollab(){
 function stopCollab(){
   clearTimeout(_syncTimer);
   if(_collabPoll)clearInterval(_collabPoll);
-  _collabPoll=null;_collabCode=null;
+  _collabPoll=null;
+  const code=_collabCode;
+  _collabCode=null;
+  if(code){
+    _dbPut(code,{state:JSON.parse(JSON.stringify(state)),updatedAt:Date.now(),by:_sessionId(),ended:true}).catch(()=>{});
+  }
   saveState();
   localStorage.setItem('_collabSaved_'+tripId,'1');
   _updateCollabBtn();closeCollabModal();

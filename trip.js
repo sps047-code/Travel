@@ -322,7 +322,7 @@ function renderDaySummary(day,idx){
     const parts=[];
     if(bookedN>0)parts.push('&#10003; '+bookedN+' booked');
     if(toBookN>0)parts.push('&#9900; '+toBookN+' to book');
-    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">' +parts.join(' &middot; ')+'</span>');
+    chips.push('<span class="day-sum-item '+(toBookN>0?'day-sum-book-warn':'day-sum-book')+'">'+parts.join(' &middot; ')+'</span>');
   }
   if(chips.length===0)return'';
   return'<div class="day-summary">'+chips.join('')+'</div>';
@@ -360,12 +360,11 @@ function hotelBookendHtml(label,lodge,otherStop){
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
-  const isTravelDay=day.stops.some(s=>['flight','train','bus'].includes(s.type));
   const hasCheckInLodge=day.stops.some(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
   const prevHotel=getHotelForDay(idx-1);
   const todayHotel=getNextHotelForDay(idx);
-  const showStart=!isTravelDay&&!!prevHotel&&day.stops.length>0;
-  const showEnd=!isTravelDay&&!!todayHotel&&day.stops.length>0&&!hasCheckInLodge;
+  const showStart=!!prevHotel&&day.stops.length>0;
+  const showEnd=!!todayHotel&&day.stops.length>0&&!hasCheckInLodge;
   let cards=showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
@@ -1002,7 +1001,8 @@ function renderPackingListHtml(){
         cat.items.map((item,ii)=>{
           const key=ci+'-'+ii;
           const isChecked=!!checked[key];
-          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+'<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
+          return'<label class="pack-item'+(isChecked?' checked':'')+'">'+
+            '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
             '<span class="pack-item-text">'+item+'</span>'+
             '</label>';
         }).join('')+

@@ -370,7 +370,6 @@ function transitBookendHtml(transitStop,firstStop){
 
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
-  const hasCheckInLodge=day.stops.some(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
   const prevHotel=getHotelForDay(idx-1);
   const todayHotel=getNextHotelForDay(idx);
   const TRANSIT=['flight','train','bus'];
@@ -380,7 +379,7 @@ function renderPanel(idx){
   const todayLastStop=day.stops.length?day.stops[day.stops.length-1]:null;
   const todayEndsInTransit=todayLastStop&&TRANSIT.includes(todayLastStop.type);
   const showStart=!!prevHotel&&day.stops.length>0&&!prevEndsInTransit;
-  const showEnd=!!todayHotel&&day.stops.length>0&&!hasCheckInLodge&&!todayEndsInTransit;
+  const showEnd=!!todayHotel&&day.stops.length>0&&!todayEndsInTransit;
   let cards=prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
     showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{

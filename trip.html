@@ -284,9 +284,71 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .stop-desc-gen{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:5px 12px;background:var(--river-tint);color:var(--river);border:1px solid var(--river-border);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s}
 .stop-desc-gen:hover{background:var(--river);color:white}
 .stop-desc-gen:disabled{opacity:0.5;cursor:default;pointer-events:none}
+/* ===== FEATURES v32 ===== */
+.ai-result-modal{max-width:560px}
+.ai-modal-grade-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--mist);border-radius:var(--radius-md);margin-bottom:18px}
+.ai-grade-letter{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:30px;font-weight:700;color:white;flex-shrink:0}
+.ai-grade-rationale{font-family:var(--font-ui);font-size:13px;color:var(--ink-soft);line-height:1.45;flex:1}
+.ai-section{margin-bottom:18px}
+.ai-section-hdr{font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.ai-item{padding:9px 12px;background:var(--mist);border-radius:var(--radius-sm);margin-bottom:6px;font-family:var(--font-ui);font-size:12.5px;line-height:1.5;color:var(--ink-soft)}
+.ai-item-warn{background:rgba(196,123,32,0.10);border-left:3px solid var(--amber)}
+.ai-item strong{color:var(--ink);font-weight:600}
+.ai-loading-wrap{text-align:center;padding:40px 20px}
+.ai-loading-spinner{font-size:28px;display:block;animation:spin 0.9s linear infinite;margin-bottom:10px}
+.ai-action-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:var(--ink-soft);color:#FDFCFA;border:none;border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;cursor:pointer;transition:background 0.2s;white-space:nowrap}
+.ai-action-btn:hover{background:var(--ink)}
+.transit-mode-row{display:flex;gap:6px}
+.transit-mode-btn{flex:1;padding:7px 4px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:white;font-family:var(--font-ui);font-size:12px;cursor:pointer;text-align:center;transition:all 0.15s}
+.transit-mode-btn.active{border-color:var(--river);background:var(--river-tint);color:var(--river);font-weight:600}
+.transit-mode-btn:hover:not(.active){background:var(--mist)}
+.leg-mode-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-family:var(--font-ui);font-size:10px;font-weight:600;margin-left:6px}
+.leg-mode-walk{background:rgba(46,125,82,0.12);color:var(--pine)}
+.leg-mode-drive{background:var(--river-tint);color:var(--river)}
+.leg-mode-subway{background:rgba(82,54,128,0.12);color:#523680}
+.leg-mode-bus{background:rgba(29,78,115,0.12);color:#1D4E73}
+.conflict-badge{display:inline-flex;align-items:center;cursor:pointer;position:relative;color:var(--amber);font-size:12px;margin-left:4px;vertical-align:middle}
+.conflict-badge .ctip{display:none;position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:rgba(26,35,50,0.92);color:#FDFCFA;font-size:11px;padding:5px 9px;border-radius:6px;z-index:600;pointer-events:none;min-width:140px;max-width:220px;text-align:center;line-height:1.4;white-space:normal}
+.conflict-badge:hover .ctip,.conflict-badge:focus .ctip{display:block}
+.wx-warn{display:inline-flex;align-items:center;gap:2px;font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--amber);background:var(--amber-tint);border-radius:10px;padding:1px 7px;margin-left:5px;vertical-align:middle}
+.journal-mode-banner{background:linear-gradient(135deg,rgba(196,123,32,0.13) 0%,rgba(46,125,82,0.07) 100%);border-bottom:2px solid rgba(196,123,32,0.25);padding:10px 24px;font-family:var(--font-ui);font-size:12px;font-weight:500;color:var(--amber);display:none;align-items:center;justify-content:center;gap:8px}
+.journal-mode-banner.on{display:flex}
+.journal-section{margin-top:12px;padding:12px 13px;background:rgba(196,123,32,0.06);border:1.5px dashed rgba(196,123,32,0.28);border-radius:var(--radius-md)}
+.journal-sec-label{font-family:var(--font-ui);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.10em;color:var(--amber);margin-bottom:7px}
+.journal-textarea{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-display);font-size:14px;font-style:italic;color:var(--ink);background:white;resize:vertical;min-height:65px;outline:none;transition:border-color 0.2s;display:block}
+.journal-textarea:focus{border-color:var(--amber)}
+.journal-stars{display:flex;gap:3px;margin-top:6px;align-items:center}
+.jstar{font-size:18px;cursor:pointer;color:var(--border);transition:color 0.15s;line-height:1;user-select:none}
+.jstar.lit{color:var(--amber)}
+.day-journal-wrap{margin-bottom:18px;padding:13px 16px;background:rgba(196,123,32,0.07);border:1.5px dashed rgba(196,123,32,0.25);border-radius:var(--radius-md)}
+.day-journal-lbl{font-family:var(--font-ui);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.10em;color:var(--amber);margin-bottom:8px}
+.t-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-family:var(--font-ui);font-size:10.5px;font-weight:600;border:1px solid}
+.t-chip-in{background:var(--river-tint);color:var(--river);border-color:var(--river-border)}
+.t-chip-out{background:var(--mist);color:var(--muted);border-color:var(--border);opacity:0.6}
+.traveler-attend-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.badge-booked-sm{display:inline-flex;align-items:center;gap:2px;font-family:var(--font-ui);font-size:9.5px;font-weight:700;color:var(--pine);background:rgba(46,125,82,0.12);border:1px solid rgba(46,125,82,0.22);border-radius:20px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+.readonly-bar{background:var(--river-tint);border-bottom:2px solid var(--river-border);padding:9px 24px;font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--river);text-align:center;display:none}
+.readonly-bar.on{display:block}
+.share-url-wrap{display:flex;gap:8px;margin-top:10px}
+.share-url-input{flex:1;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-ui);font-size:12px;background:var(--mist);color:var(--ink);outline:none;min-width:0}
+.stop-place-meta{font-family:var(--font-ui);font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.6}
+.stop-place-meta a{color:var(--river);text-decoration:none}
+.stop-place-meta a:hover{text-decoration:underline}
+.hours-open{color:var(--pine);font-weight:600}
+.hours-closed{color:var(--ruby);font-weight:600}
+.trip-highlights-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--mist);border-radius:var(--radius-sm);margin-bottom:6px}
+.checklist-count{font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--pine);margin-bottom:10px}
+.ov-heading-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;padding-bottom:8px;border-bottom:1.5px solid var(--border)}
+.ov-heading-inline{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:0.01em}
+@keyframes swipeHintAnim{0%{transform:translateX(0)}30%{transform:translateX(-18px)}70%{transform:translateX(18px)}100%{transform:translateX(0)}}
+.swipe-hint-anim{animation:swipeHintAnim 0.7s ease-in-out}
+.cal-card{position:relative}
+.cal-conflict-dot{position:absolute;top:7px;right:8px;font-size:11px;line-height:1}
 </style>
 </head>
 <body>
+<div class="readonly-bar" id="readonly-bar">&#128274; View Only — this trip is shared in read-only mode</div>
+<div class="journal-mode-banner" id="journal-mode-banner">&#9997; This trip has ended — add your memories!</div>
 <header>
   <div class="header-inner">
     <div class="brand">
@@ -350,6 +412,19 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <div class="form-group"><label class="form-label">Stars</label><input type="text" class="form-input" id="f-stars" placeholder="e.g. 4.5"/></div>
       <div class="form-group"><label class="form-label">Lat</label><input type="text" class="form-input" id="f-lat" placeholder="Latitude"/></div>
       <div class="form-group"><label class="form-label">Lng</label><input type="text" class="form-input" id="f-lng" placeholder="Longitude"/></div>
+      <div class="form-group full" id="f-transit-mode-row">
+        <label class="form-label">Transit to Next Stop</label>
+        <div class="transit-mode-row">
+          <button type="button" class="transit-mode-btn" data-mode="walk" onclick="setTransitMode('walk')">&#128694; Walk</button>
+          <button type="button" class="transit-mode-btn" data-mode="drive" onclick="setTransitMode('drive')">&#128663; Drive</button>
+          <button type="button" class="transit-mode-btn" data-mode="subway" onclick="setTransitMode('subway')">&#128642; Subway</button>
+          <button type="button" class="transit-mode-btn" data-mode="bus" onclick="setTransitMode('bus')">&#128652; Bus</button>
+        </div>
+      </div>
+      <div class="form-group full" id="f-travelers-section" style="display:none">
+        <label class="form-label">Who's Joining?</label>
+        <div id="f-travelers-checkboxes" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
+      </div>
       <div class="form-group full" id="f-transit-row" style="display:none"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="form-label">From Station / Airport</label><input type="text" class="form-input" id="f-from" placeholder="e.g. Edinburgh Waverley"/></div><div><label class="form-label">To Station / Airport</label><input type="text" class="form-input" id="f-to" placeholder="e.g. Ely Station"/></div></div></div>
       <div class="form-group full" id="f-airline-row" style="display:none"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="form-label">Airline</label><input type="text" class="form-input" id="f-airline" list="airlines-datalist" placeholder="e.g. Norwegian Air Shuttle" autocomplete="off"/><datalist id="airlines-datalist"><option value="Norse Atlantic UK"><option value="Norse Atlantic"><option value="Aer Lingus"><option value="Aegean Airlines"><option value="Aerol&#237;neas Argentinas"><option value="Aeromexico"><option value="Air Alg&#233;rie"><option value="Air Arabia"><option value="Air Asia"><option value="Air Asia X"><option value="Air Austral"><option value="Air Baltic"><option value="Air Canada"><option value="Air Canada Rouge"><option value="Air Cara&#239;bes"><option value="Air China"><option value="Air Dolomiti"><option value="Air Europa"><option value="Air France"><option value="Air India"><option value="Air India Express"><option value="Air Malta"><option value="Air New Zealand"><option value="Air Peace"><option value="Air Serbia"><option value="Air Tahiti Nui"><option value="Air Transat"><option value="Akasa Air"><option value="Alaska Airlines"><option value="Alitalia"><option value="All Nippon Airways (ANA)"><option value="Allegiant Air"><option value="American Airlines"><option value="Asiana Airlines"><option value="ASKY Airlines"><option value="Austrian Airlines"><option value="Avianca"><option value="Azul Brazilian Airlines"><option value="Bamboo Airways"><option value="Bangladesh Biman"><option value="Batik Air"><option value="Beijing Capital Airlines"><option value="British Airways"><option value="Brussels Airlines"><option value="Cayman Airways"><option value="Cebu Pacific"><option value="China Airlines"><option value="China Eastern Airlines"><option value="China Southern Airlines"><option value="Citilink"><option value="Condor"><option value="Copa Airlines"><option value="Corendon Airlines"><option value="Corsair"><option value="Croatia Airlines"><option value="Czech Airlines (CSA)"><option value="Delta Air Lines"><option value="Dragonair"><option value="Eastern Airways"><option value="easyJet"><option value="easyJet Europe"><option value="EgyptAir"><option value="Emirates"><option value="Ethiopian Airlines"><option value="Etihad Airways"><option value="Eurowings"><option value="Eurowings Discover"><option value="EVA Air"><option value="Fiji Airways"><option value="Finnair"><option value="Flair Airlines"><option value="Flybe"><option value="flydubai"><option value="flynas"><option value="French Bee"><option value="Frontier Airlines"><option value="Garuda Indonesia"><option value="GOL Linhas A&#233;reas"><option value="Gulf Air"><option value="Hainan Airlines"><option value="Hawaiian Airlines"><option value="Iberia"><option value="Icelandair"><option value="IndiGo"><option value="ITA Airways"><option value="Japan Airlines (JAL)"><option value="Jazeera Airways"><option value="Jet2"><option value="JetBlue Airways"><option value="JetSMART"><option value="Juneyao Airlines"><option value="Kenya Airways"><option value="KLM Royal Dutch Airlines"><option value="Korean Air"><option value="Kuwait Airways"><option value="La Compagnie"><option value="LATAM Airlines"><option value="LATAM Airlines Brazil"><option value="LATAM Airlines Colombia"><option value="LATAM Airlines Peru"><option value="Level"><option value="Lion Air"><option value="LOT Polish Airlines"><option value="Lucky Air"><option value="Lufthansa"><option value="Maldivian"><option value="Malindo Air"><option value="Middle East Airlines"><option value="Norwegian Air Shuttle"><option value="Oman Air"><option value="Olympic Air"><option value="Onur Air"><option value="Overland Airways"><option value="Pegasus Airlines"><option value="Philippines Airlines"><option value="PNG Air"><option value="Porter Airlines"><option value="Qantas"><option value="Qatar Airways"><option value="Royal Air Maroc"><option value="Royal Jordanian"><option value="Ryanair"><option value="RwandAir"><option value="SAS Scandinavian Airlines"><option value="Saudia"><option value="Scoot"><option value="Shenzhen Airlines"><option value="Sichuan Airlines"><option value="Singapore Airlines"><option value="Sky Airline"><option value="Solomon Airlines"><option value="South African Airways"><option value="Southwest Airlines"><option value="SpiceJet"><option value="Spirit Airlines"><option value="Sri Lankan Airlines"><option value="Sun Country Airlines"><option value="Sunwing Airlines"><option value="SunExpress"><option value="SWISS International Air Lines"><option value="TAP Air Portugal"><option value="Thai Airways"><option value="TUI Airways"><option value="TUI fly Belgium"><option value="TUI fly Germany"><option value="Tunisair"><option value="Turkish Airlines"><option value="Ukraine International Airlines"><option value="United Airlines"><option value="Vietnam Airlines"><option value="Virgin Atlantic"><option value="Virgin Australia"><option value="Vistara"><option value="Viva Air"><option value="Volaris"><option value="Volotea"><option value="VivaAerobus"><option value="WestJet"><option value="Wizz Air"><option value="Xiamen Airlines"><option value="Loganair"><option value="airBaltic"><option value="flydubai"><option value="Air Senegal"><option value="Air Tanzania"></datalist></div><div><label class="form-label">Flight Number</label><input type="text" class="form-input" id="f-flightnum" placeholder="e.g. Z0 784" autocomplete="off"/></div></div></div>
       <div class="form-group full"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Optional notes..."></textarea></div>
@@ -384,6 +459,47 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   </div>
 </div>
 
+<!-- AI Grader Modal -->
+<div class="modal-overlay" id="ai-grader-modal">
+  <div class="modal ai-result-modal" role="dialog" aria-modal="true" aria-labelledby="ai-grader-title">
+    <div class="modal-title" id="ai-grader-title">&#10024; Itinerary Grade</div>
+    <button class="modal-close" onclick="document.getElementById('ai-grader-modal').classList.remove('open')">&#215;</button>
+    <div id="ai-grader-content"><div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Analyzing your itinerary…</div></div></div>
+  </div>
+</div>
+<!-- AI Optimizer Modal -->
+<div class="modal-overlay" id="ai-optimizer-modal">
+  <div class="modal ai-result-modal" role="dialog" aria-modal="true" aria-labelledby="ai-optimizer-title">
+    <div class="modal-title" id="ai-optimizer-title">&#10024; Day Optimizer</div>
+    <button class="modal-close" onclick="document.getElementById('ai-optimizer-modal').classList.remove('open')">&#215;</button>
+    <div id="ai-optimizer-content"><div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Optimizing your day…</div></div></div>
+  </div>
+</div>
+<!-- Share Modal -->
+<div class="modal-overlay" id="share-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" style="max-width:420px">
+    <div class="modal-title" id="share-modal-title">&#128279; Share Trip</div>
+    <button class="modal-close" onclick="document.getElementById('share-modal').classList.remove('open')">&#215;</button>
+    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:4px;line-height:1.5">Share this link for a read-only view — all details visible, no editing.</p>
+    <div class="share-url-wrap">
+      <input type="text" class="share-url-input" id="share-url-input" readonly/>
+      <button class="btn-primary" style="flex:none;padding:9px 16px;font-size:13px" onclick="copyShareUrl()">Copy</button>
+    </div>
+  </div>
+</div>
+<!-- Travelers Settings Modal -->
+<div class="modal-overlay" id="travelers-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="travelers-modal-title" style="max-width:400px">
+    <div class="modal-title" id="travelers-modal-title">&#128100; Travelers</div>
+    <button class="modal-close" onclick="document.getElementById('travelers-modal').classList.remove('open')">&#215;</button>
+    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:12px">Enter traveler names, one per line.</p>
+    <textarea class="form-textarea" id="travelers-input" style="min-height:100px" placeholder="Alice&#10;Bob&#10;Charlie"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="document.getElementById('travelers-modal').classList.remove('open')">Cancel</button>
+      <button class="btn-primary" onclick="saveTravelers()">Save</button>
+    </div>
+  </div>
+</div>
 <script src="trip.js"></script>
 </body>
 </html>

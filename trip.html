@@ -226,12 +226,24 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .lodge-booked input{accent-color:var(--pine);width:14px;height:14px;flex-shrink:0}
 .check-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .check-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);transition:opacity 0.2s}
-.check-item.done{opacity:0.5}
-.check-item.done .check-text{text-decoration:line-through;color:var(--muted)}
+.check-item.done{opacity:0.75;border-color:rgba(46,125,82,0.35);background:rgba(46,125,82,0.05)}
+.check-item.done input[type=checkbox]{accent-color:var(--pine)}
 .check-item input[type=checkbox]{width:16px;height:16px;accent-color:var(--pine);flex-shrink:0;cursor:pointer}
 .check-text{font-family:var(--font-ui);font-size:13px;flex:1;line-height:1.4;color:var(--ink)}
 .chk-del{background:none;border:none;cursor:pointer;color:var(--border);font-size:18px;line-height:1;padding:0 2px;transition:color 0.2s;flex-shrink:0}
 .chk-del:hover{color:var(--ruby)}
+.chk-actions{display:flex;align-items:center;gap:2px;opacity:0;transition:opacity 0.15s;flex-shrink:0}
+.check-item:hover .chk-actions{opacity:1}
+.chk-edit-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 3px;transition:color 0.2s;line-height:1;height:22px;display:flex;align-items:center}
+.chk-edit-btn:hover{color:var(--river)}
+.chk-inline-edit{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
+.add-check-form{display:none;flex-direction:column;gap:8px;padding:10px 14px;background:var(--paper);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);margin-bottom:6px}
+.add-check-form.open{display:flex}
+.add-check-form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.add-check-form-select{padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-ui);font-size:12px;background:white;color:var(--ink);outline:none;transition:border-color 0.2s}
+.add-check-form-select:focus{border-color:var(--pine)}
+.add-check-toggle-btn{width:100%;padding:10px;background:var(--mist);color:var(--pine);border:1.5px dashed var(--pine-border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s}
+.add-check-toggle-btn:hover{background:var(--pine-tint);border-style:solid}
 .add-check-row{display:flex;gap:8px}
 .add-check-input{flex:1;padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;outline:none;background:var(--paper);color:var(--ink);transition:border-color 0.2s}
 .add-check-input:focus{border-color:var(--pine)}
@@ -344,6 +356,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .swipe-hint-anim{animation:swipeHintAnim 0.7s ease-in-out}
 .cal-card{position:relative}
 .cal-conflict-dot{position:absolute;top:7px;right:8px;font-size:11px;line-height:1}
+/* Optimization score badge */
+.opt-score-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--mist);border-radius:var(--radius-md);margin-bottom:16px}
+.opt-score-badge{display:flex;flex-direction:column;align-items:center;justify-content:center;width:78px;height:78px;border-radius:50%;flex-shrink:0}
+.opt-score-num{font-family:var(--font-display);font-size:32px;font-weight:700;color:white;line-height:1}
+.opt-score-label{font-family:var(--font-ui);font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.88);margin-top:3px;text-align:center}
+.opt-score-info{flex:1;min-width:0}
+.opt-score-summary{font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:8px}
+.opt-subscores{display:flex;flex-wrap:wrap;gap:5px}
+.opt-subscore-pill{font-family:var(--font-ui);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--paper);border:1px solid var(--border);color:var(--ink-soft)}
 </style>
 </head>
 <body>

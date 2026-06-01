@@ -953,6 +953,11 @@ function generateChecklist(){
       const needs=s.reservation||['flight','train'].includes(s.type)||CK_KW.test(s.notes||'');
       if(!needs)return;
       const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
+      if(!s.reservation){
+        if(s.type==='flight'&&/^(land at|arrive |arrival)/i.test(nm))return;
+        if(s.type==='flight'&&/check.?in/i.test(s.name))return;
+        if(/^(train|flight|drive|walk|bus|taxi|tube|metro|ferry|subway)$/i.test(nm))return;
+      }
       const key='auto-bk-'+s.type+'-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
       if(seen.has(key))return;seen.add(key);
       if(dismissed.has(key))return;
@@ -1015,8 +1020,8 @@ function renderOverview(){
   }).join('');
 
   const lodgeHtml=lodges.length?lodges.map(({di,day,s})=>{
-    const nm=s.name.replace(/\s*[—–].*/,'').trim();
-    const id='auto-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+    const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
+    const id='auto-bk-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+

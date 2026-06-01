@@ -888,31 +888,85 @@ function saveStop(){
 }
 
 /* ---- Overview ---- */
+const DISMISSED_KEY='dismissed_chk_'+tripId;
+function _getDismissed(){try{return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY)||'[]'))}catch(e){return new Set();}}
+function _addDismissed(id){let a;try{a=JSON.parse(localStorage.getItem(DISMISSED_KEY)||'[]')}catch(e){a=[];}if(!a.includes(id))a.push(id);try{localStorage.setItem(DISMISSED_KEY,JSON.stringify(a))}catch(e){}}
+
+function _chkItemHtml(item){
+  const done=item.done;
+  return'<div class="check-item'+(done?' done':'')+'" id="chk-'+item.id+'">' +
+    '<input type="checkbox" '+(done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
+    '<span class="check-text">'+_escHtml(item.text||'')+'</span>'+
+    '<div class="chk-actions">'+
+    '<button class="chk-edit-btn" onclick="startEditCheckItem(\''+item.id+'\')" title="Edit">&#9998;</button>'+
+    '<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')" title="Remove">&times;</button>'+
+    '</div></div>';
+}
+
+function _dayDateLabel(di){
+  const sub=(state.days[di]?.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
+  if(!sub)return'';
+  const d=new Date(sub+' 12:00');
+  if(isNaN(d))return'';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
 function generateChecklist(){
+  const dismissed=_getDismissed();
   const prev={};
   (state.checklist||[]).filter(i=>i.auto).forEach(i=>{prev[i.id]=i.done});
   const CK_KW=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
   const typePri={flight:0,train:1,lodge:2,hike:3,food:4,drive:5};
   const bookable=[];const seen=new Set();
+
+  /* — Deduplicate lodge stops by name: group all nights for same hotel — */
+  const lodgeGroups={};
   state.days.forEach((d,di)=>{
     d.stops.forEach((s,si)=>{
-      if(/^depart\b/i.test(s.name))return;
-      const needs=s.reservation||['lodge','flight','train'].includes(s.type)||CK_KW.test(s.notes||'');
+      if(s.type!=='lodge'||/^depart\b/i.test(s.name))return;
+      const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
+      const key='auto-bk-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
+      if(!lodgeGroups[key])lodgeGroups[key]={nm,key,days:[],reservation:null};
+      lodgeGroups[key].days.push({di,si,s});
+      if(s.reservation&&!lodgeGroups[key].reservation)lodgeGroups[key].reservation=s.reservation;
+    });
+  });
+  Object.values(lodgeGroups).forEach(g=>{
+    const {nm,key,days,reservation}=g;
+    seen.add(key);
+    if(dismissed.has(key))return;
+    let dateLabel='';
+    if(days.length>1){
+      const f=_dayDateLabel(days[0].di),l=_dayDateLabel(days[days.length-1].di);
+      if(f&&l&&f!==l)dateLabel=' ('+f+'–'+l+')';
+      else if(f)dateLabel=' ('+f+')';
+    }
+    const isDone=key in prev?prev[key]:!!reservation;
+    let text='Hotel: '+nm+(reservation?' · '+reservation:'')+dateLabel;
+    bookable.push({id:key,text,done:isDone,auto:true,pri:2,di:days[0].di,si:days[0].si,urgent:false});
+  });
+
+  /* — Flights, trains, keyword-bookable — */
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(/^depart\b/i.test(s.name)||s.type==='lodge')return;
+      const needs=s.reservation||['flight','train'].includes(s.type)||CK_KW.test(s.notes||'');
       if(!needs)return;
       const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
       const key='auto-bk-'+s.type+'-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
       if(seen.has(key))return;seen.add(key);
+      if(dismissed.has(key))return;
       const isDone=key in prev?prev[key]:!!s.reservation;
       let text;
       if(s.type==='flight')text='Flight: '+nm+(s.reservation?' · '+s.reservation:'');
       else if(s.type==='train')text='Train: '+nm+(s.reservation?' · Ref '+s.reservation:'');
-      else if(s.type==='lodge')text='Hotel: '+nm+(s.reservation?' · '+s.reservation:'');
       else text='Book: '+nm;
       const urgent=/sells out|BOOK TIMED|BOOK NOW/i.test(s.notes||'');
       if(urgent)text='⚠️ '+text;
       bookable.push({id:key,text,done:isDone,auto:true,pri:typePri[s.type]??3,di,si,urgent});
     });
   });
+
   bookable.sort((a,b)=>{
     if(a.urgent!==b.urgent)return a.urgent?-1:1;
     if(a.pri!==b.pri)return a.pri-b.pri;
@@ -922,9 +976,12 @@ function generateChecklist(){
     const items=[];
     const hasF=state.days.some(d=>d.stops.some(s=>s.type==='flight'));
     const hasT=state.days.some(d=>d.stops.some(s=>s.type==='train'));
-    if(hasF){items.push({id:'auto-flights',text:'Book flights',done:prev['auto-flights']||false,auto:true});items.push({id:'auto-car',text:'Reserve rental car',done:prev['auto-car']||false,auto:true});}
-    if(hasT)items.push({id:'auto-trains',text:'Book train tickets',done:prev['auto-trains']||false,auto:true});
-    items.push({id:'auto-insurance',text:'Review travel insurance',done:prev['auto-insurance']||false,auto:true});
+    if(hasF){
+      if(!dismissed.has('auto-flights'))items.push({id:'auto-flights',text:'Book flights',done:prev['auto-flights']||false,auto:true});
+      if(!dismissed.has('auto-car'))items.push({id:'auto-car',text:'Reserve rental car',done:prev['auto-car']||false,auto:true});
+    }
+    if(hasT&&!dismissed.has('auto-trains'))items.push({id:'auto-trains',text:'Book train tickets',done:prev['auto-trains']||false,auto:true});
+    if(!dismissed.has('auto-insurance'))items.push({id:'auto-insurance',text:'Review travel insurance',done:prev['auto-insurance']||false,auto:true});
     return[...items,...(state.checklist||[]).filter(i=>!i.auto)];
   }
   return[...bookable,...(state.checklist||[]).filter(i=>!i.auto)];
@@ -969,13 +1026,7 @@ function renderOverview(){
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
 
-  const checkHtml=state.checklist.map(item=>
-    '<div class="check-item'+(item.done?' done':'')+'" id="chk-'+item.id+'">'+
-    '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+item.id+'\',this.checked)"/>'+
-    '<span class="check-text">'+item.text+'</span>'+
-    (!item.auto?'<button class="chk-del" onclick="deleteCheckItem(\''+item.id+'\')">&times;</button>':'')+
-    '</div>'
-  ).join('');
+  const checkHtml=state.checklist.map(item=>_chkItemHtml(item)).join('');
 
   /* Budget card */
   let budgetHtml='';
@@ -1007,7 +1058,17 @@ function renderOverview(){
     '<div class="ov-section"><div class="ov-heading">&#9989; Pre-Trip Checklist</div>'+
     (totalBook?'<div class="checklist-count">'+bookedCount+' of '+totalBook+' bookings confirmed</div>':'')+
     '<div class="check-list">'+checkHtml+'</div>'+
-    '<div class="add-check-row"><input type="text" id="new-check-input" class="add-check-input" placeholder="Add an item to book or pack..." onkeydown="if(event.key===\'Enter\')addCheckItem()"/><button class="add-check-btn" onclick="addCheckItem()">+ Add</button></div>'+
+    '<div id="add-check-form" class="add-check-form">'+
+    '<div class="add-check-form-row">'+
+    '<input type="text" id="new-check-input" class="add-check-input" placeholder="Item to book or pack…" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\')addCheckItem()"/>'+
+    '<select id="new-check-type" class="add-check-form-select"><option value="">Type…</option><option value="Flight">Flight</option><option value="Hotel">Hotel</option><option value="Train">Train</option><option value="Activity">Activity</option><option value="Other">Other</option></select>'+
+    '</div>'+
+    '<div class="add-check-form-row">'+
+    '<input type="text" id="new-check-resv" class="add-check-input" placeholder="Reservation # (optional)" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\')addCheckItem()"/>'+
+    '<button class="add-check-btn" onclick="addCheckItem()">&#10003; Add</button>'+
+    '<button class="btn-cancel" style="padding:9px 14px;font-size:13px" onclick="hideAddCheckForm()">Cancel</button>'+
+    '</div></div>'+
+    '<div id="add-check-toggle"><button class="add-check-toggle-btn" onclick="showAddCheckForm()">+ Add Item</button></div>'+
     '</div>'+
     '<div class="ov-section"><div class="ov-heading">&#128220; Packing List</div>'+renderPackingListHtml()+'</div>'+
     (state.settings?.googlePlacesKey?'':'<div class="ov-section"><div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border)">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours, websites, and phone numbers for stops.</div></div>')+
@@ -1017,23 +1078,97 @@ function renderOverview(){
 function toggleCheckItem(id,done){
   const item=(state.checklist||[]).find(i=>i.id===id);
   if(item){item.done=done;saveState();}
-  const el=document.getElementById('chk-'+id);if(el)el.classList.toggle('done',done);
+  const el=document.getElementById('chk-'+id);
+  if(el){el.classList.toggle('done',done);const cb=el.querySelector('input[type=checkbox]');if(cb)cb.checked=done;}
+}
+function showAddCheckForm(){
+  const form=document.getElementById('add-check-form');
+  const tog=document.getElementById('add-check-toggle');
+  if(form)form.classList.add('open');
+  if(tog)tog.style.display='none';
+  setTimeout(()=>document.getElementById('new-check-input')?.focus(),50);
+}
+function hideAddCheckForm(){
+  const form=document.getElementById('add-check-form');
+  const tog=document.getElementById('add-check-toggle');
+  if(form)form.classList.remove('open');
+  if(tog)tog.style.display='';
 }
 function addCheckItem(){
   const input=document.getElementById('new-check-input');
-  const text=input.value.trim();if(!text)return;
+  const typeEl=document.getElementById('new-check-type');
+  const resvEl=document.getElementById('new-check-resv');
+  const label=(input?input.value.trim():'');if(!label)return;
+  const type=typeEl?typeEl.value:'';
+  const resv=resvEl?resvEl.value.trim():'';
   if(!state.checklist)state.checklist=[];
   const id='custom-'+Date.now();
+  let text=type&&type!=='Other'?type+': '+label:label;
+  if(resv)text+=' · '+resv;
   const item={id,text,done:false,auto:false};
-  state.checklist.push(item);saveState();input.value='';
+  state.checklist.push(item);saveState();
+  if(input)input.value='';if(typeEl)typeEl.value='';if(resvEl)resvEl.value='';
   const list=document.querySelector('.check-list');
-  if(list){const el=document.createElement('div');el.className='check-item';el.id='chk-'+id;
-    el.innerHTML='<input type="checkbox" onchange="toggleCheckItem(\''+id+'\',this.checked)"/><span class="check-text">'+text+'</span><button class="chk-del" onclick="deleteCheckItem(\''+id+'\')">&times;</button>';
-    list.appendChild(el);}
+  if(list)list.insertAdjacentHTML('beforeend',_chkItemHtml(item));
+  hideAddCheckForm();
 }
 function deleteCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);
+  const el=document.getElementById('chk-'+id);if(!el)return;
+  const doneProp=item&&item.done;
+  el.innerHTML=
+    '<input type="checkbox" '+(doneProp?'checked':'')+' disabled/>'+
+    '<span class="check-text" style="color:var(--muted);font-style:italic">Remove this item?</span>'+
+    '<div class="chk-actions" style="opacity:1">'+
+    '<button class="add-check-btn" style="padding:4px 10px;font-size:12px;background:var(--ruby);white-space:nowrap" onclick="confirmDeleteCheckItem(\''+id+'\')">Yes, remove</button>'+
+    '<button class="chk-edit-btn" style="color:var(--muted);font-size:12px;padding:0 6px" onclick="cancelDeleteCheckItem(\''+id+'\')">No</button>'+
+    '</div>';
+}
+function confirmDeleteCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);
+  if(item&&item.auto)_addDismissed(id);
   state.checklist=(state.checklist||[]).filter(i=>i.id!==id);saveState();
   const el=document.getElementById('chk-'+id);if(el)el.remove();
+}
+function cancelDeleteCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);if(!item)return;
+  const el=document.getElementById('chk-'+id);if(el)el.outerHTML=_chkItemHtml(item);
+}
+function startEditCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);if(!item)return;
+  const el=document.getElementById('chk-'+id);if(!el)return;
+  /* parse existing text into editable label + optional reservation */
+  let raw=item.text.replace(/^⚠️\s*/,'');
+  const prefixM=raw.match(/^(Hotel|Flight|Train|Book|Activity|Other|[^:]+):\s*/);
+  if(prefixM)raw=raw.slice(prefixM[0].length);
+  const dotM=raw.match(/^(.+?)\s+·\s+(.+)$/);
+  const editLabel=dotM?dotM[1]:raw;
+  const editResv=dotM?dotM[2]:'';
+  el.innerHTML=
+    '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/>'+
+    '<div class="chk-inline-edit">'+
+    '<input type="text" class="add-check-input" id="cedit-lbl-'+id+'" value="'+_escHtml(editLabel)+'" style="flex:1;min-width:100px;padding:6px 10px;font-size:12px" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<input type="text" class="add-check-input" id="cedit-resv-'+id+'" value="'+_escHtml(editResv)+'" placeholder="Conf #" style="width:110px;padding:6px 10px;font-size:12px" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<button class="add-check-btn" style="padding:6px 12px;font-size:12px" onclick="saveEditCheckItem(\''+id+'\')">&#10003;</button>'+
+    '<button class="chk-edit-btn" style="font-size:16px;padding:0 6px" onclick="cancelEditCheckItem(\''+id+'\')" title="Cancel">&#10005;</button>'+
+    '</div>';
+  document.getElementById('cedit-lbl-'+id)?.focus();
+}
+function saveEditCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);if(!item)return;
+  const lbl=(document.getElementById('cedit-lbl-'+id)?.value||'').trim();
+  const resv=(document.getElementById('cedit-resv-'+id)?.value||'').trim();
+  if(!lbl)return;
+  /* preserve type prefix for auto items */
+  const prefixM=item.text.replace(/^⚠️\s*/,'').match(/^(Hotel|Flight|Train|Book):/);
+  const prefix=prefixM?prefixM[1]+': ':'';
+  item.text=prefix+lbl+(resv?' · '+resv:'');
+  saveState();
+  const el=document.getElementById('chk-'+id);if(el)el.outerHTML=_chkItemHtml(item);
+}
+function cancelEditCheckItem(id){
+  const item=(state.checklist||[]).find(i=>i.id===id);if(!item)return;
+  const el=document.getElementById('chk-'+id);if(el)el.outerHTML=_chkItemHtml(item);
 }
 
 /* ---- Packing list ---- */
@@ -1533,7 +1668,7 @@ function _stopPlaceMetaHtml(s){
 }
 
 /* --- AI Itinerary Grader --- */
-const GRADE_SYSTEM='You are an expert travel planner. Return ONLY valid JSON (no markdown): {"overall_grade":{"letter":"B+","rationale":"one sentence"},"suggested_additions":[{"name":"","type":"","reason":"","suggested_day":1}],"suggested_removals":[{"stop_name":"","day":1,"reason":""}],"timing_conflicts":[{"stop_name":"","day":1,"issue":""}],"pacing_notes":["string"]}';
+const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Condé Nast editor would — direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"overall_grade":{"letter":"B+","rationale":"one sentence: biggest strength and biggest gap"},"destination_coverage":[{"destination":"London","score":"8/10","note":"Missing Tate Modern — fits Day 2 afternoon near Globe Theatre"}],"suggested_swaps":[{"remove":"stop name","day":1,"add":"replacement name","reason":"specific reason replacement is clearly better for this time slot and location"}],"suggested_additions":[{"name":"","type":"","reason":"","suggested_day":1,"fits_near":"name of existing nearby stop"}],"pacing_notes":["observation only — never a removal suggestion"],"timing_conflicts":[{"stop_name":"","day":1,"issue":""}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields — no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop and a specific day with capacity.\n4. pacing_notes are observations only — never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. Tone: experienced travel editor, not a cautious assistant. Be direct.';
 async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
   const content=document.getElementById('ai-grader-content');
@@ -1569,6 +1704,12 @@ function _renderGradeResult(d){
   let h='<div class="ai-modal-grade-row">'+
     '<div class="ai-grade-letter" style="background:'+_gradeColor(g.letter)+'">'+_escHtml(g.letter||'?')+'</div>'+
     '<div class="ai-grade-rationale">'+_escHtml(g.rationale||'')+'</div></div>';
+  if(d.destination_coverage?.length){
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#127758; Coverage by Destination</div>';
+    d.destination_coverage.forEach(c=>{
+      h+='<div class="ai-item"><strong>'+_escHtml(c.destination||'')+'</strong>: <span style="color:var(--pine);font-weight:600">'+_escHtml(c.score||'')+'</span> must-sees'+(c.note?' <span style="color:var(--muted)">— '+_escHtml(c.note)+'</span>':'')+'</div>';
+    });h+='</div>';
+  }
   if(d.pacing_notes?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#128203; Pacing Notes</div>';
     d.pacing_notes.forEach(n=>h+='<div class="ai-item">'+_escHtml(n)+'</div>');h+='</div>';
@@ -1579,9 +1720,19 @@ function _renderGradeResult(d){
   }
   if(d.suggested_additions?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#10024; Consider Adding</div>';
-    d.suggested_additions.forEach(a=>h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em><br>'+_escHtml(a.reason||'')+'</div>');h+='</div>';
+    d.suggested_additions.forEach(a=>h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em><br>'+_escHtml(a.reason||'')+(a.fits_near?' <span style="color:var(--muted);font-size:11.5px">&#128205; Near '+_escHtml(a.fits_near)+'</span>':'')+'</div>');h+='</div>';
   }
-  if(d.suggested_removals?.length){
+  if(d.suggested_swaps?.length){
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#8644; Consider Swapping</div>';
+    d.suggested_swaps.forEach(r=>{
+      h+='<div class="ai-item" style="border-left:3px solid var(--amber)">'+
+        '<span style="color:var(--ruby)">&#10007; Day '+r.day+': <strong>'+_escHtml(r.remove||'')+'</strong></span><br>'+
+        '<span style="color:var(--pine)">&#10003; Replace with <strong>'+_escHtml(r.add||'')+'</strong></span><br>'+
+        '<span style="color:var(--muted);font-size:12px">'+_escHtml(r.reason||'')+'</span></div>';
+    });h+='</div>';
+  }
+  /* backward-compat: old suggested_removals field */
+  if(!d.suggested_swaps?.length&&d.suggested_removals?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#9986;&#65039; Consider Removing</div>';
     d.suggested_removals.forEach(r=>h+='<div class="ai-item" style="border-left:3px solid var(--ruby)"><strong>Day '+r.day+': '+_escHtml(r.stop_name||'')+'</strong> &mdash; '+_escHtml(r.reason||'')+'</div>');h+='</div>';
   }
@@ -1589,7 +1740,7 @@ function _renderGradeResult(d){
 }
 
 /* --- AI Day Optimizer --- */
-const OPT_SYSTEM='You are an expert travel planner. Return ONLY valid JSON: {"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string"}';
+const OPT_SYSTEM='You are an expert travel planner and day optimizer. Score this day across 4 dimensions then suggest improvements.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"optimization_score":78,"score_summary":"one sentence: the single biggest improvement opportunity","sub_scores":{"route":85,"timing":70,"pacing":80,"experience":75},"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string"}\n\nScore definitions (each 0-100, their average = optimization_score):\n- route: geographic efficiency — stops in logical order minimizing backtracking\n- timing: alignment with opening hours, avoiding arriving too early/late\n- pacing: realistic time allocation — not too rushed, not too sparse\n- experience: narrative flow — does the day tell a coherent, enjoyable story?\n\nThresholds: 90-100=Near Perfect, 75-89=Well Optimized, 50-74=Good, 0-49=Needs Work.\nBe honest: a day with clear backtracking scores below 60 on route. A tightly clustered day with great flow scores 85+.';
 async function optimizeDay(idx){
   const modal=document.getElementById('ai-optimizer-modal');
   const content=document.getElementById('ai-optimizer-content');
@@ -1618,8 +1769,38 @@ async function optimizeDay(idx){
     content.innerHTML='<div class="ai-loading-wrap" style="color:var(--ruby)">Could not optimize — please try again.</div>';
   }
 }
+function _optScoreColor(s){
+  if(s>=90)return'#1F5C3A';
+  if(s>=75)return'var(--pine)';
+  if(s>=50)return'var(--amber)';
+  return'var(--ruby)';
+}
+function _optScoreLabel(s){
+  if(s>=90)return'Near Perfect';
+  if(s>=75)return'Well Optimized';
+  if(s>=50)return'Good';
+  return'Needs Work';
+}
 function _renderOptResult(d){
   let h='';
+  if(d.optimization_score!==undefined){
+    const score=Math.max(0,Math.min(100,Math.round(d.optimization_score)));
+    const color=_optScoreColor(score);
+    const ss=d.sub_scores||{};
+    const pills=['route','timing','pacing','experience'].map(k=>{
+      const v=ss[k]!==undefined?Math.round(ss[k]):'—';
+      return'<span class="opt-subscore-pill">'+k.charAt(0).toUpperCase()+k.slice(1)+' '+v+'</span>';
+    }).join('');
+    h+='<div class="opt-score-row">'+
+      '<div class="opt-score-badge" style="background:'+color+'">'+
+      '<div class="opt-score-num">'+score+'</div>'+
+      '<div class="opt-score-label">'+_optScoreLabel(score)+'</div>'+
+      '</div>'+
+      '<div class="opt-score-info">'+
+      (d.score_summary?'<div class="opt-score-summary">'+_escHtml(d.score_summary)+'</div>':'')+
+      '<div class="opt-subscores">'+pills+'</div>'+
+      '</div></div>';
+  }
   if(d.route_notes)h+='<div class="ai-section"><div class="ai-section-hdr">&#128506; Route Overview</div><div class="ai-item">'+_escHtml(d.route_notes)+'</div></div>';
   if(d.optimized_order?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#9989; Suggested Order</div>';

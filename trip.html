@@ -317,7 +317,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .leg-mode-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-family:var(--font-ui);font-size:10px;font-weight:600;margin-left:6px}
 .leg-mode-walk{background:rgba(46,125,82,0.12);color:var(--pine)}
 .leg-mode-drive{background:var(--river-tint);color:var(--river)}
-.leg-mode-subway{background:rgba(82,54,128,0.12);color:#523680}
+.leg-mode-train{background:rgba(82,54,128,0.12);color:#523680}
+.leg-mode-flight{background:rgba(14,99,181,0.12);color:#0E63B5}
 .leg-mode-bus{background:rgba(29,78,115,0.12);color:#1D4E73}
 .conflict-badge{display:inline-flex;align-items:center;cursor:pointer;position:relative;color:var(--amber);font-size:12px;margin-left:4px;vertical-align:middle}
 .conflict-badge .ctip{display:none;position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:rgba(26,35,50,0.92);color:#FDFCFA;font-size:11px;padding:5px 9px;border-radius:6px;z-index:600;pointer-events:none;min-width:140px;max-width:220px;text-align:center;line-height:1.4;white-space:normal}
@@ -502,7 +503,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="transit-mode-row">
           <button type="button" class="transit-mode-btn" data-mode="walk" onclick="setTransitMode('walk')">&#128694; Walk</button>
           <button type="button" class="transit-mode-btn" data-mode="drive" onclick="setTransitMode('drive')">&#128663; Drive</button>
-          <button type="button" class="transit-mode-btn" data-mode="subway" onclick="setTransitMode('subway')">&#128642; Subway</button>
+          <button type="button" class="transit-mode-btn" data-mode="train" onclick="setTransitMode('train')">&#128646; Train</button>
           <button type="button" class="transit-mode-btn" data-mode="bus" onclick="setTransitMode('bus')">&#128652; Bus</button>
         </div>
       </div>

@@ -134,19 +134,16 @@ function haversine(la1,lo1,la2,lo2){
   const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-function legLabel(a,b){
+function legLabel(a,b,mode){
   if(!a.lat||!a.lng||!b.lat||!b.lng)return'';
   const dist=haversine(a.lat,a.lng,b.lat,b.lng);
-  if(dist<0.3)return'';
+  if(dist<0.05)return'';
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
-  const isFlight=a.type==='flight'||b.type==='flight';
-  const isTrain=!isFlight&&(a.type==='train'||b.type==='train');
-  const isBus=!isFlight&&!isTrain&&(a.type==='bus'||b.type==='bus');
-  const speed=isFlight?8:isTrain?1.8:isBus?1.4:1.15;
+  const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
+  const speed=speeds[mode]||0.5;
   const mins=Math.round(dist/speed);
   const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
-  const mode=isFlight?' flight':isTrain?' train':isBus?' bus':' drive';
-  return mi+' mi · '+tStr+mode;
+  return mi+' mi · '+tStr;
 }
 
 function makeIcon(num,color,isAlt){
@@ -420,10 +417,11 @@ function renderPanel(idx){
       '</div>';
     if(!isLast){
       const next=day.stops[si+1];
-      const leg=legLabel(s,next);
+      const rawMode=s.transitMode||_defaultTransitMode(s,next);
+      const tmode=rawMode==='subway'?'train':rawMode;
+      const leg=legLabel(s,next,tmode);
       const tzc=tzChangeLabel(s,next);
-      const tmode=s.transitMode||_defaultTransitMode(s,next);
-      const modePill='<span class="leg-mode-pill '+TM_CLS[tmode]+'">'+TM_ICON[tmode]+' '+TM_LABEL[tmode]+'</span>';
+      const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
       if(leg||tzc){
         cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+
           (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+
@@ -1699,12 +1697,16 @@ function setTransitMode(mode){
   document.querySelectorAll('.transit-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
 }
 function _defaultTransitMode(a,b){
-  if(!a||!b||!a.lat||!a.lng||!b.lat||!b.lng)return'drive';
+  if(!a||!b)return'drive';
+  if(a.type==='flight'||b.type==='flight')return'flight';
+  if(a.type==='train'||b.type==='train')return'train';
+  if(a.type==='bus'||b.type==='bus')return'bus';
+  if(!a.lat||!a.lng||!b.lat||!b.lng)return'drive';
   return haversine(a.lat,a.lng,b.lat,b.lng)<1?'walk':'drive';
 }
-const TM_ICON={walk:'🚶',drive:'🚗',subway:'🚇',bus:'🚌'};
-const TM_LABEL={walk:'Walk',drive:'Drive',subway:'Subway',bus:'Bus'};
-const TM_CLS={walk:'leg-mode-walk',drive:'leg-mode-drive',subway:'leg-mode-subway',bus:'leg-mode-bus'};
+const TM_ICON={walk:'🚶',drive:'🚗',train:'🚆',bus:'🚌',flight:'✈️'};
+const TM_LABEL={walk:'Walk',drive:'Drive',train:'Train',bus:'Bus',flight:'Flight'};
+const TM_CLS={walk:'leg-mode-walk',drive:'leg-mode-drive',train:'leg-mode-train',bus:'leg-mode-bus',flight:'leg-mode-flight'};
 
 /* --- Journal Mode --- */
 const JNL_LS='seasons_jnl_'+tripId;

@@ -232,7 +232,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .check-text{font-family:var(--font-ui);font-size:13px;flex:1;line-height:1.4;color:var(--ink)}
 .chk-del{background:none;border:none;cursor:pointer;color:var(--border);font-size:18px;line-height:1;padding:0 2px;transition:color 0.2s;flex-shrink:0}
 .chk-del:hover{color:var(--ruby)}
-.chk-actions{display:flex;align-items:center;gap:2px;opacity:0;transition:opacity 0.15s;flex-shrink:0}
+.chk-actions{display:flex;align-items:center;gap:2px;opacity:0.45;transition:opacity 0.15s;flex-shrink:0}
 .check-item:hover .chk-actions{opacity:1}
 .chk-edit-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 3px;transition:color 0.2s;line-height:1;height:22px;display:flex;align-items:center}
 .chk-edit-btn:hover{color:var(--river)}
@@ -365,6 +365,66 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .opt-score-summary{font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:8px}
 .opt-subscores{display:flex;flex-wrap:wrap;gap:5px}
 .opt-subscore-pill{font-family:var(--font-ui);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--paper);border:1px solid var(--border);color:var(--ink-soft)}
+/* === Overview tabs === */
+.ov-tab-bar{display:flex;overflow-x:auto;scrollbar-width:none;gap:0;margin-bottom:20px;border-bottom:2px solid var(--border)}
+.ov-tab-bar::-webkit-scrollbar{display:none}
+.ov-tab{font-family:var(--font-ui);font-size:12px;font-weight:600;letter-spacing:0.04em;color:var(--muted);background:transparent;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;padding:10px 16px;cursor:pointer;white-space:nowrap;transition:color 0.18s,border-color 0.18s;flex-shrink:0}
+.ov-tab:hover{color:var(--ink)}
+.ov-tab.active{color:var(--ink);border-bottom-color:var(--ruby)}
+.ov-tab-panel{padding-top:4px}
+/* === Audio badge/popover === */
+.audio-badge{display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:20px;background:rgba(43,108,176,0.10);color:var(--river);border:1px solid rgba(43,108,176,0.22);font-family:var(--font-ui);font-size:9.5px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-left:4px;vertical-align:middle;position:relative}
+.audio-badge:hover,.audio-badge.open{background:var(--river);color:white}
+.audio-popover{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);box-shadow:0 4px 20px rgba(26,35,50,0.18);z-index:800;min-width:230px;max-width:290px;padding:10px;text-align:left;pointer-events:all}
+.audio-badge.open .audio-popover{display:block}
+.audio-popover-title{font-family:var(--font-ui);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:6px}
+.audio-tour-item{padding:6px 0;border-bottom:1px solid var(--border)}
+.audio-tour-item:last-child{border-bottom:none;padding-bottom:0}
+.audio-tour-item-title{font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--ink);margin-bottom:2px}
+.audio-tour-item-meta{font-family:var(--font-ui);font-size:10px;color:var(--muted)}
+.audio-tour-item-link{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--river);text-decoration:none;background:var(--river-tint);padding:2px 8px;border-radius:10px}
+.audio-tour-item-link:hover{background:var(--river);color:white}
+/* === Audio Tours tab === */
+.audio-city-hdr{font-family:var(--font-display);font-size:17px;font-weight:600;color:var(--ink);margin:20px 0 10px;display:flex;align-items:center;gap:7px}
+.audio-city-hdr:first-child{margin-top:4px}
+.audio-tour-card{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:13px 16px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+.audio-provider-icon{width:34px;height:34px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;background:var(--mist)}
+.audio-tour-info{flex:1;min-width:0}
+.audio-tour-name{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--ink);line-height:1.3}
+.audio-tour-provider{font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-top:2px}
+.audio-tour-desc{font-family:var(--font-ui);font-size:12px;color:var(--ink-soft);margin-top:4px;line-height:1.45}
+.audio-tour-actions{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.audio-open-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:var(--river-tint);color:var(--river);border:1px solid var(--river-border);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;text-decoration:none;transition:all 0.18s}
+.audio-open-btn:hover{background:var(--river);color:white}
+.audio-dur{font-family:var(--font-ui);font-size:10.5px;color:var(--muted)}
+.audio-discover-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:12px;background:transparent;border:2px dashed rgba(43,108,176,0.3);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--river);cursor:pointer;transition:all 0.2s;margin-top:12px}
+.audio-discover-btn:hover:not(:disabled){background:var(--river-tint);border-style:solid}
+.audio-discover-btn:disabled{opacity:0.6;cursor:default}
+/* === Optimizer apply/fix/undo === */
+.opt-apply-btn{display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 14px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s;margin-top:10px;width:100%}
+.opt-apply-btn:hover{background:#1a6640}
+.opt-confirm-bar{padding:10px 12px;background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);margin-top:8px;font-family:var(--font-ui);font-size:12.5px;color:var(--pine);line-height:1.45}
+.opt-confirm-actions{display:flex;gap:8px;margin-top:8px;align-items:center}
+.opt-fix-btn{display:inline-flex;align-items:center;gap:3px;padding:4px 10px;background:var(--amber-tint);color:var(--amber);border:1px solid rgba(196,123,32,0.25);border-radius:20px;font-family:var(--font-ui);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.18s;white-space:nowrap;margin-top:5px}
+.opt-fix-btn:hover{background:var(--amber);color:white}
+.undo-banner{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#FDFCFA;font-family:var(--font-ui);font-size:13px;font-weight:500;padding:11px 20px;border-radius:var(--radius-md);box-shadow:0 6px 24px rgba(26,35,50,0.28);z-index:9999;transition:transform 0.28s cubic-bezier(0.34,1.2,0.64,1),opacity 0.28s;opacity:0;pointer-events:none;white-space:nowrap;display:flex;align-items:center;gap:10px}
+.undo-banner.visible{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:all}
+.undo-btn{background:rgba(255,255,255,0.15);border:none;color:white;font-family:var(--font-ui);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer}
+.undo-btn:hover{background:rgba(255,255,255,0.28)}
+/* === Restaurant Alternates === */
+.alt-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;background:var(--amber-tint);color:var(--amber);border:1px solid rgba(196,123,32,0.22);border-radius:20px;font-family:var(--font-ui);font-size:10px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-top:6px}
+.alt-btn:hover{background:var(--amber);color:white}
+.alt-card{background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px}
+.alt-card-name{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin-bottom:3px}
+.alt-card-meta{font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.alt-card-why{font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:8px}
+.alt-price-badge{display:inline-flex;align-items:center;font-family:var(--font-ui);font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}
+.alt-price-budget{background:var(--pine-tint);color:var(--pine);border:1px solid var(--pine-border)}
+.alt-price-mid{background:var(--amber-tint);color:var(--amber);border:1px solid rgba(196,123,32,0.22)}
+.alt-price-fine{background:rgba(123,94,167,0.12);color:#7B5EA7;border:1px solid rgba(123,94,167,0.22)}
+.alt-use-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s}
+.alt-use-btn:hover{background:#1a6640}
+.recently-changed-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-left:5px;vertical-align:middle;flex-shrink:0;cursor:help}
 </style>
 </head>
 <body>
@@ -389,6 +449,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 </header>
 <div class="import-banner" id="import-banner"></div>
 <div class="share-toast" id="share-toast"></div>
+<div class="undo-banner" id="undo-banner">
+  <span id="undo-banner-text">&#8629; Change applied</span>
+  <button class="undo-btn" onclick="undoLastChange()">Undo</button>
+</div>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch">
   <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
   <div class="tabs" id="tabs-inner" style="flex:1;min-width:0"></div>
@@ -519,6 +583,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <button class="btn-cancel" onclick="document.getElementById('travelers-modal').classList.remove('open')">Cancel</button>
       <button class="btn-primary" onclick="saveTravelers()">Save</button>
     </div>
+  </div>
+</div>
+<!-- Alternates Modal -->
+<div class="modal-overlay" id="alternates-modal">
+  <div class="modal ai-result-modal" role="dialog" aria-modal="true" aria-labelledby="alternates-modal-title">
+    <div class="modal-title" id="alternates-modal-title">&#128260; Restaurant Alternates</div>
+    <button class="modal-close" onclick="document.getElementById('alternates-modal').classList.remove('open')">&#215;</button>
+    <div id="alternates-content"><div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Finding alternates…</div></div></div>
   </div>
 </div>
 <script src="trip.js"></script>

@@ -407,7 +407,7 @@ function renderPanel(idx){
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
-      _audioBadgeHtml(s,day.title)+
+      _audioBadgeHtml(s)+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
@@ -891,6 +891,7 @@ function saveStop(){
   }else{
     state.days[destDayIdx].stops.push(stop);
   }
+  if(stop.time)_sortDayByTime(destDayIdx);
   saveState();closeModal();
   if(destDayIdx!==currentDayIdx&&destDayIdx>=0){switchDay(destDayIdx);}
   else{renderAll();if(srcDayIdx===currentDayIdx||destDayIdx===currentDayIdx)renderDayMap(currentDayIdx);}
@@ -901,8 +902,8 @@ function saveStop(){
 const AUDIO_TOURS={
   'london':[
     {title:'London City Walk',provider:'Rick Steves',emoji:'🎙️',url:'https://www.ricksteves.com/watch-read-listen/audio/audio-tours/britain',duration:'45 min',desc:'Westminster to Trafalgar Square on foot'},
-    {title:'British Museum Highlights',provider:'izi.TRAVEL',emoji:'🏛️',url:'https://izi.travel/browse/a9ab3218-30e4-11e4-b1b9-0050568921b6',duration:'1 hr',desc:'Egyptian mummies, Elgin Marbles, and Rosetta Stone'},
-    {title:'Tower of London Walk',provider:'GPSmyCity',emoji:'🗺️',url:'https://www.gpsmycity.com/tours/tower-of-london-self-guided-walking-tour-1.html',duration:'1.5 hr',desc:'From Tower Bridge to Traitors\' Gate'},
+    {title:'British Museum Highlights',provider:'izi.TRAVEL',emoji:'🏛️',url:'https://izi.travel/en/london',duration:'1 hr',desc:'Egyptian mummies, Elgin Marbles, and Rosetta Stone'},
+    {title:'Tower of London Self-Guided Walk',provider:'GPSmyCity',emoji:'🗺️',url:'https://www.gpsmycity.com/city-guides/london-5.html',duration:'1.5 hr',desc:'From Tower Bridge to Traitors\' Gate'},
     {title:'Westminster Walk',provider:'Rick Steves',emoji:'🎙️',url:'https://www.ricksteves.com/watch-read-listen/audio/audio-tours/britain',duration:'30 min',desc:'Parliament, Big Ben, and Westminster Abbey'},
   ],
   'edinburgh':[
@@ -989,83 +990,73 @@ const AUDIO_TOURS={
     {title:'National Museum of Ireland Tour',provider:'izi.TRAVEL',emoji:'🏛️',url:'https://izi.travel/browse/dublin',duration:'45 min',desc:'Celtic gold, Viking artifacts, and Irish history'},
   ],
 };
-function _matchAudioCity(stopName,dayTitle){
-  const keys=Object.keys(AUDIO_TOURS);
-  const sText=(stopName||'').toLowerCase();
-  const stopMatch=keys.find(k=>sText.includes(k));
-  if(stopMatch)return stopMatch;
-  const dText=(dayTitle||'').toLowerCase();
-  return keys.find(k=>dText.includes(k))||null;
-}
-function _audioBadgeHtml(s,dayTitle){
+const _AUDIO_GENERIC=new Set(['the','and','for','with','from','this','that','stop','visit','tour','walk','hike','drive','hotel','check','arrive','depart','flight','train','lunch','dinner','breakfast','evening','morning','museum','palace','castle','church','cathedral','park','market','square','bridge','street','district','quarter','village','town','city','centre','center','national','historic','old','new']);
+function _audioBadgeHtml(s){
   if(['drive','flight','train','bus','lodge'].includes(s.type))return'';
-  const city=_matchAudioCity(s.name,dayTitle);
-  if(!city)return'';
-  const tours=(AUDIO_TOURS[city]||[]).slice(0,2);
-  if(!tours.length)return'';
-  const items=tours.map(t=>'<div class="audio-tour-item">'+
-    '<div class="audio-tour-item-title">'+_escHtml(t.title)+'</div>'+
-    '<div class="audio-tour-item-meta">'+_escHtml(t.provider)+(t.duration?' · '+t.duration:'')+'</div>'+
-    '<a class="audio-tour-item-link" href="'+t.url+'" target="_blank" rel="noopener">&#9654; Open Tour</a>'+
-    '</div>').join('');
-  return'<span class="audio-badge" onclick="this.classList.toggle(\'open\');event.stopPropagation()">&#127911; Tours<div class="audio-popover"><div class="audio-popover-title">&#127911; Audio Tours — '+city.charAt(0).toUpperCase()+city.slice(1)+'</div>'+items+'</div></span>';
+  const stored=(state.audioTours||[]);
+  if(!stored.length)return'';
+  const stopWords=(s.name||'').toLowerCase().split(/\W+/).filter(w=>w.length>=4&&!_AUDIO_GENERIC.has(w));
+  if(!stopWords.length)return'';
+  const match=stored.find(t=>{
+    const hay=(t.title+' '+(t.desc||'')).toLowerCase();
+    return stopWords.some(w=>hay.includes(w));
+  });
+  if(!match)return'';
+  const item='<div class="audio-tour-item">'+
+    '<div class="audio-tour-item-title">'+_escHtml(match.title)+'</div>'+
+    '<div class="audio-tour-item-meta">'+_escHtml(match.provider)+(match.duration?' · '+match.duration:'')+'</div>'+
+    '<a class="audio-tour-item-link" href="'+_escHtml(match.url)+'" target="_blank" rel="noopener">&#9654; Open Tour</a>'+
+    '</div>';
+  return'<span class="audio-badge" onclick="this.classList.toggle(\'open\');event.stopPropagation()">&#127911; Tour<div class="audio-popover"><div class="audio-popover-title">&#127911; Audio Tour</div>'+item+'</div></span>';
+}
+function _audioTourCardHtml(t){
+  return'<div class="audio-tour-card">'+
+    '<div class="audio-provider-icon">'+(t.emoji||'&#127911;')+'</div>'+
+    '<div class="audio-tour-info">'+
+    '<div class="audio-tour-name">'+_escHtml(t.title||'')+'</div>'+
+    '<div class="audio-tour-provider">'+_escHtml(t.provider||'')+(t.city?' &middot; '+_escHtml(t.city):'')+'</div>'+
+    (t.desc?'<div class="audio-tour-desc">'+_escHtml(t.desc)+'</div>':'')+
+    '<div class="audio-tour-actions">'+
+    (t.url?'<a class="audio-open-btn" href="'+_escHtml(t.url)+'" target="_blank" rel="noopener">&#9654; Open Tour</a>':'')+
+    (t.duration?'<span class="audio-dur">&#9201; '+_escHtml(t.duration)+'</span>':'')+
+    '</div></div></div>';
 }
 function renderAudioToursHtml(){
-  const allText=state.days.map(d=>(d.title||'')+' '+(d.subtitle||'')+' '+d.stops.map(s=>s.name).join(' ')).join(' ').toLowerCase();
-  const matchedCities=Object.keys(AUDIO_TOURS).filter(k=>allText.includes(k));
-  if(!matchedCities.length){
-    return'<div class="ov-empty">No curated tours found for your destinations yet.</div>'+
-      '<button class="audio-discover-btn" id="audio-discover-btn" onclick="discoverAudioTours()">&#10024; Find Audio Tours with AI</button>'+
-      '<div id="audio-discover-result"></div>';
+  const tours=state.audioTours||[];
+  const discoverBtn='<button class="audio-discover-btn" id="audio-discover-btn" onclick="findAudioToursWithAI()">&#10024; '+(tours.length?'Find More Audio Tours':'Find Audio Tours with AI')+'</button><div id="audio-discover-result"></div>';
+  if(!tours.length){
+    return'<div class="ov-empty" style="margin-bottom:16px">No audio tours saved yet. Let AI find self-guided walking tours and museum guides for your destinations.</div>'+discoverBtn;
   }
+  const byCity={};
+  tours.forEach(t=>{const c=(t.city||'').toLowerCase();if(!byCity[c])byCity[c]=[];byCity[c].push(t);});
   let h='';
-  matchedCities.forEach(city=>{
-    const tours=AUDIO_TOURS[city];
+  Object.entries(byCity).forEach(([city,cts])=>{
     h+='<div class="audio-city-hdr">&#127911; '+city.charAt(0).toUpperCase()+city.slice(1)+'</div>';
-    tours.forEach(t=>{
-      h+='<div class="audio-tour-card">'+
-        '<div class="audio-provider-icon">'+t.emoji+'</div>'+
-        '<div class="audio-tour-info">'+
-        '<div class="audio-tour-name">'+_escHtml(t.title)+'</div>'+
-        '<div class="audio-tour-provider">'+_escHtml(t.provider)+'</div>'+
-        (t.desc?'<div class="audio-tour-desc">'+_escHtml(t.desc)+'</div>':'')+
-        '<div class="audio-tour-actions">'+
-        '<a class="audio-open-btn" href="'+t.url+'" target="_blank" rel="noopener">&#9654; Open Tour</a>'+
-        (t.duration?'<span class="audio-dur">&#9201; '+t.duration+'</span>':'')+
-        '</div></div></div>';
-    });
+    cts.forEach(t=>{h+=_audioTourCardHtml(t);});
   });
-  h+='<button class="audio-discover-btn" id="audio-discover-btn" onclick="discoverAudioTours()">&#10024; Find More Audio Tours with AI</button>'+
-     '<div id="audio-discover-result"></div>';
+  h+=discoverBtn;
   return h;
 }
-const AUDIO_DISCOVER_SYSTEM='You are a travel audio tour expert. Return a JSON array of 3-5 audio tours for the requested destinations. Only use real, well-known sources (Rick Steves, GPSmyCity, izi.TRAVEL, major museum apps). Return ONLY the JSON array, no markdown.\nFormat: [{"title":"Tour Name","provider":"Provider","emoji":"🎙️","url":"https://...","duration":"45 min","desc":"One sentence description","city":"City"}]';
-async function discoverAudioTours(){
+const AUDIO_FIND_SYSTEM='You are a travel audio tour expert. Find real, available self-guided audio tours for the requested destinations. Return ONLY a valid JSON array, no markdown, no extra text.\nFormat: [{"city":"london","title":"Tour Name","provider":"Rick Steves","emoji":"🎙️","url":"https://www.ricksteves.com/watch-read-listen/audio/audio-tours/britain","duration":"45 min","desc":"One sentence description of what the tour covers"}]\nRules:\n- Use ONLY real tours from Rick Steves (ricksteves.com), GPSmyCity (gpsmycity.com city guide pages), or official museum audio guides\n- Rick Steves URL must be one of: https://www.ricksteves.com/watch-read-listen/audio/audio-tours/britain OR /paris-and-france OR /rome-and-italy OR /spain OR /eastern-europe OR /netherlands\n- GPSmyCity URLs: use https://www.gpsmycity.com/city-guides/CITY-NUM.html format (real city page numbers)\n- Return 2-4 tours per destination city\n- desc must mention specific landmarks covered';
+async function findAudioToursWithAI(){
   const btn=document.getElementById('audio-discover-btn');
   const result=document.getElementById('audio-discover-result');
-  if(!btn||!result)return;
-  btn.disabled=true;btn.textContent='Finding tours…';
-  const cities=state.days.map(d=>d.title.replace(/^Day \d+\s*[—–]\s*/,'')).filter((v,i,a)=>a.indexOf(v)===i).slice(0,6).join(', ');
+  if(btn){btn.disabled=true;btn.textContent='Finding tours…';}
+  const cities=[...new Set(state.days.map(d=>d.title.replace(/^Day \d+\s*[—–]\s*/,'')).filter(Boolean))].slice(0,8).join(', ');
   try{
-    const text=await callClaude(AUDIO_DISCOVER_SYSTEM,'Find audio tours for a trip visiting: '+cities);
+    const text=await callClaude(AUDIO_FIND_SYSTEM,'Find audio tours for a trip visiting: '+cities);
     const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
     const js=t.indexOf('['),je=t.lastIndexOf(']');
     const tours=JSON.parse(js>=0&&je>js?t.slice(js,je+1):t);
-    result.innerHTML='<div style="margin-top:16px"><div class="ai-section-hdr">&#10024; AI-Discovered Tours</div>'+
-      tours.map(t=>'<div class="audio-tour-card">'+
-        '<div class="audio-provider-icon">'+(t.emoji||'&#127911;')+'</div>'+
-        '<div class="audio-tour-info">'+
-        '<div class="audio-tour-name">'+_escHtml(t.title||t.name||'')+'</div>'+
-        '<div class="audio-tour-provider">'+_escHtml(t.provider||'')+(t.city?' &middot; '+_escHtml(t.city):'')+'</div>'+
-        (t.desc||t.description?'<div class="audio-tour-desc">'+_escHtml(t.desc||t.description)+'</div>':'')+
-        '<div class="audio-tour-actions">'+
-        (t.url?'<a class="audio-open-btn" href="'+_escHtml(t.url)+'" target="_blank" rel="noopener">&#9654; Open Tour</a>':'')+
-        (t.duration?'<span class="audio-dur">&#9201; '+_escHtml(t.duration)+'</span>':'')+
-        '</div></div></div>').join('')+'</div>';
-    btn.textContent='&#10024; Find More Audio Tours with AI';btn.disabled=false;
+    if(!Array.isArray(tours)||!tours.length)throw new Error('No tours returned');
+    if(!state.audioTours)state.audioTours=[];
+    tours.forEach(t=>{if(t.title&&!state.audioTours.find(e=>e.title===t.title))state.audioTours.push(t);});
+    saveState('Found audio tours with AI');
+    const panel=document.getElementById('ovtab-audio');
+    if(panel)panel.innerHTML=renderAudioToursHtml();
   }catch(e){
-    result.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:13px;margin-top:8px">Could not discover tours — please try again.</div>';
-    btn.textContent='&#10024; Find More Audio Tours with AI';btn.disabled=false;
+    if(result)result.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:13px;margin-top:8px">Could not find tours — please try again.</div>';
+    if(btn){btn.disabled=false;btn.textContent='&#10024; Find Audio Tours with AI';}
   }
 }
 
@@ -2065,14 +2056,52 @@ function applyOptimizedOrder(){
     const d=state.days[idx];if(d){d.stops=savedStops;saveState('Undid optimizer changes');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
   });
 }
+function _sortDayByTime(dayIdx){
+  const stops=state.days[dayIdx]?.stops;if(!stops||stops.length<2)return;
+  const timed=stops.filter(s=>s.time&&_parseTimeMins(s.time)!==null);
+  if(timed.length<2)return;
+  stops.sort((a,b)=>{
+    const ta=_parseTimeMins(a.time),tb=_parseTimeMins(b.time);
+    if(ta===null&&tb===null)return 0;
+    if(ta===null)return 1;
+    if(tb===null)return -1;
+    return ta-tb;
+  });
+}
+function _extractTimeFromText(text){
+  if(!text)return null;
+  const m=text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)||text.match(/\b(\d{1,2}):(\d{2})\b/);
+  if(!m)return null;
+  let h=parseInt(m[1]),mn=parseInt(m[2]||0);
+  const ap=(m[3]||'').toLowerCase();
+  if(ap==='pm'&&h!==12)h+=12;
+  if(ap==='am'&&h===12)h=0;
+  if(!ap&&h<7)h+=12;
+  return(h<10?'0'+h:h)+':'+(mn<10?'0'+mn:mn);
+}
 function showTimingFix(ti){
   if(!_optLastData?.timing_issues?.[ti])return;
   const issue=_optLastData.timing_issues[ti];
   if(_optDayIdx<0)return;
   const day=state.days[_optDayIdx];if(!day)return;
   const si=day.stops.findIndex(s=>s.name.toLowerCase().includes((issue.stop_name||'').toLowerCase().slice(0,15)));
-  document.getElementById('ai-optimizer-modal').classList.remove('open');
-  if(si>=0)setTimeout(()=>openEditStopModal(_optDayIdx,si),150);
+  if(si<0)return;
+  const suggestedTime=_extractTimeFromText(issue.suggestion);
+  if(suggestedTime){
+    const savedStop={...day.stops[si]};
+    const savedOrder=day.stops.map(s=>({...s}));
+    day.stops[si]={...day.stops[si],time:suggestedTime};
+    _sortDayByTime(_optDayIdx);
+    saveState('Fixed timing issue');
+    document.getElementById('ai-optimizer-modal').classList.remove('open');
+    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    showUndoBanner('Set "'+_escHtml(issue.stop_name||day.stops[si]?.name||'')+'" → '+suggestedTime,()=>{
+      state.days[_optDayIdx].stops=savedOrder;saveState('Undid timing fix');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    });
+  }else{
+    document.getElementById('ai-optimizer-modal').classList.remove('open');
+    setTimeout(()=>openEditStopModal(_optDayIdx,si),150);
+  }
 }
 function showUndoBanner(msg,undoFn){
   const banner=document.getElementById('undo-banner');if(!banner)return;

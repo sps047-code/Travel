@@ -388,16 +388,16 @@ function renderPanel(idx){
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     const _tr=['flight','train','bus'].includes(s.type)?parsedTransitRoute(s):null;
-    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'">'+
+    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'" style="animation-delay:'+si*40+'ms">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
-      '<div class="card-controls">'+
+      '<div class="card-controls" ontouchstart="event.stopPropagation()">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
       '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top"><span class="card-time">'+(s.time||'')+(stopTz(s)&&s.time?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span><div class="card-main">'+
+      '<div class="card-top">'+(s.time?'<span class="card-time">'+s.time+(stopTz(s)?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
@@ -492,7 +492,7 @@ async function loadStopImages(){
     const el=document.getElementById('stopimg-'+di+'-'+si);
     if(!el||el.classList.contains('loaded'))continue;
     if(stop.customImage){
-      el.innerHTML='<img class="stop-img" src="'+stop.customImage+'" alt="'+stop.name+'"/>';
+      el.innerHTML='<img class="stop-img" src="'+stop.customImage+'" alt="'+stop.name+'" loading="lazy"/>';
       el.classList.add('loaded');continue;
     }
     const url=await fetchStopImage(stop.name);
@@ -1181,7 +1181,7 @@ function renderOverview(){
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     const dayConflicts=detectConflicts(di);
     const hasConflict=Object.keys(dayConflicts).length>0;
-    return'<div class="cal-card" onclick="switchDay('+di+')" style="border-top:3px solid '+colors[di%4]+'">'+
+    return'<div class="cal-card" onclick="switchDay('+di+')" style="border-left:3px solid '+colors[di%4]+'">'+
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
       (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
       '<div class="cal-theme">'+theme+'</div>'+
@@ -2262,6 +2262,19 @@ function _checkinLink(flightNumber,airline){
   const el=document.getElementById('content-area');
   let tx=0,ty=0;
   el.addEventListener('touchstart',e=>{if(e.target.closest('#map'))return;tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
+  el.addEventListener('touchmove',e=>{
+    if(e.target.closest('#map')||e.target.closest('.card-controls'))return;
+    const dx=Math.abs(e.touches[0].clientX-tx),dy=Math.abs(e.touches[0].clientY-ty);
+    if(dx>dy&&dx>10)e.preventDefault();
+  },{passive:false});
+  const tabsBar=document.getElementById('tabs-bar');
+  if(tabsBar){let ttx=0,tty=0;
+    tabsBar.addEventListener('touchstart',e=>{ttx=e.touches[0].clientX;tty=e.touches[0].clientY;},{passive:true});
+    tabsBar.addEventListener('touchmove',e=>{
+      const dx=Math.abs(e.touches[0].clientX-ttx),dy=Math.abs(e.touches[0].clientY-tty);
+      if(dx>dy&&dx>10)e.preventDefault();
+    },{passive:false});
+  }
   el.addEventListener('touchend',e=>{
     if(e.target.closest('#map'))return;
     const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;

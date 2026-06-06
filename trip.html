@@ -44,7 +44,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .tabs{display:flex;align-items:stretch;background:transparent;overflow-x:auto;scrollbar-width:none;max-width:960px;margin:0 auto}
 .tabs::-webkit-scrollbar{display:none}
 .tab-item{display:flex;align-items:stretch;flex-shrink:0}
-.tab-btn{font-family:var(--font-ui);font-size:12px;font-weight:600;letter-spacing:0.04em;color:rgba(253,252,250,0.40);padding:11px 18px 10px;background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;transition:color 0.18s,border-color 0.18s;white-space:nowrap}
+.tab-btn{font-family:var(--font-ui);font-size:12px;font-weight:600;letter-spacing:0.04em;color:rgba(253,252,250,0.40);padding:14px 18px;min-height:44px;background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;transition:color 0.18s,border-color 0.18s;white-space:nowrap}
 .tab-btn:hover{color:rgba(253,252,250,0.72)}
 .tab-item.active .tab-btn{color:#FDFCFA}
 .tab-item.active-ruby .tab-btn{border-bottom-color:var(--ruby)}
@@ -72,13 +72,13 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .day-header p{font-family:var(--font-ui);font-size:12px;color:var(--muted);font-weight:400;margin-top:3px}
 .timeline{position:relative;padding-left:40px}
 .timeline::before{content:'';position:absolute;left:14px;top:8px;bottom:8px;width:2px;background:var(--border)}
-.stop-card{position:relative;background:var(--paper);border-radius:var(--radius-md);padding:13px 56px 13px 16px;margin-bottom:12px;border:1.5px solid var(--border);transition:box-shadow 0.17s ease,transform 0.17s ease}
+.stop-card{position:relative;background:var(--paper);border-radius:var(--radius-md);padding:13px 56px 13px 16px;margin-bottom:12px;border:1.5px solid var(--border);transition:box-shadow 0.17s ease,transform 0.17s ease;animation:cardEnter 0.25s ease both}
 .stop-card:hover{box-shadow:0 4px 18px rgba(26,35,50,0.10);transform:translateY(-1px)}
 .stop-card.alt-stop{border-style:dashed;background:#FDFEFF}
 .stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
 .dot-hike{background:#A32B2B}.dot-food{background:#8F5812}.dot-lodge{background:#1F5C3A}.dot-drive{background:#1A4F8A}.dot-flight{background:#523680}.dot-train{background:#2E3F47}
 .card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
-.card-btn{width:22px;height:22px;background:transparent;border:none;cursor:pointer;color:#9A8E82;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
+.card-btn{min-width:44px;min-height:44px;background:transparent;border:none;cursor:pointer;color:#9A8E82;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
 .card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
 .card-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
@@ -114,7 +114,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .hotel-bookend-name{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--pine)}
 .hotel-bookend-travel{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
 .hotel-bookend-dist{font-family:var(--font-ui);font-size:11px;color:var(--pine);opacity:0.85}
-.day-narr{background:linear-gradient(135deg,rgba(43,108,176,0.06) 0%,rgba(46,125,82,0.04) 100%);border:1.5px solid rgba(43,108,176,0.18);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px}
+.day-narr{background:linear-gradient(135deg,rgba(43,108,176,0.06) 0%,rgba(46,125,82,0.04) 100%);border:1.5px solid rgba(43,108,176,0.18);border-left:3px solid var(--river);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px}
 .day-narr-label{font-family:var(--font-ui);font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--river);margin-bottom:7px;display:flex;align-items:center;justify-content:space-between}
 .day-narr-body{font-family:var(--font-display);font-size:15px;font-weight:400;color:var(--ink-soft);line-height:1.65;font-style:italic;min-height:20px}
 .day-narr-body.narr-loading{color:var(--muted);font-style:normal;font-size:13px;animation:narr-pulse 1.5s ease-in-out infinite}
@@ -132,7 +132,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .add-stop-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:transparent;border:2px dashed var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:4px}
 .add-stop-btn:hover{border-color:var(--ruby);color:var(--ruby);background:var(--ruby-tint)}
 .leg-connector{display:flex;align-items:center;gap:6px;padding:3px 0;margin:-2px 0 2px 0;font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:0.01em}
-.leg-connector-arrow{color:var(--border);font-size:10px;flex-shrink:0}
+.leg-connector-arrow{color:var(--muted);font-size:10px;flex-shrink:0}
 .card-btn.edit-btn:hover{background:var(--river-tint);color:var(--river)}
 .stop-img-wrap{margin:10px -1px -1px;border-radius:0 0 var(--radius-md) var(--radius-md);overflow:hidden;height:0;transition:height 0.3s ease}
 .stop-img-wrap.loaded{height:150px}
@@ -197,6 +197,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   .dl-label{display:none}
   .dl-btn{padding:6px 8px;font-size:15px}
   .back-link{padding:6px 8px;font-size:15px}
+  .stop-card{padding-right:16px}
+  .card-top{padding-right:52px}
+}
+@media(max-width:480px){
+  #map{height:200px}
 }
 /* ---- Overview styles ---- */
 .ov-panel{padding-bottom:48px}
@@ -355,6 +360,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .ov-heading-inline{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:0.01em}
 @keyframes swipeHintAnim{0%{transform:translateX(0)}30%{transform:translateX(-18px)}70%{transform:translateX(18px)}100%{transform:translateX(0)}}
 .swipe-hint-anim{animation:swipeHintAnim 0.7s ease-in-out}
+@keyframes cardEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .cal-card{position:relative}
 .cal-conflict-dot{position:absolute;top:7px;right:8px;font-size:11px;line-height:1}
 /* Optimization score badge */

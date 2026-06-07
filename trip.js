@@ -151,22 +151,26 @@ function makeIcon(num,color,isAlt){
   return L.divIcon({html:`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z" fill="${color}" fill-opacity="${op}" stroke="white" stroke-width="1.5"/><text x="15" y="16" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="11" font-weight="800" font-family="sans-serif">${num}</text></svg>`,className:'',iconSize:[30,36],iconAnchor:[15,36],popupAnchor:[0,-38]});
 }
 
-function bezierArc(p1,p2,steps=80){
-  const [la1,lo1]=p1,[la2,lo2]=p2;
-  const mla=(la1+la2)/2,mlo=(lo1+lo2)/2;
-  const dla=la2-la1,dlo=lo2-lo1;
-  const dist=Math.sqrt(dla*dla+dlo*dlo);
-  const curve=dist*0.4;
-  const cla=mla+(-dlo/dist*curve),clo=mlo+(dla/dist*curve);
+function greatCirclePoints(p1,p2,steps=80){
+  const toR=d=>d*Math.PI/180,toD=r=>r*180/Math.PI;
+  const la1=toR(p1[0]),lo1=toR(p1[1]),la2=toR(p2[0]),lo2=toR(p2[1]);
   const pts=[];
-  for(let i=0;i<=steps;i++){const t=i/steps;pts.push([(1-t)*(1-t)*la1+2*(1-t)*t*cla+t*t*la2,(1-t)*(1-t)*lo1+2*(1-t)*t*clo+t*t*lo2]);}
+  for(let i=0;i<=steps;i++){
+    const f=i/steps;
+    const d=2*Math.asin(Math.sqrt(Math.sin((la2-la1)/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin((lo2-lo1)/2)**2));
+    if(d<0.0001){pts.push([toD(la1),toD(lo1)]);continue;}
+    const A=Math.sin((1-f)*d)/Math.sin(d),B=Math.sin(f*d)/Math.sin(d);
+    const x=A*Math.cos(la1)*Math.cos(lo1)+B*Math.cos(la2)*Math.cos(lo2);
+    const y=A*Math.cos(la1)*Math.sin(lo1)+B*Math.cos(la2)*Math.sin(lo2);
+    const z=A*Math.sin(la1)+B*Math.sin(la2);
+    pts.push([toD(Math.atan2(z,Math.sqrt(x*x+y*y))),toD(Math.atan2(y,x))]);
+  }
   return pts;
 }
 
 async function fetchRoute(stops){
   const rs=stops.filter((s,i)=>{
-    if(s.alt||!s.lat||!s.lng)return false;
-    if(s.type==='flight'){const nx=stops[i+1];return !nx||nx.type!=='flight';}
+    if(s.alt||!s.lat||!s.lng||s.type==='flight')return false;
     return true;
   });
   if(rs.length<2)return null;
@@ -195,8 +199,8 @@ async function renderDayMap(idx){
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   for(let i=0;i<day.stops.length-1;i++){
     const a=day.stops[i],b=day.stops[i+1];
-    if(a.type==='flight'&&b.type==='flight'&&a.lat&&b.lat){
-      L.polyline(bezierArc([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
+    if(a.type==='flight'&&a.lat&&b.lat){
+      L.polyline(greatCirclePoints([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
     }
   }
   try{
@@ -555,7 +559,18 @@ function renderNarrHtml(text){
 
 function dayNarrKey(dayIdx){
   const day=state.days[dayIdx];if(!day)return null;
-  const sig=day.title+'|'+day.stops.map(s=>s.name+(s.notes||'')).join('|');
+  const sub=day.subtitle||'';
+  const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
+  let dateTag='';
+  if(datePart){
+    const d=new Date(datePart+' 12:00');
+    if(!isNaN(d.getTime())){
+      const today=new Date();today.setHours(0,0,0,0);
+      const diff=Math.round((d-today)/86400000);
+      if(diff>=0&&diff<=16)dateTag='|'+new Date().toISOString().slice(0,10);
+    }
+  }
+  const sig=day.title+dateTag+'|'+day.stops.map(s=>s.name+(s.notes||'')).join('|');
   let h=0;for(let i=0;i<sig.length;i++)h=(h*31+sig.charCodeAt(i))&0xFFFFFFFF;
   return tripId+'_'+dayIdx+'_'+h.toString(36);
 }
@@ -1727,22 +1742,35 @@ function saveJnlStopRating(di,si,r){
   for(let k=1;k<=5;k++){const el=document.getElementById('js_'+di+'_'+si+'_'+k);if(el)el.classList.toggle('lit',k<=r);}
 }
 function saveJnlDayEntry(di,v){jnlData['d_'+di]=v;_saveJnl();}
+function _jnlStarsHtml(di,si,rat){
+  return[1,2,3,4,5].map(k=>'<span class="jstar'+(k<=rat?' lit':'')+'" id="js_'+di+'_'+si+'_'+k+'" onclick="saveJnlStopRating('+di+','+si+','+k+')">&#9733;</span>').join('');
+}
 function _jnlStopHtml(di,si){
   const note=jnlData['n_'+di+'_'+si]||'';
   const rat=jnlData['r_'+di+'_'+si]||0;
-  const stars=[1,2,3,4,5].map(k=>'<span class="jstar'+(k<=rat?' lit':'')+'" id="js_'+di+'_'+si+'_'+k+'" onclick="saveJnlStopRating('+di+','+si+','+k+')">&#9733;</span>').join('');
+  if(!note&&!rat)return'<div class="journal-section"><button class="jnl-add-btn" onclick="expandJnl(this,'+di+','+si+')">&#9997; Add memory</button></div>';
   return'<div class="journal-section">'+
     '<div class="journal-sec-label">&#9997; Journal</div>'+
     '<textarea class="journal-textarea" placeholder="How was it? Any memories..." oninput="saveJnlStopNote('+di+','+si+',this.value)">'+_escHtml(note)+'</textarea>'+
-    '<div class="journal-stars">'+stars+'<span style="font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-left:7px">Worth it?</span></div>'+
+    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-left:7px">Worth it?</span></div>'+
     '</div>';
 }
 function _jnlDayHtml(di){
   const entry=jnlData['d_'+di]||'';
+  if(!entry)return'';
   return'<div class="day-journal-wrap">'+
     '<div class="day-journal-lbl">&#9997; Day '+(di+1)+' Memories</div>'+
     '<textarea class="journal-textarea" style="min-height:85px" placeholder="Overall day memories..." oninput="saveJnlDayEntry('+di+',this.value)">'+_escHtml(entry)+'</textarea>'+
     '</div>';
+}
+function expandJnl(btn,di,si){
+  const note=jnlData['n_'+di+'_'+si]||'';
+  const rat=jnlData['r_'+di+'_'+si]||0;
+  const sec=btn.closest('.journal-section');
+  sec.innerHTML='<div class="journal-sec-label">&#9997; Journal</div>'+
+    '<textarea class="journal-textarea" placeholder="How was it? Any memories..." oninput="saveJnlStopNote('+di+','+si+',this.value)">'+_escHtml(note)+'</textarea>'+
+    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-left:7px">Worth it?</span></div>';
+  sec.querySelector('textarea').focus();
 }
 function _tripHighlightsHtml(){
   const rated=[];
@@ -2259,26 +2287,22 @@ function _checkinLink(flightNumber,airline){
 
 /* --- Swipe Gestures --- */
 (function(){
-  const el=document.getElementById('content-area');
-  let tx=0,ty=0;
-  el.addEventListener('touchstart',e=>{if(e.target.closest('#map'))return;tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
-  el.addEventListener('touchmove',e=>{
-    if(e.target.closest('#map')||e.target.closest('.card-controls'))return;
+  let tx=0,ty=0,live=false;
+  const skip=e=>!!e.target.closest('#map,.modal,.modal-overlay,textarea,input,select,.card-controls,[data-no-swipe]');
+  document.addEventListener('touchstart',e=>{
+    if(skip(e))return;
+    tx=e.touches[0].clientX;ty=e.touches[0].clientY;live=true;
+  },{passive:true});
+  document.addEventListener('touchmove',e=>{
+    if(!live||skip(e))return;
     const dx=Math.abs(e.touches[0].clientX-tx),dy=Math.abs(e.touches[0].clientY-ty);
-    if(dx>dy&&dx>10)e.preventDefault();
+    if(dx>dy&&dx>15)e.preventDefault();
   },{passive:false});
-  const tabsBar=document.getElementById('tabs-bar');
-  if(tabsBar){let ttx=0,tty=0;
-    tabsBar.addEventListener('touchstart',e=>{ttx=e.touches[0].clientX;tty=e.touches[0].clientY;},{passive:true});
-    tabsBar.addEventListener('touchmove',e=>{
-      const dx=Math.abs(e.touches[0].clientX-ttx),dy=Math.abs(e.touches[0].clientY-tty);
-      if(dx>dy&&dx>10)e.preventDefault();
-    },{passive:false});
-  }
-  el.addEventListener('touchend',e=>{
-    if(e.target.closest('#map'))return;
+  document.addEventListener('touchend',e=>{
+    if(!live)return;live=false;
+    if(skip(e))return;
     const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
-    if(Math.abs(dx)<50||Math.abs(dy)>30)return;
+    if(Math.abs(dx)<40||Math.abs(dy)>60)return;
     if(currentDayIdx===-1)return;
     if(dx<0&&currentDayIdx<state.days.length-1)switchDay(currentDayIdx+1);
     else if(dx>0&&currentDayIdx>0)switchDay(currentDayIdx-1);

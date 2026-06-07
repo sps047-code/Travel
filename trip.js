@@ -514,12 +514,31 @@ try{narrData=JSON.parse(localStorage.getItem(NARR_LS)||'{}')}catch(e){}
 
 const WX_ICONS={0:'☀️',1:'🌤️',2:'🌤️',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌦️',63:'🌧️',65:'🌧️',71:'🌨️',73:'❄️',75:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',85:'🌨️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
 const WX_LABELS={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Freezing fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',80:'Rain showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
+/* Parse "Sun Jun 7", "Jun 7", "June 7, 2026", etc. — infers year from closest to today */
+function _parseTripDate(str){
+  if(!str)return null;
+  // Try direct ISO-friendly parse first (handles "June 7, 2026" etc.)
+  let d=new Date(str+' 12:00:00');
+  if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getFullYear()<=2040)return d;
+  // Extract month name + day number (handles "Sun Jun 7", "Mon January 15", etc.)
+  const m=str.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);
+  if(!m)return null;
+  const now=new Date();now.setHours(12,0,0,0);
+  let best=null,bestGap=Infinity;
+  for(const yr of[now.getFullYear()-1,now.getFullYear(),now.getFullYear()+1]){
+    const c=new Date(m[1]+' '+m[2]+', '+yr+' 12:00:00');
+    if(isNaN(c.getTime())||c.getFullYear()<2020)continue;
+    const gap=Math.abs(c-now);
+    if(gap<bestGap){bestGap=gap;best=c;}
+  }
+  return best;
+}
 async function fetchDayWeather(day){
   const sub=day.subtitle||'';
   const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
   if(!datePart)return null;
-  const date=new Date(datePart+' 12:00');
-  if(isNaN(date.getTime())||date.getFullYear()<2020)return null;
+  const date=_parseTripDate(datePart);
+  if(!date)return null;
   const coords=day.stops.find(s=>s.lat&&s.lng);
   if(!coords)return null;
   const today=new Date();today.setHours(0,0,0,0);
@@ -564,11 +583,11 @@ function dayNarrKey(dayIdx){
   const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
   let dateTag='';
   if(datePart){
-    const d=new Date(datePart+' 12:00');
-    if(!isNaN(d.getTime())){
+    const d=_parseTripDate(datePart);
+    if(d){
       const today=new Date();today.setHours(0,0,0,0);
       const diff=Math.round((d-today)/86400000);
-      if(diff>=0&&diff<=16)dateTag='|'+new Date().toISOString().slice(0,10);
+      if(diff>=-5&&diff<=16)dateTag='|'+new Date().toISOString().slice(0,10);
     }
   }
   const sig=day.title+dateTag+'|'+day.stops.map(s=>s.name+(s.notes||'')).join('|');

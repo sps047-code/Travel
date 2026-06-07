@@ -422,8 +422,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .ticket-view-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;background:#f3eefa;color:#7B5EA7;border:1px solid rgba(123,94,167,0.25);border-radius:20px;font-family:var(--font-ui);font-size:10px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-top:6px}
 .ticket-view-btn:hover{background:#7B5EA7;color:white}
 /* === Ticket full-screen viewer === */
-#ticket-viewer{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;padding:16px}
-#ticket-viewer-img{max-width:96vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,0.5);object-fit:contain}
+#ticket-viewer{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#ticket-viewer-img{max-width:96vw;max-height:82vh;width:auto;height:auto;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,0.5);object-fit:contain;touch-action:pinch-zoom}
 #ticket-viewer-close{margin-top:14px;background:rgba(255,255,255,0.15);border:none;color:white;padding:10px 28px;border-radius:20px;font-family:var(--font-ui);font-size:14px;cursor:pointer;transition:background 0.18s}
 #ticket-viewer-close:hover{background:rgba(255,255,255,0.3)}
 /* === Restaurant Alternates === */

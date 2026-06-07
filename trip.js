@@ -158,8 +158,24 @@ function showTicketViewer(di,si){
   const s=state.days[di].stops[si];if(!s||!s.ticketImage)return;
   const mime=(s.ticketImage.match(/^data:([^;]+)/)||[])[1]||'';
   if(!mime.startsWith('image/')){
-    const a=document.createElement('a');a.href=s.ticketImage;
-    a.download=s.ticketFileName||'ticket';a.click();return;
+    // Use Blob URL + window.open — works on iOS; a.click() download doesn't
+    try{
+      const b64=s.ticketImage.split(',')[1];
+      const bytes=atob(b64);const arr=new Uint8Array(bytes.length);
+      for(let i=0;i<bytes.length;i++)arr[i]=bytes.charCodeAt(i);
+      const blob=new Blob([arr],{type:mime});
+      const url=URL.createObjectURL(blob);
+      const win=window.open(url,'_blank');
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      if(!win){// popup blocked — fall back to link click
+        const a=document.createElement('a');a.href=url;a.download=s.ticketFileName||'ticket';
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+      }
+    }catch(e){
+      const a=document.createElement('a');a.href=s.ticketImage;
+      a.download=s.ticketFileName||'ticket';document.body.appendChild(a);a.click();document.body.removeChild(a);
+    }
+    return;
   }
   document.getElementById('ticket-viewer-img').src=s.ticketImage;
   document.getElementById('ticket-viewer').style.display='flex';

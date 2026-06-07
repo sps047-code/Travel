@@ -440,6 +440,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .alt-use-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s}
 .alt-use-btn:hover{background:#1a6640}
 .recently-changed-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-left:5px;vertical-align:middle;flex-shrink:0;cursor:help}
+/* === Tab drag reorder === */
+.tab-item[draggable=true]{cursor:grab}
+.tab-item[draggable=true].dragging{opacity:0.3;cursor:grabbing}
+.tab-item[draggable=true].drag-over{background:rgba(253,252,250,0.12);border-radius:4px 4px 0 0}
 </style>
 </head>
 <body>

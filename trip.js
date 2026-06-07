@@ -20,6 +20,7 @@ const FIREBASE_CONFIG = {
 let state,currentDayIdx=0,addingToDay=0,editingStop=null;
 let _optDayIdx=-1,_optLastData=null,_lastUndoFn=null,_optUndoTimer=null;
 let _altDayIdx=-1,_altStopIdx=-1,_altResults=[];
+let _dragDayFrom=-1;
 function saveState(changeDesc=''){
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   if(getTripType()==='family')_syncFamily(changeDesc);
@@ -289,6 +290,7 @@ function renderTabs(){
     const accentClass=['ruby','pine','river'][i%3];
     const item=document.createElement('div');
     item.className='tab-item'+(i===currentDayIdx?' active active-'+accentClass:'');
+    item.setAttribute('draggable','true');item.dataset.dayIdx=i;
     item.innerHTML='<button class="tab-move" onclick="moveDay('+i+',-1)" '+(i===0?'disabled':'')+'>&#8592;</button><button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-move" onclick="moveDay('+i+',1)" '+(i===state.days.length-1?'disabled':'')+'>&#8594;</button><button class="tab-remove" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
     bar.appendChild(item);
   });
@@ -2492,6 +2494,49 @@ if(IS_READONLY){
 
 /* ===== END FEATURE EXTENSIONS ===== */
 
+function _moveDayTo(from,to){
+  if(from===to||from<0||to<0||from>=state.days.length||to>=state.days.length)return;
+  const [d]=state.days.splice(from,1);
+  state.days.splice(to,0,d);
+  if(currentDayIdx===from)currentDayIdx=to;
+  else if(from<to&&currentDayIdx>from&&currentDayIdx<=to)currentDayIdx--;
+  else if(from>to&&currentDayIdx>=to&&currentDayIdx<from)currentDayIdx++;
+  saveState('Reordered days');renderAll();
+  if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+}
+function _setupTabDrag(){
+  const bar=document.getElementById('tabs-inner');if(!bar||bar._dnd)return;bar._dnd=true;
+  bar.addEventListener('dragstart',e=>{
+    const it=e.target.closest('[data-day-idx]');if(!it)return;
+    _dragDayFrom=parseInt(it.dataset.dayIdx);
+    setTimeout(()=>it.classList.add('dragging'),0);
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',String(_dragDayFrom));
+  });
+  bar.addEventListener('dragover',e=>{
+    const it=e.target.closest('[data-day-idx]');
+    if(!it||parseInt(it.dataset.dayIdx)===_dragDayFrom)return;
+    e.preventDefault();
+    bar.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+    it.classList.add('drag-over');
+  });
+  bar.addEventListener('dragleave',e=>{
+    if(!bar.contains(e.relatedTarget))bar.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  });
+  bar.addEventListener('dragend',()=>{
+    bar.querySelectorAll('.dragging,.drag-over').forEach(el=>el.classList.remove('dragging','drag-over'));
+    _dragDayFrom=-1;
+  });
+  bar.addEventListener('drop',e=>{
+    e.preventDefault();
+    const it=e.target.closest('[data-day-idx]');
+    const to=it?parseInt(it.dataset.dayIdx):-1;
+    bar.querySelectorAll('.dragging,.drag-over').forEach(el=>el.classList.remove('dragging','drag-over'));
+    if(_dragDayFrom>=0&&to>=0&&_dragDayFrom!==to)_moveDayTo(_dragDayFrom,to);
+    _dragDayFrom=-1;
+  });
+}
+
 async function init(){
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
@@ -2549,7 +2594,7 @@ async function init(){
       if(changed){saveState();localStorage.removeItem('stop_desc_v1');}
     }
   }catch(e){}
-  renderAll();renderOverviewMap();loadTimezones();
+  renderAll();renderOverviewMap();loadTimezones();_setupTabDrag();
   _updateTypeBadge();
   if(isJournalMode()){const b=document.getElementById('journal-mode-banner');if(b)b.classList.add('on');}
   document.getElementById('ai-grader-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});

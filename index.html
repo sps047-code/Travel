@@ -795,25 +795,58 @@ function closeImport(){
   if(_settingsOpener)_settingsOpener.focus();
 }
 
+async function _extractPdfText(base64Data){
+  if(!window.pdfjsLib){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload=res;s.onerror=rej;document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const raw=atob(base64Data);
+  const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+  const pdf=await window.pdfjsLib.getDocument({data:arr}).promise;
+  let text='';
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const content=await page.getTextContent();
+    text+=content.items.map(it=>it.str).join(' ')+'\n';
+  }
+  return text.trim();
+}
+
 function handleFileUpload(e){
   const file=e.target.files[0];if(!file)return;
   const isPdf=file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf');
-  const reader=new FileReader();
+  const label=document.getElementById('upload-label');
+  const ta=document.getElementById('import-text');
   if(isPdf){
-    reader.onload=ev=>{
-      _pendingImportPdf=ev.target.result.split(',')[1];
-      document.getElementById('import-text').value='';
-      document.getElementById('import-text').placeholder='PDF loaded — click Import to parse it.';
-      document.getElementById('upload-label').classList.add('has-file');
-      document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
+    _pendingImportPdf=null;
+    const reader=new FileReader();
+    reader.onload=async ev=>{
+      label.classList.add('has-file');
+      label.childNodes[0].textContent='⏳ '+file.name+' ';
+      ta.value='';ta.placeholder='Extracting PDF text…';
+      try{
+        const base64=ev.target.result.split(',')[1];
+        const text=await _extractPdfText(base64);
+        ta.value=text;ta.placeholder='Paste your itinerary here…';
+        label.childNodes[0].textContent='✓ '+file.name+' ';
+      }catch(err){
+        ta.placeholder='Could not read PDF — try copy-pasting the text instead.';
+        label.childNodes[0].textContent='⚠ '+file.name+' ';
+      }
     };
     reader.readAsDataURL(file);
   }else{
     _pendingImportPdf=null;
+    const reader=new FileReader();
     reader.onload=ev=>{
-      document.getElementById('import-text').value=ev.target.result;
-      document.getElementById('upload-label').classList.add('has-file');
-      document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
+      ta.value=ev.target.result;
+      label.classList.add('has-file');
+      label.childNodes[0].textContent='✓ '+file.name+' ';
     };
     reader.readAsText(file);
   }
@@ -821,24 +854,11 @@ function handleFileUpload(e){
 
 async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
-  if(!text&&!_pendingImportPdf){showErr('import-error','Please paste your itinerary text or upload a file.');return}
+  if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
-    let resp;
-    if(_pendingImportPdf){
-      const res=await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({system:IMPORT_SYSTEM,messages:[{role:'user',content:[
-          {type:'document',source:{type:'base64',media_type:'application/pdf',data:_pendingImportPdf}},
-          {type:'text',text:'Parse this itinerary PDF.'}
-        ]}]})});
-      if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error('AI error: '+(d.error?.message||'HTTP '+res.status));}
-      const data=await res.json();
-      resp=data.content?.[0]?.text||'';
-      _pendingImportPdf=null;
-    }else{
-      resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
-    }
+    const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
     const parsed=parseJsonResponse(resp);
     const allParsedStops=(parsed.days||[]).reduce((n,d)=>n+(d.stops||[]).length,0);
     if(!parsed.days||!parsed.days.length||allParsedStops===0)throw new Error('No stops found in the text. Check that the content contains booking or itinerary details and try again.');

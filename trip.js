@@ -1264,7 +1264,7 @@ function _fmtDateWithYear(str){
   if(!str)return str;
   const d=new Date(str+' 12:00');
   if(isNaN(d))return str;
-  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 }
 function _dayDateLabel(di){
   const sub=(state.days[di]?.subtitle||'').split(/\s*[·•]\s*/)[0].trim();

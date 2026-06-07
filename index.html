@@ -454,23 +454,29 @@ const IMPORT_SCHEMA=`CRITICAL: Respond with a single raw JSON object only. No ma
       "subtitle": "Thu Jul 30 • Theme",
       "tip": "",
       "stops": [
-        {"name":"Stop Name","lat":51.5074,"lng":-0.1278,"type":"hike","time":"9:00 AM","stars":null,"notes":""}
+        {"name":"Stop Name","lat":51.5074,"lng":-0.1278,"type":"drive","time":"5:30pm","date":"2026-08-06","reservation":"ABC123","from":"Origin","to":"Destination","notes":""}
       ]
     }
   ]
 }
 
 Rules:
-1. Include EVERY stop mentioned in the source text — do not skip any
-2. "type": hike, food, lodge, drive, flight, or train
+1. Include EVERY stop, booking, or reservation mentioned — do not skip any
+2. "type": hike, food, lodge, drive, flight, train, or bus
 3. "lat"/"lng": real numeric WGS84 coordinates — never 0, never the word "latitude"
-4. "time": copy from source text if present, otherwise ""
-5. "notes": "" — do not generate descriptions, leave blank
-6. "stars": null always
-7. "tip": "" always — do not generate tips
-8. Return ONLY the JSON`;
+4. "time": copy from source text if present (pick-up time, departure, check-in, etc.), otherwise ""
+5. "date": ISO date string "YYYY-MM-DD" if a specific date is mentioned, otherwise ""
+6. "reservation": copy the confirmation/booking/reservation number exactly if present, otherwise ""
+7. "from"/"to": copy origin/destination city or location if present (for drives, flights, trains), otherwise ""
+8. "notes": "" — do not generate descriptions, leave blank
+9. "stars": null always
+10. "tip": "" always — do not generate tips
+11. For a car rental: create one stop at pick-up with type "drive", include confirmation number, from/to locations, and pick-up time
+12. For a hotel: type "lodge", include confirmation number and check-in time
+13. For flights: type "flight", include confirmation and departure time
+14. Return ONLY the JSON`;
 
-const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary. Your only job is to identify every day, every stop, its location coordinates, type, and time. Do not generate any descriptions or tips — leave notes and tip blank. `+IMPORT_SCHEMA;
+const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary or booking confirmation. Parse every event, stop, booking, or reservation into the structured format — including car rentals, hotels, flights, tours, and activities. Do not generate descriptions or tips. `+IMPORT_SCHEMA;
 
 const LOADING_MSGS=['Mapping your days…','Finding the best stops…','Building your itinerary…'];
 const GROUP_SIZE={'just the two of us':2,'family with kids':4,'family without kids':2,'friends group':4,'solo adventure':1};
@@ -834,7 +840,8 @@ async function importTrip(){
       resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
     }
     const parsed=parseJsonResponse(resp);
-    if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
+    const allParsedStops=(parsed.days||[]).reduce((n,d)=>n+(d.stops||[]).length,0);
+    if(!parsed.days||!parsed.days.length||allParsedStops===0)throw new Error('No stops found in the text. Check that the content contains booking or itinerary details and try again.');
     if(targetId){
       let existing=null;
       const saved=localStorage.getItem('tripState_'+targetId);
@@ -844,7 +851,26 @@ async function importTrip(){
         if(meta&&!meta.local){const r=await fetch('trips/'+targetId+'.json');existing=await r.json();}
       }
       if(!existing)throw new Error('Could not load the existing trip. Please try again.');
-      existing.days=[...existing.days,...parsed.days];
+      // Merge stops into matching days by date; only add a new day if no date match found
+      const _isoFromSubtitle=sub=>{if(!sub)return'';const p=sub.split(/\s*[·•]\s*/)[0].trim();const d=new Date(p+' 12:00');return isNaN(d)?'':(d.toISOString().slice(0,10));};
+      parsed.days.forEach(pd=>{
+        const allStops=pd.stops||[];
+        // group stops by their date field; stops without a date go into the day's own date bucket
+        const dayDate=_isoFromSubtitle(pd.subtitle);
+        allStops.forEach(st=>{
+          const stDate=st.date||dayDate;
+          delete st.date; // clean up before storing
+          // find matching day in existing trip
+          const match=stDate?existing.days.find(ed=>_isoFromSubtitle(ed.subtitle)===stDate):null;
+          if(match){match.stops.push(st);}
+          else{
+            // no date match — find or create a day with this pd title
+            let bucket=existing.days.find(ed=>ed.title===pd.title);
+            if(!bucket){bucket={title:pd.title,subtitle:pd.subtitle||'',tip:'',stops:[]};existing.days.push(bucket);}
+            bucket.stops.push(st);
+          }
+        });
+      });
       localStorage.setItem('tripState_'+targetId,JSON.stringify(existing));
       hideLoading();window.location.href='trip.html?id='+targetId;
     }else{

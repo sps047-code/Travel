@@ -1171,12 +1171,15 @@ function _chkItemHtml(item){
     '</div></div>';
 }
 
+function _fmtDateWithYear(str){
+  if(!str)return str;
+  const d=new Date(str+' 12:00');
+  if(isNaN(d))return str;
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
 function _dayDateLabel(di){
   const sub=(state.days[di]?.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
-  if(!sub)return'';
-  const d=new Date(sub+' 12:00');
-  if(isNaN(d))return'';
-  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return _fmtDateWithYear(sub);
 }
 
 function generateChecklist(){
@@ -1280,7 +1283,7 @@ function renderOverview(){
     const hasConflict=Object.keys(dayConflicts).length>0;
     return'<div class="cal-card" onclick="switchDay('+di+')" style="border-left:3px solid '+colors[di%4]+'">'+
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
-      (datePart?'<div class="cal-date">'+datePart+'</div>':'')+
+      (datePart?'<div class="cal-date">'+_fmtDateWithYear(datePart)+'</div>':'')+
       '<div class="cal-theme">'+theme+'</div>'+
       '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
       (hasConflict?'<div class="cal-conflict-dot" title="Timing issues detected">&#9888;</div>':'')+
@@ -1293,7 +1296,7 @@ function renderOverview(){
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+
-      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+datePart+'</span>':'')+'</div>'+
+      '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+_fmtDateWithYear(datePart)+'</span>':'')+'</div>'+
       '<div class="lodge-info"><div class="lodge-name">'+nm+(s.reservation?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';

@@ -517,10 +517,13 @@ const WX_LABELS={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',4
 /* Parse "Sun Jun 7", "Jun 7", "June 7, 2026", etc. — infers year from closest to today */
 function _parseTripDate(str){
   if(!str)return null;
-  // Try direct ISO-friendly parse first (handles "June 7, 2026" etc.)
-  let d=new Date(str+' 12:00:00');
-  if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getFullYear()<=2040)return d;
-  // Extract month name + day number (handles "Sun Jun 7", "Mon January 15", etc.)
+  // For strings with explicit 4-digit year, parse directly
+  if(/\b\d{4}\b/.test(str)){
+    const d=new Date(str+' 12:00:00');
+    if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getFullYear()<=2040)return d;
+  }
+  // No explicit year: extract month+day and infer year closest to today
+  // (avoids V8's quirky behavior parsing "Sun Jun 7" which picks wrong past years)
   const m=str.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);
   if(!m)return null;
   const now=new Date();now.setHours(12,0,0,0);
@@ -1755,8 +1758,11 @@ function isJournalMode(){
   const last=state.days[state.days.length-1];
   const dp=(last.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
   if(!dp)return false;
-  const d=new Date(dp+' 23:59');
-  return!isNaN(d)&&d<new Date();
+  const d=_parseTripDate(dp);
+  if(!d)return false;
+  const today=new Date();today.setHours(0,0,0,0);
+  d.setHours(0,0,0,0);
+  return d<today;
 }
 function saveJnlStopNote(di,si,v){jnlData['n_'+di+'_'+si]=v;_saveJnl();}
 function saveJnlStopRating(di,si,r){

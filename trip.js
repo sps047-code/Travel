@@ -439,7 +439,10 @@ function renderPanel(idx){
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
     '<div><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
-    '<button class="ai-action-btn" onclick="optimizeDay('+idx+')" style="margin-top:2px;flex-shrink:0">&#10024; Optimize Day</button>'+
+    '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:2px">'+
+    '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
+    '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
+    '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
     renderDaySummary(day,idx)+
@@ -2345,6 +2348,86 @@ function _checkinLink(flightNumber,airline){
     },1200);
   }
 })();
+
+/* --- Travel Departure Alerts --- */
+let _alertTimers=[];
+
+function _travelAlertMins(a,b,mode){
+  if(!a?.lat||!a?.lng||!b?.lat||!b?.lng)return 0;
+  const dist=haversine(a.lat,a.lng,b.lat,b.lng);
+  const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
+  return Math.round(dist/(speeds[mode]||0.5));
+}
+
+async function enableTravelAlerts(dayIdx){
+  const day=state.days[dayIdx];
+  if(!day||!day.stops.length){showToast('No stops to alert for');return;}
+  if(!('Notification' in window)){showToast('Notifications not supported on this browser');return;}
+
+  let perm=Notification.permission;
+  if(perm==='default')perm=await Notification.requestPermission();
+  if(perm!=='granted'){showToast('Allow notifications in browser settings to use travel alerts');return;}
+
+  // Only works for today
+  const dpStr=(day.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
+  const dayDate=_parseTripDate(dpStr);
+  const today=new Date();today.setHours(0,0,0,0);
+  if(dayDate)dayDate.setHours(0,0,0,0);
+  if(!dayDate||dayDate.getTime()!==today.getTime()){
+    showToast('Travel alerts work for today\'s day only');return;
+  }
+
+  // Cancel any previously scheduled alerts
+  _alertTimers.forEach(clearTimeout);_alertTimers=[];
+
+  const now=new Date();
+  const stops=day.stops.filter(s=>!s.alt);
+  let scheduled=0;
+
+  for(let si=1;si<stops.length;si++){
+    const curr=stops[si],prev=stops[si-1];
+    if(!curr.time)continue;
+    const arrMins=_parseTimeMins(curr.time);
+    if(arrMins===null)continue;
+
+    const rawMode=prev.transitMode||_defaultTransitMode(prev,curr);
+    const mode=rawMode==='subway'?'train':rawMode;
+    const travelMins=_travelAlertMins(prev,curr,mode);
+    // Alert 10 min before you need to leave (so departure = arrMins - travelMins - 10)
+    const fireAt=new Date(today);
+    fireAt.setMinutes(arrMins-travelMins-10);
+    const delay=fireAt-now;
+    if(delay<0)continue;  // already past
+
+    const leg=legLabel(prev,curr,mode);
+    const icon=TM_ICON[mode]||'🚗';
+    const body=leg?leg+' · '+(TM_LABEL[mode]||'Drive'):(TM_LABEL[mode]||'Drive')+' ahead';
+
+    const t=setTimeout(async()=>{
+      try{
+        const reg=await navigator.serviceWorker.ready;
+        reg.showNotification(icon+' Leave for '+curr.name,{
+          body,
+          icon:'/Travel/icon-192.png',
+          badge:'/Travel/icon-192.png',
+          tag:'depart-'+dayIdx+'-'+si,
+          data:{url:'trip.html?id='+tripId},
+          vibrate:[200,100,200]
+        });
+      }catch(e){
+        if(Notification.permission==='granted')
+          new Notification(icon+' Leave for '+curr.name,{body,icon:'/Travel/icon-192.png'});
+      }
+    },delay);
+    _alertTimers.push(t);
+    scheduled++;
+  }
+
+  if(!scheduled){showToast('No upcoming timed stops to alert for');return;}
+  showToast('&#128276; '+scheduled+' departure alert'+(scheduled>1?'s':'')+' set for today — keep this tab open');
+  const btn=document.getElementById('alerts-btn-'+dayIdx);
+  if(btn){btn.style.background='var(--ruby)';btn.style.color='white';btn.textContent='&#128276; Alerts On';}
+}
 
 /* --- Read-Only Mode --- */
 if(IS_READONLY){

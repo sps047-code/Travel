@@ -123,7 +123,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .wiz-nokey-note a:hover{text-decoration:underline}
 .wiz-error{background:rgba(194,59,59,0.09);border:1.5px solid rgba(194,59,59,0.28);border-radius:var(--radius-md);padding:13px 16px;margin-top:18px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);line-height:1.5;display:none}
 .wiz-error.visible{display:block}
-.wiz-nav{display:flex;gap:10px;margin-top:28px;align-items:center}
+.wiz-nav{display:flex;gap:10px;margin-top:24px;align-items:center}
+.wiz-notif-row{display:flex;align-items:center;gap:8px;margin-top:14px;font-family:var(--font-ui);font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
 .btn-back{padding:12px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap}
 .btn-back:hover{border-color:var(--ruby);color:var(--ruby)}
 .btn-primary{flex:1;padding:13px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.2s;letter-spacing:0.02em}
@@ -262,31 +263,29 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   <div class="modal-card">
     <button class="modal-close" onclick="closeWizard()" aria-label="Close wizard">&times;</button>
     <div class="wiz-progress" aria-label="Wizard progress">
-      <div class="wiz-prog-track"><div class="wiz-prog-fill" id="wiz-prog-fill" style="width:16.7%"></div></div>
-      <div class="wiz-prog-label" id="wiz-prog-label">Step 1 of 6 — Destination</div>
+      <div class="wiz-prog-track"><div class="wiz-prog-fill" id="wiz-prog-fill" style="width:33.3%"></div></div>
+      <div class="wiz-prog-label" id="wiz-prog-label">Step 1 of 3 — Destination</div>
     </div>
 
     <div class="wiz-step active" id="wstep-1">
       <span class="wiz-emoji" aria-hidden="true">&#127758;</span>
-      <div class="wiz-question">Where are you headed?</div>
+      <div class="wiz-question">Where &amp; when?</div>
       <input type="text" class="wiz-input" id="w-dest" placeholder="Utah&#8217;s national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
-      <div class="wiz-sublabel">When are you going?</div>
+      <div class="wiz-sublabel">Dates (optional)</div>
       <div class="wiz-date-row">
         <input type="date" class="wiz-input-date" id="w-start" aria-label="Start date"/>
         <div class="wiz-date-sep" aria-hidden="true">to</div>
         <input type="date" class="wiz-input-date" id="w-end" aria-label="End date"/>
       </div>
-    </div>
-
-    <div class="wiz-step" id="wstep-2">
-      <span class="wiz-emoji" aria-hidden="true">&#128197;</span>
-      <div class="wiz-question">How long is the trip?</div>
-      <div class="stepper" id="days-stepper" role="group" aria-label="Number of days">
-        <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)" aria-label="Fewer days">&#8722;</button>
-        <div class="stepper-val" id="days-val" aria-live="polite" aria-atomic="true">3</div>
-        <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)" aria-label="More days">+</button>
+      <div class="wiz-sublabel">How long?</div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div class="stepper" id="days-stepper" role="group" aria-label="Number of days">
+          <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)" aria-label="Fewer days">&#8722;</button>
+          <div class="stepper-val" id="days-val" aria-live="polite" aria-atomic="true">3</div>
+          <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)" aria-label="More days">+</button>
+        </div>
+        <span style="font-family:var(--font-ui);font-size:13px;color:var(--muted)" id="days-label">days</span>
       </div>
-      <div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-top:8px" id="days-label">days</div>
       <div class="wiz-sublabel">Who&#8217;s coming?</div>
       <div class="chip-row" id="who-chips" role="group" aria-label="Travel group">
         <button class="chip" data-group="who" data-val="just the two of us">Just the two of us</button>
@@ -297,9 +296,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
 
-    <div class="wiz-step" id="wstep-3">
-      <span class="wiz-emoji" aria-hidden="true">&#127752;</span>
-      <div class="wiz-question">What do you love? Pick all that apply.</div>
+    <div class="wiz-step" id="wstep-2">
+      <span class="wiz-emoji" aria-hidden="true">&#9889;</span>
+      <div class="wiz-question">Interests &amp; style</div>
+      <div class="wiz-sublabel">What do you love? Pick all that apply.</div>
       <div class="chip-row" id="activities-chips" role="group" aria-label="Interests">
         <button class="chip multi" data-val="hiking and national parks">&#129097; Hiking &amp; Parks</button>
         <button class="chip multi" data-val="fine dining and local food">&#127829; Fine Dining</button>
@@ -307,14 +307,10 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <button class="chip multi" data-val="scenic drives and road trips">&#128663; Scenic Drives</button>
         <button class="chip multi" data-val="museums and history">&#127963; Museums &amp; History</button>
         <button class="chip multi" data-val="beach and water activities">&#127958; Beach &amp; Water</button>
+        <button class="chip multi" data-val="amusement parks and theme parks">&#127906; Amusement Parks</button>
         <button class="chip multi" data-val="shopping and markets">&#128717; Shopping</button>
         <button class="chip multi" data-val="photography and viewpoints">&#128247; Photography</button>
       </div>
-    </div>
-
-    <div class="wiz-step" id="wstep-4">
-      <span class="wiz-emoji" aria-hidden="true">&#9889;</span>
-      <div class="wiz-question">What&#8217;s your travel style?</div>
       <div class="wiz-sublabel">Pace</div>
       <div class="chip-row" id="pace-chips" role="group" aria-label="Travel pace">
         <button class="chip" data-group="pace" data-val="relaxed, 2-3 stops per day">&#128524; Easy-going</button>
@@ -329,15 +325,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
     </div>
 
-    <div class="wiz-step" id="wstep-5">
-      <span class="wiz-emoji" aria-hidden="true">&#128176;</span>
-      <div class="wiz-question">What&#8217;s your trip budget?</div>
-      <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.55">Optional &#8212; we&#8217;ll use this to tailor recommendations.</p>
-      <div class="chip-row" style="margin-bottom:14px" role="group" aria-label="Budget type">
+    <div class="wiz-step" id="wstep-3">
+      <span class="wiz-emoji" aria-hidden="true">&#128221;</span>
+      <div class="wiz-question">Budget &amp; notes</div>
+      <div class="wiz-sublabel">Trip budget (optional)</div>
+      <div class="chip-row" style="margin-bottom:10px" role="group" aria-label="Budget type">
         <button class="chip active" id="btype-total" onclick="setBudgetType('total')">Total trip</button>
-        <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day (group)</button>
+        <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day</button>
       </div>
-      <div class="budget-input-wrap">
+      <div class="budget-input-wrap" style="margin-bottom:10px">
         <span class="dollar-sign" aria-hidden="true">$</span>
         <input type="number" class="wiz-input" id="w-budget-amt" placeholder="e.g. 3000" min="0" step="50" oninput="updateBudgetCalc()" aria-label="Budget amount in dollars"/>
       </div>
@@ -346,12 +342,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="budget-calc-item">Per day<strong id="calc-perday">—</strong></div>
         <div class="budget-calc-item">Per person<strong id="calc-perperson">—</strong></div>
       </div>
-    </div>
-
-    <div class="wiz-step" id="wstep-6">
-      <span class="wiz-emoji" aria-hidden="true">&#128221;</span>
-      <div class="wiz-question">Anything else to know?</div>
-      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;"></textarea>
+      <div class="wiz-sublabel">Anything else?</div>
+      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;" style="min-height:80px"></textarea>
+      <label class="wiz-notif-row" id="wiz-notif-row">
+        <input type="checkbox" id="wiz-notif-cb" style="width:16px;height:16px;accent-color:var(--ruby);cursor:pointer"/>
+        <span>&#128276; Notify me when my trip is ready</span>
+      </label>
     </div>
 
     <div class="wiz-error" id="wiz-error" role="alert"></div>
@@ -483,7 +479,7 @@ const IMPORT_SYSTEM=`You are extracting stops from a travel itinerary. Your only
 
 const LOADING_MSGS=['Mapping your days…','Finding the best stops…','Building your itinerary…'];
 const GROUP_SIZE={'just the two of us':2,'family with kids':4,'family without kids':2,'friends group':4,'solo adventure':1};
-const WIZ_LABELS=['Destination','Group','Interests','Style','Budget','Review'];
+const WIZ_LABELS=['Destination','Interests & Style','Budget & Notes'];
 
 let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:'',budgetTotal:null,budgetAmtType:'total'};
 let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total';
@@ -570,12 +566,12 @@ function _applyWizStep(n){
   wizStep=n;
   document.querySelectorAll('.wiz-step').forEach(el=>el.classList.remove('active'));
   document.getElementById('wstep-'+n).classList.add('active');
-  document.getElementById('wiz-prog-fill').style.width=(n/6*100)+'%';
-  document.getElementById('wiz-prog-label').textContent='Step '+n+' of 6 — '+WIZ_LABELS[n-1];
+  document.getElementById('wiz-prog-fill').style.width=(n/3*100)+'%';
+  document.getElementById('wiz-prog-label').textContent='Step '+n+' of 3 — '+WIZ_LABELS[n-1];
   document.getElementById('wiz-back-btn').style.display=n>1?'block':'none';
   const btn=document.getElementById('wiz-next-btn');
-  btn.textContent=n===6?'✨ Generate My Trip':'Next →';
-  btn.classList.toggle('generate',n===6);
+  btn.textContent=n===3?'✨ Generate My Trip':'Next →';
+  btn.classList.toggle('generate',n===3);
 }
 
 function showWizStep(n){
@@ -624,13 +620,15 @@ function wizNext(){
   if(err){showErr('wiz-error',err);return}
   collectWizStep(wizStep);
   hideErr('wiz-error');
-  if(wizStep===6)generateTrip();else showWizStep(wizStep+1);
+  if(wizStep===3)generateTrip();else showWizStep(wizStep+1);
 }
 
 function validateWizStep(s){
-  if(s===1&&!document.getElementById('w-dest').value.trim())return'Please enter a destination.';
-  if(s===2&&!document.querySelector('#who-chips .chip.active'))return'Please select who\'s coming.';
-  if(s===4){
+  if(s===1){
+    if(!document.getElementById('w-dest').value.trim())return'Please enter a destination.';
+    if(!document.querySelector('#who-chips .chip.active'))return'Please select who\'s coming.';
+  }
+  if(s===2){
     if(!document.querySelector('#pace-chips .chip.active'))return'Please choose a pace.';
     if(!document.querySelector('#budget-chips .chip.active'))return'Please choose a budget level.';
   }
@@ -638,12 +636,24 @@ function validateWizStep(s){
 }
 
 function collectWizStep(s){
-  if(s===1){wizData.dest=document.getElementById('w-dest').value.trim();wizData.startDate=document.getElementById('w-start').value;wizData.endDate=document.getElementById('w-end').value}
-  if(s===2){wizData.days=parseInt(document.getElementById('days-val').textContent,10)||3;const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val}
-  if(s===3)wizData.activities=[...document.querySelectorAll('#activities-chips .chip.active')].map(c=>c.dataset.val);
-  if(s===4){const p=document.querySelector('#pace-chips .chip.active'),b=document.querySelector('#budget-chips .chip.active');if(p)wizData.pace=p.dataset.val;if(b)wizData.budget=b.dataset.val}
-  if(s===5){const amt=parseFloat(document.getElementById('w-budget-amt').value);wizData.budgetTotal=isNaN(amt)?null:amt;wizData.budgetAmtType=_budgetAmtType}
-  if(s===6)wizData.notes=document.getElementById('w-notes').value.trim();
+  if(s===1){
+    wizData.dest=document.getElementById('w-dest').value.trim();
+    wizData.startDate=document.getElementById('w-start').value;
+    wizData.endDate=document.getElementById('w-end').value;
+    wizData.days=parseInt(document.getElementById('days-val').textContent,10)||3;
+    const c=document.querySelector('#who-chips .chip.active');if(c)wizData.who=c.dataset.val;
+  }
+  if(s===2){
+    wizData.activities=[...document.querySelectorAll('#activities-chips .chip.active')].map(c=>c.dataset.val);
+    const p=document.querySelector('#pace-chips .chip.active'),b=document.querySelector('#budget-chips .chip.active');
+    if(p)wizData.pace=p.dataset.val;if(b)wizData.budget=b.dataset.val;
+  }
+  if(s===3){
+    const amt=parseFloat(document.getElementById('w-budget-amt').value);
+    wizData.budgetTotal=isNaN(amt)?null:amt;wizData.budgetAmtType=_budgetAmtType;
+    wizData.notes=document.getElementById('w-notes').value.trim();
+    wizData._notify=document.getElementById('wiz-notif-cb')?.checked||false;
+  }
 }
 
 function buildWizPrompt(){
@@ -730,7 +740,40 @@ function showSuccessAndRedirect(id){
   document.getElementById('loading-dots').style.display='none';
   overlay.style.background='rgba(46,125,82,0.96)';
   overlay.classList.add('open');
+  _sendTripNotification(wizData.dest||'Your trip',id);
   setTimeout(()=>{window.location.href='trip.html?id='+id},2000);
+}
+
+async function _requestNotifPermission(){
+  if(!('Notification' in window))return false;
+  if(Notification.permission==='granted')return true;
+  if(Notification.permission==='denied')return false;
+  const result=await Notification.requestPermission();
+  return result==='granted';
+}
+
+async function _sendTripNotification(dest,id){
+  if(!wizData._notify)return;
+  const granted=await _requestNotifPermission();
+  if(!granted)return;
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    reg.showNotification('✈️ '+dest+' itinerary ready!',{
+      body:'Your AI-planned trip is ready to explore.',
+      icon:'/Travel/icon-192.png',
+      badge:'/Travel/icon-192.png',
+      tag:'trip-ready-'+id,
+      data:{url:'trip.html?id='+id},
+      vibrate:[100,50,100]
+    });
+  }catch(e){
+    if(Notification.permission==='granted'){
+      new Notification('✈️ '+dest+' itinerary ready!',{
+        body:'Your AI-planned trip is ready to explore.',
+        icon:'/Travel/icon-192.png'
+      });
+    }
+  }
 }
 
 function showLoadingError(msg){

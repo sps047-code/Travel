@@ -21,7 +21,7 @@
 //      e.g. trip.html (HTML+CSS) + trip.js (JavaScript) — already done.
 // =============================================================================
 
-const CACHE = 'seasons-v48';
+const CACHE = 'seasons-v49';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
@@ -62,6 +62,19 @@ self.addEventListener('fetch', e => {
         return res;
       }).catch(() => cached);
       return cached || network;
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/Travel/';
+  e.waitUntil(
+    clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
+      for (const c of list) {
+        if (c.url.includes('/Travel/') && 'focus' in c) { c.focus(); return; }
+      }
+      return clients.openWindow('/Travel/' + url);
     })
   );
 });

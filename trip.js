@@ -105,6 +105,31 @@ async function handleTicketUpload(input){
     reader.readAsDataURL(file);
   });
   pendingTicket=dataUrl;showTicketPreview(dataUrl);
+  _extractTicketReservation(dataUrl);
+}
+async function _extractTicketReservation(dataUrl){
+  const resField=document.getElementById('f-reservation');
+  if(!resField||resField.value.trim())return;
+  try{
+    const base64=dataUrl.split(',')[1];
+    const res=await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        system:'You are a ticket reader. Extract the booking/confirmation/reservation reference number from this ticket or pass image. Return ONLY the code itself (e.g. "ABC123" or "XY-789456") with no other text. If none found, return empty string.',
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
+          {type:'text',text:'What is the booking or confirmation number on this ticket?'}
+        ]}]
+      })
+    });
+    if(!res.ok)return;
+    const data=await res.json();
+    const code=(data.content?.[0]?.text||'').trim();
+    if(code&&code.length>2&&code.length<40&&!/^(none|n\/a|not found|no)/i.test(code)){
+      resField.value=code;
+    }
+  }catch(e){}
 }
 function showTicketViewer(di,si){
   const s=state.days[di].stops[si];if(!s||!s.ticketImage)return;
@@ -458,7 +483,7 @@ function renderPanel(idx){
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
-      (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
+      (s.ticketImage?'<div class="ticket-thumb-wrap" onclick="showTicketViewer('+idx+','+si+')" title="View ticket"><img class="ticket-thumb-img" src="'+s.ticketImage+'" alt="Ticket"/><span class="ticket-thumb-label">&#127903; Ticket</span></div>':'')+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
@@ -813,11 +838,46 @@ function doCopy(toDayIdx,atStart){
   saveState();closeCopyModal();renderAll();renderDayMap(currentDayIdx);
 }
 
+function _parseTimeMins(t){
+  if(!t)return null;
+  const m=t.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if(!m)return null;
+  let h=parseInt(m[1]),mn=parseInt(m[2]);
+  const ap=(m[3]||'').toLowerCase();
+  if(ap==='pm'&&h!==12)h+=12;
+  else if(ap==='am'&&h===12)h=0;
+  return h*60+mn;
+}
+function _formatTimeMins(mins){
+  mins=((mins%1440)+1440)%1440;
+  const h=Math.floor(mins/60),m=mins%60;
+  const hh=h%12||12,ampm=h<12?'am':'pm';
+  return hh+':'+(m<10?'0':'')+m+ampm;
+}
+function _suggestStopTime(stops,newIdx){
+  const prev=newIdx>0?stops[newIdx-1]:null;
+  if(!prev||!prev.time)return null;
+  const prevMins=_parseTimeMins(prev.time);
+  if(prevMins===null)return null;
+  const curr=stops[newIdx];
+  const VISIT_MINS={hike:180,museum:90,food:75,lodge:30,flight:0,train:0,bus:0,drive:20,beach:120,shop:60,tour:90,show:150};
+  const visitDur=VISIT_MINS[prev.type]??60;
+  let travelMins=20;
+  if(prev.lat&&prev.lng&&curr.lat&&curr.lng){
+    const mode=(curr.transitMode||_defaultTransitMode(prev,curr));
+    const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
+    const dist=haversine(prev.lat,prev.lng,curr.lat,curr.lng);
+    travelMins=Math.max(5,Math.round(dist/(speeds[mode]||0.5)));
+  }
+  return _formatTimeMins(prevMins+visitDur+travelMins);
+}
 function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops.length)return;
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
+  const suggested=_suggestStopTime(stops,newIdx);
+  if(suggested)stops[newIdx].time=suggested;
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 

@@ -369,8 +369,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <select class="import-trip-select" id="import-target-trip" aria-label="Select trip to append to"></select>
 
     <label class="upload-label" id="upload-label">
-      &#128206; Upload a .txt file
-      <input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>
+      &#128206; Upload a file (.txt, .pdf, etc.)
+      <input type="file" id="import-file" accept=".txt,.md,.csv,.rtf,application/pdf,.pdf" style="display:none"/>
     </label>
 
     <textarea class="wiz-textarea" id="import-text" style="min-height:180px" placeholder="Paste your itinerary here&#8230;
@@ -477,7 +477,7 @@ const GROUP_SIZE={'just the two of us':2,'family with kids':4,'family without ki
 const WIZ_LABELS=['Destination','Interests & Style','Budget & Notes'];
 
 let wizStep=1,wizData={dest:'',startDate:'',endDate:'',days:3,who:'',activities:[],pace:'',budget:'',notes:'',budgetTotal:null,budgetAmtType:'total'};
-let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total';
+let loadingTimer=null,_allTripsCache=[],_importMode='new',_budgetAmtType='total',_pendingImportPdf=null;
 let _wizOpener=null,_settingsOpener=null,_retryGenWizData=null,_trapCleanup=null;
 
 /* ---- API Key ---- */
@@ -764,11 +764,12 @@ function setImportMode(mode){
   document.getElementById('import-target-trip').style.display=mode==='append'?'block':'none';
 }
 function openImport(){
-  _importMode='new';
-  document.getElementById('import-text').value='';
+  _importMode='new';_pendingImportPdf=null;
+  const ta=document.getElementById('import-text');ta.value='';ta.placeholder='Paste your itinerary here…';
   document.getElementById('import-error').classList.remove('visible');
   document.getElementById('upload-label').classList.remove('has-file');
-  document.getElementById('upload-label').innerHTML='&#128206; Upload a .txt file<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf" style="display:none"/>';
+  document.getElementById('upload-label').innerHTML='&#128206; Upload a file (.txt, .pdf, etc.)<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf,application/pdf,.pdf" style="display:none"/>';
+  _pendingImportPdf=null;
   document.getElementById('mode-new').classList.add('active');
   document.getElementById('mode-append').classList.remove('active');
   const sel=document.getElementById('import-target-trip');
@@ -790,22 +791,48 @@ function closeImport(){
 
 function handleFileUpload(e){
   const file=e.target.files[0];if(!file)return;
+  const isPdf=file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf');
   const reader=new FileReader();
-  reader.onload=ev=>{
-    document.getElementById('import-text').value=ev.target.result;
-    document.getElementById('upload-label').classList.add('has-file');
-    document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
-  };
-  reader.readAsText(file);
+  if(isPdf){
+    reader.onload=ev=>{
+      _pendingImportPdf=ev.target.result.split(',')[1];
+      document.getElementById('import-text').value='';
+      document.getElementById('import-text').placeholder='PDF loaded — click Import to parse it.';
+      document.getElementById('upload-label').classList.add('has-file');
+      document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
+    };
+    reader.readAsDataURL(file);
+  }else{
+    _pendingImportPdf=null;
+    reader.onload=ev=>{
+      document.getElementById('import-text').value=ev.target.result;
+      document.getElementById('upload-label').classList.add('has-file');
+      document.getElementById('upload-label').childNodes[0].textContent='✓ '+file.name+' ';
+    };
+    reader.readAsText(file);
+  }
 }
 
 async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
-  if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
+  if(!text&&!_pendingImportPdf){showErr('import-error','Please paste your itinerary text or upload a file.');return}
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
   closeImport();showLoading('Reading your itinerary…');
   try{
-    const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
+    let resp;
+    if(_pendingImportPdf){
+      const res=await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({system:IMPORT_SYSTEM,messages:[{role:'user',content:[
+          {type:'document',source:{type:'base64',media_type:'application/pdf',data:_pendingImportPdf}},
+          {type:'text',text:'Parse this itinerary PDF.'}
+        ]}]})});
+      if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error('AI error: '+(d.error?.message||'HTTP '+res.status));}
+      const data=await res.json();
+      resp=data.content?.[0]?.text||'';
+      _pendingImportPdf=null;
+    }else{
+      resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
+    }
     const parsed=parseJsonResponse(resp);
     if(!parsed.days||!parsed.days.length)throw new Error('No days found in the text. Please try again.');
     if(targetId){

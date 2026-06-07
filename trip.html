@@ -418,6 +418,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .undo-banner.visible{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:all}
 .undo-btn{background:rgba(255,255,255,0.15);border:none;color:white;font-family:var(--font-ui);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer}
 .undo-btn:hover{background:rgba(255,255,255,0.28)}
+/* === Ticket viewer button === */
+.ticket-view-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;background:#f3eefa;color:#7B5EA7;border:1px solid rgba(123,94,167,0.25);border-radius:20px;font-family:var(--font-ui);font-size:10px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-top:6px}
+.ticket-view-btn:hover{background:#7B5EA7;color:white}
+/* === Ticket full-screen viewer === */
+#ticket-viewer{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;padding:16px}
+#ticket-viewer-img{max-width:96vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,0.5);object-fit:contain}
+#ticket-viewer-close{margin-top:14px;background:rgba(255,255,255,0.15);border:none;color:white;padding:10px 28px;border-radius:20px;font-family:var(--font-ui);font-size:14px;cursor:pointer;transition:background 0.18s}
+#ticket-viewer-close:hover{background:rgba(255,255,255,0.3)}
 /* === Restaurant Alternates === */
 .alt-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;background:var(--amber-tint);color:var(--amber);border:1px solid rgba(196,123,32,0.22);border-radius:20px;font-family:var(--font-ui);font-size:10px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-top:6px}
 .alt-btn:hover{background:var(--amber);color:white}
@@ -530,6 +538,15 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         </div>
         <button type="button" class="photo-remove-btn" id="photo-remove-btn" onclick="removePhoto(event)">&#215; Remove photo</button>
       </div>
+      <div class="form-group full">
+        <label class="form-label">Ticket / Pass (optional)</label>
+        <input type="file" id="f-ticket" accept="image/*" style="display:none" onchange="handleTicketUpload(this)"/>
+        <div class="photo-upload-area" id="ticket-upload-area" onclick="document.getElementById('f-ticket').click()">
+          <div class="photo-upload-placeholder" id="ticket-placeholder">&#127903; Click to upload a ticket or pass</div>
+          <img id="f-ticket-preview" class="photo-upload-preview" style="display:none" alt=""/>
+        </div>
+        <button type="button" class="photo-remove-btn" id="ticket-remove-btn" onclick="removeTicket(event)">&#215; Remove ticket</button>
+      </div>
       <div class="form-group full"><label class="check-row"><input type="checkbox" id="f-alt"/> Mark as alternate / optional stop</label></div>
       <div class="form-group full" id="f-desc-section" style="display:none">
         <label class="form-label" style="margin-bottom:4px">Guidebook Description</label>
@@ -549,6 +566,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <button class="modal-close" onclick="closeCopyModal()">&#215;</button>
     <div id="copy-day-btns" style="max-height:55vh;overflow-y:auto;margin-top:4px"></div>
   </div>
+</div>
+
+<!-- Ticket viewer -->
+<div id="ticket-viewer" onclick="closeTicketViewer()">
+  <img id="ticket-viewer-img" alt="Ticket"/>
+  <button id="ticket-viewer-close" onclick="closeTicketViewer()">Close</button>
 </div>
 
 <!-- AI Grader Modal -->

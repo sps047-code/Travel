@@ -2699,17 +2699,23 @@ async function init(){
       sessionStorage.removeItem('pendingImport_'+tripId);
       const parsedDays=JSON.parse(pending);
       const _isoFromSub=sub=>{if(!sub)return'';const p=sub.split(/\s*[·•]\s*/)[0].trim();const d=new Date(p+' 12:00');return isNaN(d)?'':(d.toISOString().slice(0,10));};
+      const _insertChron=(stops,st)=>{
+        const t=_parseTimeMins(st.time);
+        if(t===null){stops.push(st);return;}
+        const idx=stops.findIndex(s=>{const m=_parseTimeMins(s.time);return m!==null&&m>t;});
+        idx===-1?stops.push(st):stops.splice(idx,0,st);
+      };
       let added=0;
       parsedDays.forEach(pd=>{
         (pd.stops||[]).forEach(st=>{
           const stDate=st.date||_isoFromSub(pd.subtitle);
           delete st.date;
           const match=stDate?state.days.find(ed=>_isoFromSub(ed.subtitle)===stDate):null;
-          if(match){match.stops.push(st);added++;}
+          if(match){_insertChron(match.stops,st);added++;}
           else{
             let bucket=state.days.find(ed=>ed.title===pd.title);
             if(!bucket){bucket={title:pd.title,subtitle:pd.subtitle||'',tip:'',stops:[]};state.days.push(bucket);}
-            bucket.stops.push(st);added++;
+            _insertChron(bucket.stops,st);added++;
           }
         });
       });

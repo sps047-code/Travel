@@ -72,12 +72,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .day-header p{font-family:var(--font-ui);font-size:12px;color:var(--muted);font-weight:400;margin-top:3px}
 .timeline{position:relative;padding-left:40px}
 .timeline::before{content:'';position:absolute;left:14px;top:8px;bottom:8px;width:2px;background:var(--border)}
-.stop-card{position:relative;background:var(--paper);border-radius:var(--radius-md);padding:13px 56px 13px 16px;margin-bottom:12px;border:1.5px solid var(--border);transition:box-shadow 0.17s ease,transform 0.17s ease;animation:cardEnter 0.25s ease both}
+.stop-card{position:relative;background:var(--paper);border-radius:var(--radius-md);padding:50px 16px 13px 16px;margin-bottom:12px;border:1.5px solid var(--border);transition:box-shadow 0.17s ease,transform 0.17s ease;animation:cardEnter 0.25s ease both}
 .stop-card:hover{box-shadow:0 4px 18px rgba(26,35,50,0.10);transform:translateY(-1px)}
 .stop-card.alt-stop{border-style:dashed;background:#FDFEFF}
-.stop-dot{position:absolute;left:-33px;top:16px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
+.stop-dot{position:absolute;left:-33px;top:60px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:9px;font-weight:700;color:white;border:2px solid var(--mist);box-shadow:0 1px 4px rgba(0,0,0,0.20)}
 .dot-hike{background:#A32B2B}.dot-food{background:#8F5812}.dot-lodge{background:#1F5C3A}.dot-drive{background:#1A4F8A}.dot-flight{background:#523680}.dot-train{background:#2E3F47}
-.card-controls{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;align-items:center}
+.card-controls{position:absolute;top:0;left:0;right:0;display:flex;flex-direction:row;align-items:center;justify-content:flex-end;gap:0;padding:2px 4px;background:var(--mist);border-bottom:1px solid var(--border);border-radius:var(--radius-md) var(--radius-md) 0 0}
 .card-btn{min-width:44px;min-height:44px;background:transparent;border:none;cursor:pointer;color:#9A8E82;font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s;padding:0}
 .card-btn:hover{background:var(--ruby-tint);color:var(--ruby)}
 .card-btn:disabled{opacity:0.2;cursor:default;pointer-events:none}
@@ -197,8 +197,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
   .dl-label{display:none}
   .dl-btn{padding:6px 8px;font-size:15px}
   .back-link{padding:6px 8px;font-size:15px}
-  .stop-card{padding-right:16px}
-  .card-top{padding-right:52px}
 }
 @media(max-width:480px){
   #map{height:200px}
@@ -332,6 +330,8 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .journal-mode-banner{background:linear-gradient(135deg,rgba(196,123,32,0.13) 0%,rgba(46,125,82,0.07) 100%);border-bottom:2px solid rgba(196,123,32,0.25);padding:10px 24px;font-family:var(--font-ui);font-size:12px;font-weight:500;color:var(--amber);display:none;align-items:center;justify-content:center;gap:8px}
 .journal-mode-banner.on{display:flex}
 .journal-section{margin-top:12px;padding:12px 13px;background:rgba(196,123,32,0.06);border:1.5px dashed rgba(196,123,32,0.28);border-radius:var(--radius-md)}
+.jnl-add-btn{background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:11px;color:var(--amber);padding:2px 0;opacity:0.65;transition:opacity 0.15s}
+.jnl-add-btn:hover{opacity:1}
 .journal-sec-label{font-family:var(--font-ui);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.10em;color:var(--amber);margin-bottom:7px}
 .journal-textarea{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-display);font-size:14px;font-style:italic;color:var(--ink);background:white;resize:vertical;min-height:65px;outline:none;transition:border-color 0.2s;display:block}
 .journal-textarea:focus{border-color:var(--amber)}

@@ -541,7 +541,7 @@ function renderPanel(idx){
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
-    '<div><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+day.subtitle+'</p>':'')+'</div>'+
+    '<div><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+_fmtSubtitle(day.subtitle)+'</p>':'')+'</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:2px">'+
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
@@ -1265,6 +1265,12 @@ function _fmtDateWithYear(str){
   const d=new Date(str+' 12:00');
   if(isNaN(d))return str;
   return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+}
+function _fmtSubtitle(subtitle){
+  if(!subtitle)return subtitle;
+  const parts=subtitle.split(/\s*[·•]\s*/);
+  parts[0]=_fmtDateWithYear(parts[0]);
+  return parts.join(' · ');
 }
 function _dayDateLabel(di){
   const sub=(state.days[di]?.subtitle||'').split(/\s*[·•]\s*/)[0].trim();

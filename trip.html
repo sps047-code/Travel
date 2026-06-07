@@ -418,13 +418,9 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .undo-banner.visible{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:all}
 .undo-btn{background:rgba(255,255,255,0.15);border:none;color:white;font-family:var(--font-ui);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer}
 .undo-btn:hover{background:rgba(255,255,255,0.28)}
-/* === Ticket thumbnail on stop card === */
-.ticket-thumb-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:3px;margin-top:8px;cursor:pointer;border-radius:6px;overflow:hidden;border:1.5px solid rgba(123,94,167,0.3);background:#f3eefa;transition:box-shadow 0.18s,border-color 0.18s;max-width:180px}
-.ticket-thumb-wrap:hover{box-shadow:0 2px 10px rgba(123,94,167,0.3);border-color:rgba(123,94,167,0.6)}
-.ticket-thumb-img{width:180px;height:90px;object-fit:cover;display:block}
-.ticket-thumb-label{font-family:var(--font-ui);font-size:10px;font-weight:600;color:#7B5EA7;padding:2px 8px 4px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ticket-thumb-file-icon{width:180px;height:90px;display:flex;align-items:center;justify-content:center;font-size:40px;background:#f3eefa}
-/* === Ticket full-screen viewer === */
+/* === Ticket viewer button === */
+.ticket-view-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;background:#f3eefa;color:#7B5EA7;border:1px solid rgba(123,94,167,0.25);border-radius:20px;font-family:var(--font-ui);font-size:10px;font-weight:600;cursor:pointer;transition:all 0.18s;margin-top:6px}
+.ticket-view-btn:hover{background:#7B5EA7;color:white}
 /* === Ticket full-screen viewer === */
 #ticket-viewer{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;padding:16px}
 #ticket-viewer-img{max-width:96vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,0.5);object-fit:contain}

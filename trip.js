@@ -545,7 +545,8 @@ async function fetchDayWeather(day){
   }catch(e){return null;}
 }
 
-const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Forecast". End the weather line with the label from the prompt: "Forecast", "Historical", or "Climate Avg". Use the weather data if provided, otherwise estimate typical weather for this location and time of year and label it "Climate Avg". (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
+const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Climate Avg". End the weather line with the label "Climate Avg". Estimate typical weather for this location and time of year. (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
+const NARR_PROSE_SYSTEM='You are a charismatic tour guide delivering the morning briefing over breakfast. Write exactly 2-3 flowing, engaging sentences about what the group will experience today. Second person, specific, evocative, exciting. Pure prose only — no weather line (weather is shown separately), no bullets, no headers.';
 
 function _escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderNarrHtml(text){
@@ -587,19 +588,21 @@ async function loadDayNarrative(dayIdx){
     if(wx&&!(dayIdx in _wxDayCache)){_wxDayCache[dayIdx]=wx;}
     const stopList=day.stops.map(s=>s.name+(s.notes?' ('+s.notes+')':'')).join(', ');
     let userPrompt='Day: '+day.title+'\nStops: '+stopList;
+    let wxLine=null;
     if(wx&&!wx.tooFarOut){
       const icon=WX_ICONS[wx.code]||'🌡️';
-      const label=WX_LABELS[wx.code]||'';
+      const cond=WX_LABELS[wx.code]||'';
       const typeLabel=wx.wxType==='historical'?'Historical':'Forecast';
       let precipNote='';
       if(wx.wxType==='historical'){if(wx.precip!=null&&wx.precip>0)precipNote=' · '+wx.precip+'mm rain';}
-      else{if(wx.precip>=15)precipNote=' · '+wx.precip+'% rain';}
-      userPrompt+='\nWeather ('+typeLabel+'): '+icon+' '+(label?label+' · ':'')+' High '+wx.hi+'°F / Low '+wx.lo+'°F'+precipNote+'\nWeather label: '+typeLabel;
+      else{if(wx.precip>=15)precipNote=' · '+wx.precip+'% rain chance';}
+      wxLine=icon+(cond?' '+cond:'')+' · High '+wx.hi+'°F / Low '+wx.lo+'°F'+precipNote+' · '+typeLabel;
+      userPrompt+='\nWeather: '+cond+', High '+wx.hi+'°F, Low '+wx.lo+'°F. Reference if relevant to outdoor stops.';
     }else if(wx?.tooFarOut){
       userPrompt+='\nLocation: lat '+Number(wx.lat).toFixed(2)+', lon '+Number(wx.lng).toFixed(2)+'\nMonth: '+wx.month+'\nWeather label: Climate Avg\n(No forecast available — please estimate typical weather for this location in '+wx.month+')';
     }
-    const text=await callClaude(NARR_SYSTEM,userPrompt);
-    narrData[key]=text.trim();
+    const text=await callClaude(wxLine?NARR_PROSE_SYSTEM:NARR_SYSTEM,userPrompt);
+    narrData[key]=(wxLine?wxLine+'\n':'')+text.trim();
     try{localStorage.setItem(NARR_LS,JSON.stringify(narrData))}catch(e){}
     const fresh=document.getElementById('day-narr-body-'+dayIdx);
     if(fresh){fresh.innerHTML=renderNarrHtml(narrData[key]);fresh.classList.remove('narr-loading');}

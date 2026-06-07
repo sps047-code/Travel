@@ -124,7 +124,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .wiz-error{background:rgba(194,59,59,0.09);border:1.5px solid rgba(194,59,59,0.28);border-radius:var(--radius-md);padding:13px 16px;margin-top:18px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);line-height:1.5;display:none}
 .wiz-error.visible{display:block}
 .wiz-nav{display:flex;gap:10px;margin-top:24px;align-items:center}
-.wiz-notif-row{display:flex;align-items:center;gap:8px;margin-top:14px;font-family:var(--font-ui);font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
 .btn-back{padding:12px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap}
 .btn-back:hover{border-color:var(--ruby);color:var(--ruby)}
 .btn-primary{flex:1;padding:13px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.2s;letter-spacing:0.02em}
@@ -344,10 +343,6 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       </div>
       <div class="wiz-sublabel">Anything else?</div>
       <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;" style="min-height:80px"></textarea>
-      <label class="wiz-notif-row" id="wiz-notif-row">
-        <input type="checkbox" id="wiz-notif-cb" style="width:16px;height:16px;accent-color:var(--ruby);cursor:pointer"/>
-        <span>&#128276; Notify me when my trip is ready</span>
-      </label>
     </div>
 
     <div class="wiz-error" id="wiz-error" role="alert"></div>
@@ -652,7 +647,6 @@ function collectWizStep(s){
     const amt=parseFloat(document.getElementById('w-budget-amt').value);
     wizData.budgetTotal=isNaN(amt)?null:amt;wizData.budgetAmtType=_budgetAmtType;
     wizData.notes=document.getElementById('w-notes').value.trim();
-    wizData._notify=document.getElementById('wiz-notif-cb')?.checked||false;
   }
 }
 
@@ -740,40 +734,7 @@ function showSuccessAndRedirect(id){
   document.getElementById('loading-dots').style.display='none';
   overlay.style.background='rgba(46,125,82,0.96)';
   overlay.classList.add('open');
-  _sendTripNotification(wizData.dest||'Your trip',id);
   setTimeout(()=>{window.location.href='trip.html?id='+id},2000);
-}
-
-async function _requestNotifPermission(){
-  if(!('Notification' in window))return false;
-  if(Notification.permission==='granted')return true;
-  if(Notification.permission==='denied')return false;
-  const result=await Notification.requestPermission();
-  return result==='granted';
-}
-
-async function _sendTripNotification(dest,id){
-  if(!wizData._notify)return;
-  const granted=await _requestNotifPermission();
-  if(!granted)return;
-  try{
-    const reg=await navigator.serviceWorker.ready;
-    reg.showNotification('✈️ '+dest+' itinerary ready!',{
-      body:'Your AI-planned trip is ready to explore.',
-      icon:'/Travel/icon-192.png',
-      badge:'/Travel/icon-192.png',
-      tag:'trip-ready-'+id,
-      data:{url:'trip.html?id='+id},
-      vibrate:[100,50,100]
-    });
-  }catch(e){
-    if(Notification.permission==='granted'){
-      new Notification('✈️ '+dest+' itinerary ready!',{
-        body:'Your AI-planned trip is ready to explore.',
-        icon:'/Travel/icon-192.png'
-      });
-    }
-  }
 }
 
 function showLoadingError(msg){

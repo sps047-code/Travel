@@ -2692,6 +2692,30 @@ async function init(){
       if(changed){saveState();localStorage.removeItem('stop_desc_v1');}
     }
   }catch(e){}
+  /* apply pending import from index.html (stored in sessionStorage to survive Firebase reload) */
+  try{
+    const pending=sessionStorage.getItem('pendingImport_'+tripId);
+    if(pending){
+      sessionStorage.removeItem('pendingImport_'+tripId);
+      const parsedDays=JSON.parse(pending);
+      const _isoFromSub=sub=>{if(!sub)return'';const p=sub.split(/\s*[·•]\s*/)[0].trim();const d=new Date(p+' 12:00');return isNaN(d)?'':(d.toISOString().slice(0,10));};
+      let added=0;
+      parsedDays.forEach(pd=>{
+        (pd.stops||[]).forEach(st=>{
+          const stDate=st.date||_isoFromSub(pd.subtitle);
+          delete st.date;
+          const match=stDate?state.days.find(ed=>_isoFromSub(ed.subtitle)===stDate):null;
+          if(match){match.stops.push(st);added++;}
+          else{
+            let bucket=state.days.find(ed=>ed.title===pd.title);
+            if(!bucket){bucket={title:pd.title,subtitle:pd.subtitle||'',tip:'',stops:[]};state.days.push(bucket);}
+            bucket.stops.push(st);added++;
+          }
+        });
+      });
+      if(added>0)saveState('Imported '+added+' stop'+(added>1?'s':''));
+    }
+  }catch(e){}
   renderAll();renderOverviewMap();loadTimezones();_setupTabDrag();
   _updateTypeBadge();
   if(isJournalMode()){const b=document.getElementById('journal-mode-banner');if(b)b.classList.add('on');}

@@ -32,6 +32,7 @@ const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"
 
 /* ---- Photo upload helpers ---- */
 let pendingPhoto=null; // null=no change, dataURL=new image
+let pendingTicket=null; // null=no change, dataURL=new ticket, ''=cleared
 let pendingDesc=null;  // null=no change, string=new/updated desc, ''=cleared
 function showPhotoPreview(src){
   const area=document.getElementById('photo-upload-area');
@@ -66,6 +67,52 @@ async function handlePhotoUpload(input){
     reader.readAsDataURL(file);
   });
   pendingPhoto=dataUrl;showPhotoPreview(dataUrl);
+}
+
+/* ---- Ticket upload helpers ---- */
+function showTicketPreview(src){
+  const area=document.getElementById('ticket-upload-area');
+  const preview=document.getElementById('f-ticket-preview');
+  const placeholder=document.getElementById('ticket-placeholder');
+  const removeBtn=document.getElementById('ticket-remove-btn');
+  if(!area)return;
+  if(src){
+    preview.src=src;preview.style.display='block';
+    placeholder.style.display='none';area.classList.add('has-photo');
+    removeBtn.style.display='block';
+  }else{
+    preview.style.display='none';placeholder.style.display='block';
+    area.classList.remove('has-photo');removeBtn.style.display='none';
+  }
+}
+function removeTicket(e){if(e)e.stopPropagation();pendingTicket='';showTicketPreview(null);const fi=document.getElementById('f-ticket');if(fi)fi.value='';}
+async function handleTicketUpload(input){
+  const file=input.files[0];if(!file)return;
+  const dataUrl=await new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const scale=Math.min(1,1200/img.width);
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',0.85));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  pendingTicket=dataUrl;showTicketPreview(dataUrl);
+}
+function showTicketViewer(di,si){
+  const s=state.days[di].stops[si];if(!s||!s.ticketImage)return;
+  document.getElementById('ticket-viewer-img').src=s.ticketImage;
+  document.getElementById('ticket-viewer').style.display='flex';
+}
+function closeTicketViewer(){
+  document.getElementById('ticket-viewer').style.display='none';
+  document.getElementById('ticket-viewer-img').src='';
 }
 
 async function generateModalDesc(){
@@ -409,6 +456,7 @@ function renderPanel(idx){
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
+      (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
@@ -790,6 +838,7 @@ function openAddStopModal(dayIdx){
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
   pendingPhoto=null;showPhotoPreview(null);document.getElementById('f-photo').value='';
+  pendingTicket=null;showTicketPreview(null);const _ft=document.getElementById('f-ticket');if(_ft)_ft.value='';
   pendingDesc=null;
   const _dd=document.getElementById('f-desc-display');if(_dd)_dd.textContent='';
   const _db=document.getElementById('f-desc-btn');if(_db){_db.textContent='✨ Generate Description';_db.disabled=false;}
@@ -821,6 +870,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
   pendingPhoto=s.customImage||null;showPhotoPreview(pendingPhoto);document.getElementById('f-photo').value='';
+  pendingTicket=null;showTicketPreview(s.ticketImage||null);const _ft2=document.getElementById('f-ticket');if(_ft2)_ft2.value='';
   _pendingTransitMode=s.transitMode||null;
   document.querySelectorAll('.transit-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===_pendingTransitMode));
   _populateTravelersForm(s);
@@ -908,11 +958,13 @@ function saveStop(){
   const existingStop=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]:null;
   const existingPhoto=existingStop?.customImage||null;
   const customImage=pendingPhoto===''?null:(pendingPhoto||existingPhoto||null);
+  const existingTicket=existingStop?.ticketImage||null;
+  const ticketImage=pendingTicket===''?null:(pendingTicket||existingTicket||null);
   const stopType=document.getElementById('f-type').value;
   const existingTM=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]?.transitMode:null;
   const transitMode=_pendingTransitMode||existingTM||null;
   const attendance=_getAttendanceFromForm();
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,transitMode:transitMode||undefined,attendance:attendance};
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,transitMode:transitMode||undefined,attendance:attendance};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   if(existingStop?.openingHours)stop.openingHours=existingStop.openingHours;

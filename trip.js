@@ -251,16 +251,26 @@ function haversine(la1,lo1,la2,lo2){
   const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+function _travelMins(straightLineMiles,mode){
+  if(mode==='flight')return Math.round(straightLineMiles/8);
+  if(mode==='train')return Math.round(straightLineMiles/0.85);
+  if(mode==='bus')return Math.round(straightLineMiles/0.5);
+  if(mode==='walk')return Math.round(straightLineMiles/0.05);
+  // drive: apply 1.25 road-overhead factor then adaptive mph
+  const road=straightLineMiles*1.25;
+  const mph=road>120?65:road>40?55:road>10?40:20;
+  return Math.round(road/mph*60);
+}
+function _minsToStr(mins){
+  return mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
+}
 function legLabel(a,b,mode){
   if(!a.lat||!a.lng||!b.lat||!b.lng)return'';
   const dist=haversine(a.lat,a.lng,b.lat,b.lng);
   if(dist<0.05)return'';
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
-  const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
-  const speed=speeds[mode]||0.5;
-  const mins=Math.round(dist/speed);
-  const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
-  return mi+' mi · '+tStr;
+  const mins=_travelMins(dist,mode);
+  return mi+' mi · '+_minsToStr(mins);
 }
 
 function makeIcon(num,color,isAlt){
@@ -495,8 +505,7 @@ function hotelBookendHtml(label,lodge,otherStop){
   if(otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
     const dist=haversine(lodge.lat,lodge.lng,otherStop.lat,otherStop.lng);
     const mi=dist<10?dist.toFixed(1):Math.round(dist);
-    const mins=Math.round(dist/0.5);
-    const tStr=mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
+    const tStr=_minsToStr(_travelMins(dist,'drive'));
     const isStart=label.toLowerCase().startsWith('start');
     const [oLat,oLng,dLat,dLng]=isStart?[lodge.lat,lodge.lng,otherStop.lat,otherStop.lng]:[otherStop.lat,otherStop.lng,lodge.lat,lodge.lng];
     const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+oLat+','+oLng+'&destination='+dLat+','+dLng+'&travelmode=driving';
@@ -935,9 +944,8 @@ function _suggestStopTime(stops,newIdx){
   let travelMins=20;
   if(prev.lat&&prev.lng&&curr.lat&&curr.lng){
     const mode=(curr.transitMode||_defaultTransitMode(prev,curr));
-    const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
     const dist=haversine(prev.lat,prev.lng,curr.lat,curr.lng);
-    travelMins=Math.max(5,Math.round(dist/(speeds[mode]||0.5)));
+    travelMins=Math.max(5,_travelMins(dist,mode));
   }
   return _formatTimeMins(prevMins+visitDur+travelMins);
 }
@@ -2554,9 +2562,7 @@ let _alertTimers=[];
 
 function _travelAlertMins(a,b,mode){
   if(!a?.lat||!a?.lng||!b?.lat||!b?.lng)return 0;
-  const dist=haversine(a.lat,a.lng,b.lat,b.lng);
-  const speeds={walk:0.05,drive:0.5,train:1.0,bus:0.25,flight:8};
-  return Math.round(dist/(speeds[mode]||0.5));
+  return _travelMins(haversine(a.lat,a.lng,b.lat,b.lng),mode);
 }
 
 async function enableTravelAlerts(dayIdx){

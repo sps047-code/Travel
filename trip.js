@@ -540,6 +540,25 @@ function transitBookendHtml(transitStop,firstStop){
   return'<div class="hotel-bookend"><span class="hotel-bookend-icon">'+icon+'</span><div style="flex:1"><div class="hotel-bookend-label">'+label+arrTime+'</div><div class="hotel-bookend-name">'+nm+'</div></div></div>';
 }
 
+function _getTodayDayIdx(){
+  const today=new Date();today.setHours(0,0,0,0);
+  for(let i=0;i<(state?.days||[]).length;i++){
+    const iso=dayDateStr(i);if(!iso)continue;
+    const d=new Date(iso+' 12:00');d.setHours(0,0,0,0);
+    if(d.getTime()===today.getTime())return i;
+  }
+  return -1;
+}
+function _getUpNextStopIdx(dayIdx){
+  const now=new Date();
+  const nowMins=now.getHours()*60+now.getMinutes();
+  const stops=state.days[dayIdx]?.stops||[];
+  for(let si=0;si<stops.length;si++){
+    const t=_parseTimeMins(stops[si].time);
+    if(t!==null&&t>nowMins)return si;
+  }
+  return -1;
+}
 function renderPanel(idx){
   const day=state.days[idx];if(!day)return'';
   const prevHotel=getHotelForDay(idx-1);
@@ -556,12 +575,15 @@ function renderPanel(idx){
   const jnlMode=isJournalMode();
   const wxCache=_wxDayCache[idx]||null;
   const WX_OUTDOOR=['hike','drive'];
+  const _todayDayIdx=_getTodayDayIdx();
+  const _upNextSi=_todayDayIdx===idx?_getUpNextStopIdx(idx):-1;
   let cards=prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
     showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     const _tr=['flight','train','bus'].includes(s.type)?parsedTransitRoute(s):null;
-    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+'" style="animation-delay:'+si*40+'ms">'+
+    const _isUpNext=si===_upNextSi;
+    cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+(_isUpNext?' up-next':'')+'" id="stop-card-'+idx+'-'+si+'" style="animation-delay:'+si*40+'ms">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls" ontouchstart="event.stopPropagation()">'+
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
@@ -571,7 +593,7 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
       '<div class="card-top">'+(s.time?'<span class="card-time">'+s.time+(stopTz(s)?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span>':'')+'<div class="card-main">'+
-      '<div class="card-name">'+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
+      '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
@@ -581,11 +603,14 @@ function renderPanel(idx){
       (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
+      _bookingLinkHtml(s)+
+      (_isUpNext&&s.lat&&s.lng?'<a class="live-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng+'" target="_blank" rel="noopener">&#127907; Navigate Here</a>':'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
       (s.type==='food'?'<button class="alt-btn" onclick="showAlternates('+idx+','+si+')">&#128260; Alternates</button>':'')+
       _stopPlaceMetaHtml(s)+
+      _guidebookHtml(s,idx,si)+
       _attendanceHtml(s)+
       (jnlMode?_jnlStopHtml(idx,si):'')+
       '</div>';
@@ -617,6 +642,8 @@ function renderPanel(idx){
     (jnlMode?_jnlDayHtml(idx):'')+
     renderDaySummary(day,idx)+
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
+    (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
+    (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
     '<div class="timeline">'+cards+(showEnd?hotelBookendHtml('Tonight',todayHotel,day.stops[day.stops.length-1]):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -866,7 +893,11 @@ function renderAll(){
     }else{
       document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
       loadStopImages();
-      if(currentDayIdx>=0)loadDayNarrative(currentDayIdx);
+      if(currentDayIdx>=0){
+        loadDayNarrative(currentDayIdx);
+        const _todayIdx=_getTodayDayIdx();
+        if(currentDayIdx===_todayIdx)loadLiveWeather(currentDayIdx);
+      }
     }
   }catch(e){
     console.error('[renderAll]',e);
@@ -987,7 +1018,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum'].forEach(id=>{document.getElementById(id).value=''});
+  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -1022,6 +1053,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-to').value=s.to||'';
   document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-flightnum').value=s.flightNumber||'';
+  const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -1121,7 +1153,8 @@ function saveStop(){
   const existingTM=editingStop?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]?.transitMode:null;
   const transitMode=_pendingTransitMode||existingTM||null;
   const attendance=_getAttendanceFromForm();
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const _urlVal=(document.getElementById('f-url')?.value||'').trim()||undefined;
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   if(existingStop?.openingHours)stop.openingHours=existingStop.openingHours;
@@ -1521,11 +1554,14 @@ function renderOverview(){
     '<div class="ov-trip-name" style="margin-bottom:0">'+state.title+'</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;align-items:center">'+
     '<button class="ai-action-btn" onclick="gradeItinerary()">&#10024; Grade</button>'+
+    '<button class="ai-action-btn" onclick="generateGuidebook()">&#128366; Guidebook</button>'+
+    (jnl?'<button class="ai-action-btn" onclick="openTripRecap()" style="background:var(--amber)">&#128196; Recap</button>':'')+
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+
     (jnl?_tripHighlightsHtml():'')+
+    renderUnbookedSection()+
     tabBar+panelCal+panelLodge+panelCheck+panelPack+panelAudio+
     '</div>';
 }
@@ -1881,8 +1917,6 @@ function _watchFamily(){
       if(!data)return;
       const now=Date.now();
       const presence=data.presence||{};
-      const active=Object.values(presence).filter(p=>p&&(now-p.at)<90000);
-      _updatePresenceCount(active.length);
       const lc=data.lastChange;
       if(lc&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
         _lastFamilyAt=lc.at;
@@ -1899,13 +1933,6 @@ function _startFamily(){_watchFamily();_startPresence();}
 function _stopFamily(){
   if(_familyPoll){clearInterval(_familyPoll);_familyPoll=null;}
   _stopPresence();
-}
-
-function _updatePresenceCount(n){
-  const el=document.getElementById('presence-count');
-  if(!el)return;
-  if(n>1){el.innerHTML='&#128065; '+n+' viewing';el.style.display='inline';}
-  else{el.innerHTML='';el.style.display='none';}
 }
 
 function _updateTypeBadge(){
@@ -2223,7 +2250,7 @@ function _renderGradeResult(d){
 }
 
 /* --- AI Day Optimizer --- */
-const OPT_SYSTEM='You are an expert travel planner and day optimizer. Score this day across 4 dimensions then suggest improvements.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"optimization_score":78,"score_summary":"one sentence: the single biggest improvement opportunity","sub_scores":{"route":85,"timing":70,"pacing":80,"experience":75},"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string"}\n\nScore definitions (each 0-100, their average = optimization_score):\n- route: geographic efficiency — stops in logical order minimizing backtracking\n- timing: alignment with opening hours, avoiding arriving too early/late\n- pacing: realistic time allocation — not too rushed, not too sparse\n- experience: narrative flow — does the day tell a coherent, enjoyable story?\n\nThresholds: 90-100=Near Perfect, 75-89=Well Optimized, 50-74=Good, 0-49=Needs Work.\nBe honest: a day with clear backtracking scores below 60 on route. A tightly clustered day with great flow scores 85+.';
+const OPT_SYSTEM='You are an expert travel planner and day optimizer. Score this day across 4 dimensions then suggest improvements.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"optimization_score":78,"score_summary":"one sentence: the single biggest improvement opportunity","sub_scores":{"route":85,"timing":70,"pacing":80,"experience":75},"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string","proposed_moves":[{"stop_name":"","from_day":1,"to_day":2,"reason":""}]}\n\nScore definitions (each 0-100, their average = optimization_score):\n- route: geographic efficiency -- stops in logical order minimizing backtracking\n- timing: alignment with opening hours, avoiding arriving too early/late\n- pacing: realistic time allocation -- not too rushed, not too sparse\n- experience: narrative flow -- does the day tell a coherent, enjoyable story?\n\nThresholds: 90-100=Near Perfect, 75-89=Well Optimized, 50-74=Good, 0-49=Needs Work.\nBe honest: a day with clear backtracking scores below 60 on route. A tightly clustered day with great flow scores 85+.\nproposed_moves: optional cross-day moves if a stop clearly belongs on an adjacent day. Omit if none. Use 1-based day numbers.';
 async function optimizeDay(idx){
   const modal=document.getElementById('ai-optimizer-modal');
   const content=document.getElementById('ai-optimizer-content');
@@ -2306,7 +2333,22 @@ function _renderOptResult(d){
     });
     h+='</div>';
   }
-  return h||'<div class="ai-item">No issues found — your day looks well-optimized!</div>';
+  if(d.proposed_moves?.length){
+    h+='<div class="opt-moves-section"><div class="ai-section-hdr">&#8646; Proposed Day Moves</div>';
+    d.proposed_moves.forEach((m,mi)=>{
+      h+='<div class="opt-move-row">'+
+        '<div class="opt-move-info">'+
+        '<div class="opt-move-from"><strong>'+_escHtml(m.stop_name||'')+'</strong></div>'+
+        '<div style="font-family:var(--font-ui);font-size:11px;color:var(--muted)">Day '+m.from_day+' <span class="opt-move-to">Day '+m.to_day+'</span></div>'+
+        '<div class="opt-move-reason">'+_escHtml(m.reason||'')+'</div>'+
+        '</div>'+
+        '<button class="opt-move-btn" onclick="applyProposedMove('+mi+')">Apply</button>'+
+        '</div>';
+    });
+    if(d.proposed_moves.length>1)h+='<button class="opt-apply-all-btn" onclick="applyAllProposedMoves()">Apply All Moves</button>';
+    h+='</div>';
+  }
+  return h||'<div class="ai-item">No issues found -- your day looks well-optimized!</div>';
 }
 function showApplyOrderConfirm(){
   const wrap=document.getElementById('opt-apply-wrap');if(!wrap)return;
@@ -2551,13 +2593,13 @@ function _checkinLink(flightNumber,airline){
   document.addEventListener('touchmove',e=>{
     if(!live||skip(e))return;
     const dx=Math.abs(e.touches[0].clientX-tx),dy=Math.abs(e.touches[0].clientY-ty);
-    if(dx>dy&&dx>15)e.preventDefault();
+    if(dx>dy&&dx>30)e.preventDefault();
   },{passive:false});
   document.addEventListener('touchend',e=>{
     if(!live)return;live=false;
     if(skip(e))return;
     const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
-    if(Math.abs(dx)<40||Math.abs(dy)>60)return;
+    if(Math.abs(dx)<30||Math.abs(dx)<=Math.abs(dy))return;
     if(currentDayIdx===-1)return;
     if(dx<0&&currentDayIdx<state.days.length-1)switchDay(currentDayIdx+1);
     else if(dx>0&&currentDayIdx>0)switchDay(currentDayIdx-1);
@@ -2705,6 +2747,423 @@ function _setupTabDrag(){
   });
 }
 
+/* ============================================================
+   FEATURE 2: Offline Mode
+   ============================================================ */
+function _updateOfflineState(){
+  const offline=!navigator.onLine;
+  document.body.classList.toggle('offline',offline);
+  const banner=document.getElementById('offline-banner');
+  if(banner)banner.style.display=offline?'':'none';
+}
+window.addEventListener('online',_updateOfflineState);
+window.addEventListener('offline',_updateOfflineState);
+
+/* ============================================================
+   FEATURE 3: Pre-Generated Guidebook Content
+   ============================================================ */
+const GUIDEBOOK_SYSTEM='You are a knowledgeable travel writer creating rich stop descriptions for a travel guidebook. Write 2-3 paragraphs covering: the history and cultural significance, what visitors typically skip that is worth seeing, ticket and entry tips, realistic time needed, and the best photo spot. Be specific and practical. Use plain prose with no markdown headers, no bullet points, no em dashes. Respond with only the guidebook text.';
+const NEARBY_SYSTEM='You are a local expert writing a brief 2-3 sentence note for travelers about what else is worth knowing in the immediate area around a day\'s stops. Focus on hidden gems, practical tips, or context that makes the day richer. No em dashes. Respond with only the note text.';
+
+function _guidebookHtml(s,di,si){
+  if(['drive','flight','train','bus'].includes(s.type))return'';
+  if(!s.guidebook)return'';
+  const isOpen=!!s._guidebookOpen;
+  return'<button class="guidebook-btn" onclick="toggleGuidebook('+di+','+si+')">&#128366; Guidebook '+(isOpen?'&#9650;':'&#9660;')+'</button>'+
+    '<div class="guidebook-content" id="gb-'+di+'-'+si+'" style="display:'+(isOpen?'block':'none')+'">'+_escHtml(s.guidebook)+'</div>';
+}
+
+function toggleGuidebook(di,si){
+  const s=state.days[di]?.stops[si];if(!s||!s.guidebook)return;
+  s._guidebookOpen=!s._guidebookOpen;
+  const btn=document.querySelector('#stop-card-'+di+'-'+si+' .guidebook-btn');
+  const content=document.getElementById('gb-'+di+'-'+si);
+  if(content)content.style.display=s._guidebookOpen?'block':'none';
+  if(btn)btn.innerHTML='&#128366; Guidebook '+(s._guidebookOpen?'&#9650;':'&#9660;');
+}
+
+async function generateGuidebook(regenerate){
+  const allStops=[];
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(['drive','flight','train','bus'].includes(s.type))return;
+      if(s.guidebook&&!regenerate)return;
+      allStops.push({di,si});
+    });
+  });
+  if(!allStops.length){
+    alert('All stops already have guidebook entries. Call generateGuidebook(true) to regenerate.');
+    return;
+  }
+  let progressEl=document.getElementById('gen-progress');
+  if(!progressEl){
+    progressEl=document.createElement('div');
+    progressEl.id='gen-progress';progressEl.className='gen-progress';
+    document.body.appendChild(progressEl);
+  }
+  let done=0;
+  for(const {di,si} of allStops){
+    const s=state.days[di]?.stops[si];if(!s)continue;
+    done++;
+    progressEl.textContent='Generating '+done+' of '+allStops.length+': '+s.name+'...';
+    try{
+      const prompt='Stop: '+s.name+(s.notes?'\nNotes: '+s.notes:'')+(s.lat&&s.lng?'\nCoordinates: '+Number(s.lat).toFixed(4)+','+Number(s.lng).toFixed(4):'');
+      const text=await callClaude(GUIDEBOOK_SYSTEM,prompt);
+      state.days[di].stops[si].guidebook=text.trim();
+    }catch(e){console.warn('Guidebook generation failed for '+s.name,e);}
+  }
+  progressEl.textContent='Generating nearby notes...';
+  for(let di=0;di<state.days.length;di++){
+    const d=state.days[di];
+    const eligible=d.stops.filter(s=>!['drive','flight','train','bus'].includes(s.type));
+    if(eligible.length<1)continue;
+    try{
+      const stopList=eligible.map(s=>s.name).join(', ');
+      const text=await callClaude(NEARBY_SYSTEM,'Day: '+d.title+'\nStops: '+stopList);
+      d.nearby=text.trim();
+    }catch(e){console.warn('Nearby note failed for day '+di,e);}
+  }
+  progressEl.textContent='';
+  saveState('Generated guidebook');
+  renderAll();
+  if(currentDayIdx>=0)renderDayMap(currentDayIdx);else renderOverviewMap();
+}
+
+/* ============================================================
+   FEATURE 4: Location-Aware AI Tour Guide
+   ============================================================ */
+const TG_SYSTEM='You are a knowledgeable local tour guide who knows this area intimately. You provide warm, conversational, and practical guidance. You know history, culture, food, hidden gems, and practical visitor tips. Respond in 2-4 sentences. Be specific to the exact place. No em dashes.';
+let _tgHistory=[];
+let _tgCurrentStop=null;
+
+function openTourGuide(){
+  const modal=document.getElementById('tour-guide-modal');if(!modal)return;
+  const content=document.getElementById('tg-content');if(!content)return;
+  _tgHistory=[];_tgCurrentStop=null;
+  content.innerHTML='<div class="tg-thinking">Finding your location...</div>';
+  modal.classList.add('open');
+  if(!navigator.geolocation){_setupTourGuideStopPicker();return;}
+  navigator.geolocation.getCurrentPosition(
+    pos=>_setupTourGuideWithPosition(pos.coords.latitude,pos.coords.longitude),
+    ()=>_setupTourGuideStopPicker(),
+    {timeout:6000}
+  );
+}
+
+function _setupTourGuideWithPosition(lat,lng){
+  let nearest=null,nearestDist=Infinity,nearestDi=-1,nearestSi=-1;
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(!s.lat||!s.lng||['drive','flight','train','bus'].includes(s.type))return;
+      const dist=haversine(lat,lng,parseFloat(s.lat),parseFloat(s.lng));
+      if(dist<nearestDist){nearestDist=dist;nearest=s;nearestDi=di;nearestSi=si;}
+    });
+  });
+  if(nearest)_setupTourGuideWithStop(nearestDi,nearestSi,lat,lng);
+  else _setupTourGuideStopPicker();
+}
+
+function _setupTourGuideWithStop(di,si,userLat,userLng){
+  const s=state.days[di]?.stops[si];if(!s)return;
+  _tgCurrentStop={di,si,s};
+  const now=new Date();
+  const timeStr=now.getHours()+':'+(now.getMinutes()<10?'0':'')+now.getMinutes();
+  const dayStops=(state.days[di]?.stops||[]).map(x=>x.name).join(', ');
+  const seedMsg='You are guiding someone at or near: '+s.name+'.\nTime: '+timeStr+
+    (userLat?'\nUser coordinates: '+Number(userLat).toFixed(4)+','+Number(userLng).toFixed(4):'')+
+    "\nToday's stops: "+dayStops+
+    (s.guidebook?'\n\nGuidebook context:\n'+s.guidebook:'');
+  _tgHistory=[{role:'user',content:seedMsg},{role:'assistant',content:"I'm here with you at "+s.name+". What would you like to know?"}];
+  const chips=['Tell me about this place',"What should I not miss here?",'Where\'s good for lunch nearby?'];
+  const content=document.getElementById('tg-content');if(!content)return;
+  content.innerHTML=
+    '<div class="tg-messages" id="tg-messages">'+
+    '<div class="tg-msg tg-msg-ai">I\'m here with you at <strong>'+_escHtml(s.name)+'</strong>. What would you like to know?</div>'+
+    '</div>'+
+    '<div class="tg-chips" id="tg-chips">'+
+    chips.map(c=>'<button class="tg-chip" onclick="_tgChip(this,'+JSON.stringify(c)+')">'+_escHtml(c)+'</button>').join('')+
+    '</div>'+
+    '<div class="tg-input-row">'+
+    '<input class="tg-input" id="tg-input" placeholder="Ask me anything..." onkeydown="if(event.key===\'Enter\')_tgSendMessage()"/>'+
+    '<button class="tg-send" onclick="_tgSendMessage()">&#10148;</button>'+
+    '</div>';
+}
+
+function _setupTourGuideStopPicker(){
+  const stops=[];
+  state.days.forEach((d,di)=>{
+    d.stops.forEach((s,si)=>{
+      if(!['drive','flight','train','bus'].includes(s.type))stops.push({di,si,name:s.name,day:d.title});
+    });
+  });
+  const content=document.getElementById('tg-content');if(!content)return;
+  content.innerHTML='<div class="tg-thinking" style="margin-bottom:12px">Choose a stop to get guided:</div>'+
+    '<select class="tg-stop-select" id="tg-stop-sel">'+
+    stops.map(({di,si,name,day})=>'<option value="'+di+'-'+si+'">'+_escHtml(name)+' ('+_escHtml(day)+')</option>').join('')+
+    '</select>'+
+    '<button class="tg-send" style="width:100%;margin-top:8px;border-radius:8px;padding:10px" onclick="_tgPickStop()">Start Tour Guide</button>';
+}
+
+function _tgPickStop(){
+  const sel=document.getElementById('tg-stop-sel');if(!sel)return;
+  const [di,si]=sel.value.split('-').map(Number);
+  _setupTourGuideWithStop(di,si,null,null);
+}
+
+function _tgChip(btn,text){
+  const chips=document.getElementById('tg-chips');
+  if(chips)chips.style.display='none';
+  _tgAddMessage('user',text);
+  _tgCallAI(text);
+}
+
+async function _tgSendMessage(){
+  const input=document.getElementById('tg-input');if(!input)return;
+  const text=input.value.trim();if(!text)return;
+  input.value='';
+  _tgAddMessage('user',text);
+  _tgCallAI(text);
+}
+
+async function _tgCallAI(userText){
+  const msgs=document.getElementById('tg-messages');
+  const thinking=document.createElement('div');
+  thinking.className='tg-msg tg-thinking';thinking.textContent='Thinking...';
+  if(msgs){msgs.appendChild(thinking);msgs.scrollTop=msgs.scrollHeight;}
+  _tgHistory.push({role:'user',content:userText});
+  try{
+    const convo=_tgHistory.map(m=>m.role+': '+m.content).join('\n\n');
+    const text=await callClaude(TG_SYSTEM,convo);
+    if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
+    _tgHistory.push({role:'assistant',content:text});
+    _tgAddMessage('assistant',text);
+  }catch(e){
+    if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
+    _tgAddMessage('error','Could not reach the AI. Please try again.');
+  }
+}
+
+function _tgAddMessage(role,text){
+  const msgs=document.getElementById('tg-messages');if(!msgs)return;
+  const div=document.createElement('div');
+  div.className='tg-msg '+(role==='user'?'tg-msg-user':role==='error'?'tg-msg-err':'tg-msg-ai');
+  div.textContent=text;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+function _updateTourGuideFloat(){
+  const btn=document.getElementById('tour-guide-float');if(!btn)return;
+  const todayIdx=_getTodayDayIdx();
+  btn.style.display=(todayIdx>=0&&window.innerWidth<=768)?'flex':'none';
+}
+
+/* ============================================================
+   FEATURE 5: Unbooked Digest
+   ============================================================ */
+function renderUnbookedSection(){
+  if(!state?.days)return'';
+  const RESERVATION_NEEDED=['lodge','flight','train','bus'];
+  const PREBOOK_RE=/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i;
+  const rows=[];
+  state.days.forEach((d,di)=>{
+    const dateStr=(d.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
+    const dayDate=dateStr?new Date(dateStr+' 12:00'):null;
+    const daysUntil=(dayDate&&!isNaN(dayDate))?Math.ceil((dayDate-new Date())/86400000):null;
+    d.stops.forEach((s,si)=>{
+      if(s.reservation)return;
+      const needsBook=RESERVATION_NEEDED.includes(s.type)||PREBOOK_RE.test(s.notes||'');
+      if(!needsBook)return;
+      rows.push({name:s.name,type:s.type,date:dateStr,daysUntil,di,si});
+    });
+  });
+  const badge=rows.length?'<span class="ov-badge">'+rows.length+'</span>':'';
+  const inner=rows.length
+    ?rows.map(r=>{
+        const dc=r.daysUntil!==null?(r.daysUntil<14?'days-urgent':r.daysUntil<45?'days-warn':'days-ok'):'days-ok';
+        const db=r.daysUntil!==null?'<span class="days-badge '+dc+'">'+r.daysUntil+'d</span>':'';
+        return'<div class="unbooked-row" onclick="jumpToStop('+r.di+','+r.si+')" style="cursor:pointer">'+
+          '<span class="unbooked-name">'+_escHtml(r.name)+'</span>'+
+          '<span class="unbooked-date">'+_escHtml(r.date||'')+'</span>'+
+          db+'</div>';
+      }).join('')
+    :'<div class="unbooked-all-clear">&#10003; All bookings confirmed</div>';
+  return'<div class="ov-section" style="margin-top:16px">'+
+    '<div style="font-family:var(--font-ui);font-weight:600;font-size:14px;margin-bottom:10px;color:var(--ink)">&#128197; Still Unbooked '+badge+'</div>'+
+    inner+'</div>';
+}
+
+function jumpToStop(di,si){
+  switchDay(di);
+  setTimeout(()=>{
+    const el=document.getElementById('stop-card-'+di+'-'+si);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+  },300);
+}
+
+/* ============================================================
+   FEATURE 6: Live Mode
+   ============================================================ */
+function _updateLivePill(){
+  const pill=document.getElementById('live-pill');if(!pill)return;
+  pill.style.display=_getTodayDayIdx()>=0?'inline-flex':'none';
+}
+
+async function loadLiveWeather(dayIdx){
+  const strip=document.getElementById('live-wx-'+dayIdx);if(!strip)return;
+  const day=state.days[dayIdx];if(!day)return;
+  let lat=null,lng=null;
+  for(const s of day.stops){if(s.lat&&s.lng){lat=parseFloat(s.lat);lng=parseFloat(s.lng);break;}}
+  if(lat===null){strip.style.display='none';return;}
+  strip.innerHTML='<span style="font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:6px 8px">Loading weather...</span>';
+  try{
+    const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+
+      '&hourly=temperature_2m,weathercode&temperature_unit=fahrenheit&forecast_days=1&timezone=auto';
+    const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    const hours=data.hourly?.time||[];
+    const temps=data.hourly?.temperature_2m||[];
+    const codes=data.hourly?.weathercode||[];
+    const nowH=(new Date()).getHours();
+    const items=[];
+    for(let i=0;i<hours.length&&items.length<3;i++){
+      const h=parseInt(hours[i].slice(11,13));
+      if(h>=nowH)items.push({time:hours[i].slice(11,16),temp:Math.round(temps[i]),code:codes[i]});
+    }
+    if(!items.length){strip.style.display='none';return;}
+    const _wxIcon=code=>{
+      if(code===0)return'☀️';if(code<=2)return'⛅';if(code<=3)return'☁️';
+      if(code<=49)return'🌫️';if(code<=59)return'🌦️';if(code<=69)return'🌧️';
+      if(code<=79)return'🌨️';if(code<=82)return'🌧️';if(code<=86)return'❄️';
+      if(code<=99)return'⛈️';return'🌡️';
+    };
+    strip.innerHTML=items.map(it=>
+      '<div class="live-wx-item">'+
+      '<div class="live-wx-time">'+it.time+'</div>'+
+      '<div class="live-wx-icon">'+_wxIcon(it.code)+'</div>'+
+      '<div class="live-wx-temp">'+it.temp+'°F</div>'+
+      '</div>'
+    ).join('');
+  }catch(e){strip.style.display='none';}
+}
+
+/* ============================================================
+   FEATURE 7: Booking Deep Links
+   ============================================================ */
+function _bookingLinkHtml(s){
+  if(['drive','flight','train','bus'].includes(s.type))return'';
+  if(s.reservation)return'';
+  let label,searchQuery;
+  if(s.type==='lodge'){
+    label='&#127968; Book';
+    searchQuery=encodeURIComponent(s.name+' hotel booking');
+  }else if(s.type==='food'){
+    label='&#127374; Reserve';
+    searchQuery=encodeURIComponent(s.name+' restaurant reservation');
+  }else{
+    label='&#127981; Tickets & Info';
+    searchQuery=encodeURIComponent(s.name+' tickets');
+  }
+  const href=s.url||('https://www.google.com/search?q='+searchQuery);
+  return'<a class="map-link" href="'+href+'" target="_blank" rel="noopener">'+label+'</a>';
+}
+
+/* ============================================================
+   FEATURE 8: Proposed Cross-Day Moves
+   ============================================================ */
+function _applyProposedMove(move){
+  const{stop_name,from_day,to_day}=move;
+  const fromIdx=(from_day||0)-1,toIdx=(to_day||0)-1;
+  if(fromIdx<0||toIdx<0||fromIdx>=state.days.length||toIdx>=state.days.length)return false;
+  const si=state.days[fromIdx].stops.findIndex(s=>
+    s.name.toLowerCase().includes((stop_name||'').toLowerCase().slice(0,20))
+  );
+  if(si<0)return false;
+  const [moved]=state.days[fromIdx].stops.splice(si,1);
+  state.days[toIdx].stops.push(moved);
+  return true;
+}
+
+function applyProposedMove(moveIdx){
+  if(!_optLastData?.proposed_moves?.[moveIdx])return;
+  const move=_optLastData.proposed_moves[moveIdx];
+  const snapshot=JSON.parse(JSON.stringify(state.days));
+  if(_applyProposedMove(move)){
+    saveState('Applied proposed move');
+    document.getElementById('ai-optimizer-modal').classList.remove('open');
+    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    showUndoBanner('Moved "'+_escHtml(move.stop_name||'')+'" to Day '+move.to_day,()=>{
+      state.days=snapshot;saveState('Undid move');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    });
+  }
+}
+
+function applyAllProposedMoves(){
+  if(!_optLastData?.proposed_moves?.length)return;
+  const snapshot=JSON.parse(JSON.stringify(state.days));
+  let applied=0;
+  for(const move of _optLastData.proposed_moves){if(_applyProposedMove(move))applied++;}
+  if(applied>0){
+    saveState('Applied all proposed moves');
+    document.getElementById('ai-optimizer-modal').classList.remove('open');
+    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    showUndoBanner('Applied '+applied+' proposed move'+(applied>1?'s':''),()=>{
+      state.days=snapshot;saveState('Undid moves');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    });
+  }
+}
+
+/* ============================================================
+   FEATURE 9: Trip Recap / Memory View
+   ============================================================ */
+function openTripRecap(){
+  const modal=document.getElementById('trip-recap-modal');if(!modal)return;
+  const content=document.getElementById('trip-recap-content');if(!content)return;
+  content.innerHTML=_renderRecap();
+  modal.classList.add('open');
+}
+
+function _renderRecap(){
+  const startIso=dayDateStr(0);
+  const endIso=dayDateStr(state.days.length-1);
+  let h='<div class="recap-hero">'+
+    '<div class="recap-trip-name">'+_escHtml(state.title||'Trip Recap')+'</div>'+
+    (startIso&&endIso?'<div class="recap-dates">'+startIso+' &ndash; '+endIso+'</div>':'')+
+    '</div>';
+  state.days.forEach((d,di)=>{
+    const dayNote=jnlData['d_'+di]||'';
+    h+='<div class="recap-day-hdr">'+_escHtml(d.title)+
+      (d.subtitle?'<span style="font-weight:400;font-size:13px;margin-left:8px;color:var(--muted)">'+_escHtml(d.subtitle)+'</span>':'')+
+      '</div>';
+    if(dayNote)h+='<div class="recap-day-jnl">'+_escHtml(dayNote)+'</div>';
+    d.stops.forEach((s,si)=>{
+      const note=jnlData['n_'+di+'_'+si]||'';
+      const rating=parseInt(jnlData['r_'+di+'_'+si]||0);
+      const hasContent=note||rating||s.customImage;
+      if(!hasContent){
+        h+='<div class="recap-compact">'+_escHtml(s.name)+'</div>';
+        return;
+      }
+      h+='<div class="recap-memory-card">'+
+        (s.customImage?'<img class="recap-photo" src="'+s.customImage+'" alt="'+_escHtml(s.name)+'" loading="lazy"/>':'')+
+        '<div class="recap-card-body">'+
+        '<div class="recap-stop-name">'+_escHtml(s.name)+'</div>'+
+        (rating?'<div class="recap-stars-row">'+Array(rating).fill('&#9733;').join('')+'</div>':'')+
+        (note?'<div class="recap-note">'+_escHtml(note)+'</div>':'')+
+        '</div></div>';
+    });
+  });
+  h+='<div style="text-align:center;padding:16px 16px 32px">'+
+    '<button class="recap-share-btn" onclick="shareRecap()">&#128279; Share Recap</button>'+
+    '</div>';
+  return h;
+}
+
+function shareRecap(){
+  document.getElementById('trip-recap-modal')?.classList.remove('open');
+  openShareModal();
+}
+
 async function init(){
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
@@ -2749,6 +3208,8 @@ async function init(){
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;
+  const _autoToday=_getTodayDayIdx();
+  if(_autoToday>=0)currentDayIdx=_autoToday;
   /* one-time migration: move stop_desc_v1 cache into stop.desc */
   try{
     const old=JSON.parse(localStorage.getItem('stop_desc_v1')||'{}');
@@ -2800,6 +3261,12 @@ async function init(){
   document.getElementById('share-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
   document.getElementById('travelers-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
   document.getElementById('alternates-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
+  document.getElementById('tour-guide-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
+  document.getElementById('trip-recap-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
+  _updateLivePill();
+  _updateTourGuideFloat();
+  _updateOfflineState();
+  window.addEventListener('resize',_updateTourGuideFloat);
   new ResizeObserver(updateTabScrollBtns).observe(document.getElementById('tabs-inner'));
   new ResizeObserver(updateTabsTop).observe(document.querySelector('header'));
   updateTabsTop();

@@ -440,6 +440,12 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .alt-use-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:background 0.2s}
 .alt-use-btn:hover{background:#1a6640}
 .recently-changed-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-left:5px;vertical-align:middle;flex-shrink:0;cursor:help}
+/* === Overview start date editor === */
+.ov-start-date{font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ov-start-date input[type=date]{font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);padding:6px 10px;cursor:pointer;transition:border-color 0.18s}
+.ov-start-date input[type=date]:hover{border-color:var(--river)}
+.ov-start-date input[type=date]:focus{outline:none;border-color:var(--river)}
+.ov-start-date input[type=date]:disabled{opacity:0.6;cursor:default}
 /* === Tab drag reorder === */
 .tab-item[draggable=true]{cursor:grab}
 .tab-item[draggable=true].dragging{opacity:0.3;cursor:grabbing}

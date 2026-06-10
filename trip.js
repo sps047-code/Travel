@@ -387,6 +387,32 @@ function findDayByDate(dateStr){
   for(let i=0;i<state.days.length;i++){if(dayDateStr(i)===dateStr)return i;}
   return -1;
 }
+function setTripStartDate(isoDate){
+  if(!isoDate)return;
+  const newStart=new Date(isoDate+' 12:00');
+  if(isNaN(newStart.getTime()))return;
+  const oldStartIso=dayDateStr(0);
+  const oldStart=oldStartIso?new Date(oldStartIso+' 12:00'):null;
+  state.days.forEach((day,i)=>{
+    // keep each day's offset from the old start; fall back to consecutive days
+    let offset=i;
+    if(oldStart){
+      const ownIso=dayDateStr(i);
+      if(ownIso){
+        offset=Math.round((new Date(ownIso+' 12:00')-oldStart)/86400000);
+      }
+    }
+    const d=new Date(newStart.getTime()+offset*86400000);
+    const dateLabel=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const parts=(day.subtitle||'').split(/\s*[·•]\s*/);
+    const hadDate=parts[0]&&!isNaN(new Date(parts[0].trim()+' 12:00').getTime());
+    if(hadDate)parts[0]=dateLabel;
+    else parts.unshift(dateLabel);
+    day.subtitle=parts.filter(Boolean).join(' · ');
+  });
+  saveState('Changed trip start date');
+  renderAll();
+}
 function parsedTransitRoute(s){
   if(s.from||s.to)return{from:s.from||'—',to:s.to||'—'};
   const n=s.name;
@@ -1459,6 +1485,12 @@ function renderOverview(){
   const panelAudio='<div class="ov-tab-panel" id="ovtab-audio"'+(activeOvTab!=='audio'?' style="display:none"':'')+'>'+
     renderAudioToursHtml()+'</div>';
 
+  const startIso=dayDateStr(0);
+  const startDateHtml='<div class="ov-start-date">&#128197; Starts: '+
+    '<input type="date" id="ov-start-input" value="'+startIso+'" onchange="setTripStartDate(this.value)"'+(isJournalMode()?' disabled':'')+'/>'+
+    (startIso?'':'<span style="color:var(--muted);font-size:12px"> (pick a date to set day dates)</span>')+
+    '</div>';
+
   return'<div class="ov-panel">'+
     '<div class="ov-section">'+
     (state.title?'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">'+
@@ -1468,7 +1500,7 @@ function renderOverview(){
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
     '</div></div>':'')
-    +statsHtml+budgetHtml+'</div>'+
+    +startDateHtml+statsHtml+budgetHtml+'</div>'+
     (jnl?_tripHighlightsHtml():'')+
     tabBar+panelCal+panelLodge+panelCheck+panelPack+panelAudio+
     '</div>';

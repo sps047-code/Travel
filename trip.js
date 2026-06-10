@@ -317,6 +317,21 @@ async function renderDayMap(idx){
   const st=document.getElementById('route-status');
   st.style.display='block';st.textContent='Loading driving routes...';
   const bounds=[];
+  // include the hotel you wake up at as the route origin (same logic as the bookend)
+  const TRANSIT=['flight','train','bus'];
+  const prevDay=idx>0?state.days[idx-1]:null;
+  const prevLast=prevDay&&prevDay.stops.length?prevDay.stops[prevDay.stops.length-1]:null;
+  const prevEndsInTransit=prevLast&&TRANSIT.includes(prevLast.type);
+  let startHotel=(!prevEndsInTransit&&day.stops.length>0)?getHotelForDay(idx-1):null;
+  if(startHotel&&(!startHotel.lat||!startHotel.lng))startHotel=null;
+  // skip if the day's first stop already is that hotel
+  if(startHotel&&day.stops[0]&&day.stops[0].lat===startHotel.lat&&day.stops[0].lng===startHotel.lng)startHotel=null;
+  if(startHotel){
+    const nm=startHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
+    const hm=L.marker([startHotel.lat,startHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127970;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
+    hm.bindPopup('<div style="font-weight:700;font-size:13px">Starting from: '+nm+'</div>',{maxWidth:200});
+    markersLayer.addLayer(hm);bounds.push([startHotel.lat,startHotel.lng]);
+  }
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
@@ -330,11 +345,12 @@ async function renderDayMap(idx){
       L.polyline(greatCirclePoints([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
     }
   }
+  const routeStops=startHotel?[startHotel,...day.stops]:day.stops;
   try{
-    const rc=await fetchRoute(day.stops);
+    const rc=await fetchRoute(routeStops);
     if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
     else{
-      const ml=day.stops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
+      const ml=routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
       if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
       st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
     }

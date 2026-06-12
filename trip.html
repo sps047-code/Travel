@@ -540,6 +540,13 @@ body.offline #audio-discover-btn{display:none!important}
 .recap-day-jnl{font-family:var(--font-display);font-size:14px;font-style:italic;color:var(--ink-soft);line-height:1.65;padding:9px 13px;background:rgba(196,123,32,0.06);border-left:3px solid var(--amber);border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin-bottom:12px}
 .recap-share-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px;background:var(--ink);color:#FDFCFA;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.2s;margin-top:16px}
 .recap-share-btn:hover{background:var(--ink-soft)}
+/* === Duration badge on stop cards === */
+.card-duration{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--muted);background:var(--mist);border:1px solid var(--border);border-radius:20px;padding:1px 8px;margin-top:4px;margin-right:5px}
+/* === Plan Chat floating button + modal === */
+.plan-chat-float{position:fixed;bottom:20px;right:18px;z-index:800;background:var(--river);color:white;border:none;border-radius:50px;padding:11px 15px;font-family:var(--font-ui);font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(43,108,176,0.4);transition:all 0.2s;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.plan-chat-float:hover{background:#1E5A9A;box-shadow:0 6px 20px rgba(43,108,176,0.5)}
+#plan-chat-modal .modal{max-width:540px}
+.plan-ctx{font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:7px 11px;background:var(--river-tint);border:1px solid var(--river-border);border-radius:var(--radius-sm);margin-bottom:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -565,6 +572,7 @@ body.offline #audio-discover-btn{display:none!important}
 </header>
 <div class="import-banner" id="import-banner"></div>
 <button class="tour-guide-float" id="tour-guide-float" onclick="openTourGuide()">&#128205; Near Me</button>
+<button class="plan-chat-float" id="plan-chat-float" onclick="openPlanChat()">&#128172; Ask AI</button>
 <div class="share-toast" id="share-toast"></div>
 <div class="undo-banner" id="undo-banner">
   <span id="undo-banner-text">&#8629; Change applied</span>
@@ -600,6 +608,7 @@ body.offline #audio-discover-btn{display:none!important}
       <div class="form-group full"><label class="form-label">Name</label><input type="text" class="form-input" id="f-name" placeholder="Stop name"/></div>
       <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-input" id="f-date"/></div>
       <div class="form-group"><label class="form-label">Time</label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM"/></div>
+      <div class="form-group"><label class="form-label">Duration</label><input type="text" class="form-input" id="f-duration" placeholder="e.g. 2h, 45 min"/></div>
       <div class="form-group"><label class="form-label">Type</label>
         <select class="form-select" id="f-type" onchange="toggleTransitFields()">
           <option value="hike">Hike / Park</option>
@@ -742,6 +751,14 @@ body.offline #audio-discover-btn{display:none!important}
     <div class="modal-title" id="recap-title">&#128196; Trip Recap</div>
     <button class="modal-close" onclick="document.getElementById('trip-recap-modal').classList.remove('open')">&#215;</button>
     <div id="trip-recap-content"></div>
+  </div>
+</div>
+<!-- Plan Chat Modal -->
+<div class="modal-overlay" id="plan-chat-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pc-title">
+    <div class="modal-title" id="pc-title">&#128172; Ask AI — Trip Planner</div>
+    <button class="modal-close" onclick="document.getElementById('plan-chat-modal').classList.remove('open')">&#215;</button>
+    <div id="pc-content"></div>
   </div>
 </div>
 <script src="trip.js"></script>

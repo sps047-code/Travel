@@ -595,6 +595,7 @@ function renderPanel(idx){
       '<div class="card-top">'+(s.time?'<span class="card-time">'+s.time+(stopTz(s)?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
+      (s.duration?'<span class="card-duration">&#9201; '+_escHtml(s.duration)+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
       (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
@@ -1018,7 +1019,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-date','f-time','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  ['place-search','f-name','f-date','f-time','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -1054,6 +1055,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-flightnum').value=s.flightNumber||'';
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
+  const _fd=document.getElementById('f-duration');if(_fd)_fd.value=s.duration||'';
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -1154,7 +1156,8 @@ function saveStop(){
   const transitMode=_pendingTransitMode||existingTM||null;
   const attendance=_getAttendanceFromForm();
   const _urlVal=(document.getElementById('f-url')?.value||'').trim()||undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const _durVal=(document.getElementById('f-duration')?.value||'').trim()||undefined;
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   if(existingStop?.openingHours)stop.openingHours=existingStop.openingHours;
@@ -3164,6 +3167,99 @@ function shareRecap(){
   openShareModal();
 }
 
+/* ============================================================
+   PLANNING CHAT — Ask AI about your trip
+   ============================================================ */
+const PLAN_CHAT_SYSTEM='You are an expert travel planning assistant. You have full knowledge of the user\'s itinerary and answer questions about logistics, timing, attractions, restaurants, transportation, and trip improvements. Be specific, practical, and concise. No em dashes.';
+
+let _pcHistory=[];
+
+function _buildTripContext(){
+  if(!state?.days?.length)return'Trip has no days yet.';
+  let ctx='Trip: '+(state.title||'Untitled')+'\n';
+  const startIso=dayDateStr(0);
+  if(startIso)ctx+='Start date: '+startIso+'\n';
+  ctx+='\n';
+  state.days.forEach((d,di)=>{
+    ctx+='Day '+(di+1)+': '+d.title+(d.subtitle?' ('+d.subtitle+')':'')+'\n';
+    d.stops.forEach((s,si)=>{
+      ctx+='  '+(si+1)+'. '+s.name+' ['+s.type+']';
+      if(s.time)ctx+=' @'+s.time;
+      if(s.duration)ctx+=' ('+s.duration+')';
+      if(s.notes)ctx+=' -- '+s.notes;
+      ctx+='\n';
+    });
+  });
+  return ctx;
+}
+
+function openPlanChat(){
+  const modal=document.getElementById('plan-chat-modal');if(!modal)return;
+  const content=document.getElementById('pc-content');if(!content)return;
+  // Only reset history if reopening a fresh session
+  if(!_pcHistory.length){
+    const ctx=_buildTripContext();
+    _pcHistory=[{role:'user',content:'Here is my trip itinerary:\n\n'+ctx+'\nI have questions about my trip.'},
+      {role:'assistant',content:'I have your full itinerary. What would you like to know about your trip?'}];
+  }
+  const chips=['Is my pacing realistic?','What am I missing?','Any booking deadlines I should know?'];
+  content.innerHTML=
+    '<div class="plan-ctx">&#9432; AI has your full '+state.days.length+'-day itinerary as context.</div>'+
+    '<div class="tg-messages" id="pc-messages">'+
+    '<div class="tg-msg tg-msg-ai">I have your full itinerary. What would you like to know about your trip?</div>'+
+    '</div>'+
+    '<div class="tg-chips" id="pc-chips">'+
+    chips.map(c=>'<button class="tg-chip" onclick="_pcChip(this,'+JSON.stringify(c)+')">'+_escHtml(c)+'</button>').join('')+
+    '</div>'+
+    '<div class="tg-input-row">'+
+    '<input class="tg-input" id="pc-input" placeholder="Ask anything about your trip..." onkeydown="if(event.key===\'Enter\')_planSendMessage()"/>'+
+    '<button class="tg-send" onclick="_planSendMessage()">&#10148;</button>'+
+    '</div>';
+  modal.classList.add('open');
+  setTimeout(()=>document.getElementById('pc-input')?.focus(),120);
+}
+
+function _pcChip(btn,text){
+  document.getElementById('pc-chips')?.remove();
+  _pcAddMessage('user',text);
+  _planCallAI(text);
+}
+
+function _planSendMessage(){
+  const input=document.getElementById('pc-input');if(!input)return;
+  const text=input.value.trim();if(!text)return;
+  input.value='';
+  _pcAddMessage('user',text);
+  _planCallAI(text);
+}
+
+async function _planCallAI(userText){
+  const msgs=document.getElementById('pc-messages');
+  const thinking=document.createElement('div');
+  thinking.className='tg-msg tg-thinking';thinking.textContent='Thinking...';
+  if(msgs){msgs.appendChild(thinking);msgs.scrollTop=msgs.scrollHeight;}
+  _pcHistory.push({role:'user',content:userText});
+  try{
+    const convo=_pcHistory.map(m=>m.role+': '+m.content).join('\n\n');
+    const text=await callClaude(PLAN_CHAT_SYSTEM,convo);
+    if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
+    _pcHistory.push({role:'assistant',content:text});
+    _pcAddMessage('assistant',text);
+  }catch(e){
+    if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
+    _pcAddMessage('error','Could not reach the AI. Please try again.');
+  }
+}
+
+function _pcAddMessage(role,text){
+  const msgs=document.getElementById('pc-messages');if(!msgs)return;
+  const div=document.createElement('div');
+  div.className='tg-msg '+(role==='user'?'tg-msg-user':role==='error'?'tg-msg-err':'tg-msg-ai');
+  div.textContent=text;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
 async function init(){
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
@@ -3263,6 +3359,7 @@ async function init(){
   document.getElementById('alternates-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
   document.getElementById('tour-guide-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
   document.getElementById('trip-recap-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
+  document.getElementById('plan-chat-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
   _updateLivePill();
   _updateTourGuideFloat();
   _updateOfflineState();

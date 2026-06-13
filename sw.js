@@ -21,7 +21,7 @@
 //      e.g. trip.html (HTML+CSS) + trip.js (JavaScript) — already done.
 // =============================================================================
 
-const CACHE = 'seasons-v58';
+const CACHE = 'seasons-v59';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
@@ -52,6 +52,9 @@ self.addEventListener('activate', e => {
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
+    .then(() => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(cs =>
+      Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{}))
+    )))
   );
 });
 

@@ -21,7 +21,7 @@
 //      e.g. trip.html (HTML+CSS) + trip.js (JavaScript) — already done.
 // =============================================================================
 
-const CACHE = 'seasons-v56';
+const CACHE = 'seasons-v57';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
@@ -37,8 +37,13 @@ const PRECACHE = [
 ];
 
 self.addEventListener('install', e => {
+  // Cache each file individually so a single failure doesn't block installation
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(cache =>
+      Promise.allSettled(PRECACHE.map(url =>
+        fetch(url, {cache: 'no-store'}).then(res => { if (res.ok) cache.put(url, res); })
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 
@@ -53,6 +58,17 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = e.request.url;
+  // Hard reload (Cache-Control: no-cache) — bypass SW cache, fetch fresh from network
+  const cc = e.request.headers.get('cache-control');
+  if (cc && cc.includes('no-cache')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
   // Stale-while-revalidate for OSM map tiles
   if (url.includes('tile.openstreetmap.org')) {
     e.respondWith(

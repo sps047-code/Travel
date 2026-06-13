@@ -404,8 +404,8 @@ function dayDateStr(dayIdx){
   const sub=day.subtitle||'';
   const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
   if(!datePart)return'';
-  const d=new Date(datePart+' 12:00');
-  if(isNaN(d.getTime()))return'';
+  const d=_parseTripDate(datePart);
+  if(!d)return'';
   return d.toISOString().slice(0,10);
 }
 function findDayByDate(dateStr){
@@ -431,7 +431,7 @@ function setTripStartDate(isoDate){
     const d=new Date(newStart.getTime()+offset*86400000);
     const dateLabel=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const parts=(day.subtitle||'').split(/\s*[·•]\s*/);
-    const hadDate=parts[0]&&!isNaN(new Date(parts[0].trim()+' 12:00').getTime());
+    const hadDate=parts[0]&&_parseTripDate(parts[0].trim())!==null;
     if(hadDate)parts[0]=dateLabel;
     else parts.unshift(dateLabel);
     day.subtitle=parts.filter(Boolean).join(' · ');
@@ -716,22 +716,40 @@ try{narrData=JSON.parse(localStorage.getItem(NARR_LS)||'{}')}catch(e){}
 const WX_ICONS={0:'☀️',1:'🌤️',2:'🌤️',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌦️',63:'🌧️',65:'🌧️',71:'🌨️',73:'❄️',75:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',85:'🌨️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
 const WX_LABELS={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Freezing fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',80:'Rain showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
 /* Parse "Sun Jun 7", "Jun 7", "June 7, 2026", etc. — infers year from closest to today */
+/* Month-name to 0-based index — used by _parseTripDate to avoid new Date(string) quirks */
+const _MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+  january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,
+  september:8,october:9,november:10,december:11};
+function _mkDate(monthName,day,year){
+  const mi=_MON[monthName.toLowerCase().slice(0,3)];
+  if(mi===undefined)return null;
+  const d=new Date(year,mi,parseInt(day),12,0,0);
+  return(d.getMonth()===mi&&d.getDate()===parseInt(day))?d:null;
+}
 function _parseTripDate(str){
   if(!str)return null;
-  // For strings with explicit 4-digit year, parse directly
-  if(/\b\d{4}\b/.test(str)){
-    const d=new Date(str+' 12:00:00');
-    if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getFullYear()<=2040)return d;
+  // ISO format: 2026-06-09
+  const iso=str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso){
+    const d=new Date(parseInt(iso[1]),parseInt(iso[2])-1,parseInt(iso[3]),12,0,0);
+    if(!isNaN(d.getTime()))return d;
   }
-  // No explicit year: extract month+day and infer year closest to today
-  // (avoids V8's quirky behavior parsing "Sun Jun 7" which picks wrong past years)
-  const m=str.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);
-  if(!m)return null;
+  // Month-name with explicit year: "Jun 6, 2026" / "June 6 2026" / "6 Jun 2026"
+  const withYr=str.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/)||
+               str.match(/(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})/);
+  if(withYr){
+    const d=withYr[0].match(/^\d/)?_mkDate(withYr[2],withYr[1],parseInt(withYr[3]))
+                                  :_mkDate(withYr[1],withYr[2],parseInt(withYr[3]));
+    if(d&&d.getFullYear()>=2020&&d.getFullYear()<=2040)return d;
+  }
+  // Month-name without year: "Fri Oct 9" / "Oct 9" — infer year closest to today
+  const noYr=str.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);
+  if(!noYr)return null;
   const now=new Date();now.setHours(12,0,0,0);
   let best=null,bestGap=Infinity;
   for(const yr of[now.getFullYear()-1,now.getFullYear(),now.getFullYear()+1]){
-    const c=new Date(m[1]+' '+m[2]+', '+yr+' 12:00:00');
-    if(isNaN(c.getTime())||c.getFullYear()<2020)continue;
+    const c=_mkDate(noYr[1],noYr[2],yr);
+    if(!c||c.getFullYear()<2020)continue;
     const gap=Math.abs(c-now);
     if(gap<bestGap){bestGap=gap;best=c;}
   }

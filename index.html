@@ -269,7 +269,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div class="wiz-step active" id="wstep-1">
       <span class="wiz-emoji" aria-hidden="true">&#127758;</span>
       <div class="wiz-question">Where &amp; when?</div>
-      <input type="text" class="wiz-input" id="w-dest" placeholder="Utah&#8217;s national parks, Paris, Tokyo&#8230;" autocomplete="off"/>
+      <input type="text" class="wiz-input" id="w-dest" placeholder="Utah’s national parks, Paris, Tokyo…" autocomplete="off"/>
       <div class="wiz-sublabel">Dates (optional)</div>
       <div class="wiz-date-row">
         <input type="date" class="wiz-input-date" id="w-start" aria-label="Start date"/>
@@ -285,7 +285,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         </div>
         <span style="font-family:var(--font-ui);font-size:13px;color:var(--muted)" id="days-label">days</span>
       </div>
-      <div class="wiz-sublabel">Who&#8217;s coming?</div>
+      <div class="wiz-sublabel">Who’s coming?</div>
       <div class="chip-row" id="who-chips" role="group" aria-label="Travel group">
         <button class="chip" data-group="who" data-val="just the two of us">Just the two of us</button>
         <button class="chip" data-group="who" data-val="family with kids">Family with kids</button>
@@ -342,7 +342,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <div class="budget-calc-item">Per person<strong id="calc-perperson">—</strong></div>
       </div>
       <div class="wiz-sublabel">Anything else?</div>
-      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip&#8230;" style="min-height:80px"></textarea>
+      <textarea class="wiz-textarea" id="w-notes" placeholder="Dietary needs, must-see spots, flying from a specific city, anniversary trip…" style="min-height:80px"></textarea>
     </div>
 
     <div class="wiz-error" id="wiz-error" role="alert"></div>
@@ -373,14 +373,14 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <input type="file" id="import-file" accept=".txt,.md,.csv,.rtf,application/pdf,.pdf" style="display:none"/>
     </label>
 
-    <textarea class="wiz-textarea" id="import-text" style="min-height:180px" placeholder="Paste your itinerary here&#8230;
+    <textarea class="wiz-textarea" id="import-text" style="min-height:180px" placeholder="Paste your itinerary here…
 
 Day 1 - June 6
 7:15am depart Tulsa
 Arrive Las Vegas 8am, pick up rental car
 Drive to Zion NP (4 hrs)
 Check in Zion Lodge
-Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
+Dinner at Oscar’s Cafe…"></textarea>
 
 
     <div class="wiz-error" id="import-error" role="alert"></div>
@@ -395,7 +395,7 @@ Dinner at Oscar&#8217;s Cafe&#8230;"></textarea>
 <!-- Loading overlay -->
 <div class="ai-loading" id="ai-loading" aria-live="assertive" aria-label="Loading">
   <img src="leaf-logo.png" class="loading-leaf" width="56" height="68" alt="" aria-hidden="true"/>
-  <div class="loading-title" id="loading-title">Planning your adventure&#8230;</div>
+  <div class="loading-title" id="loading-title">Planning your adventure…</div>
   <div class="loading-sub" id="loading-sub">Claude is on it</div>
   <div class="loading-dots" id="loading-dots">
     <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
@@ -929,7 +929,7 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
     this.classList.add('active');hideErr('wiz-error');
   });
 });
-document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
+document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})})
 
 /* ---- Date pickers ---- */
 function updateDaysFromDates(){
@@ -1074,7 +1074,7 @@ async function loadTrips(){
 
 loadTrips();
 checkSetup();
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').then(reg=>{reg.update();});}
 
 /* ---- PWA Install ---- */
 let _installPrompt=null;

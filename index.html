@@ -929,7 +929,7 @@ document.querySelectorAll('.chip[data-group]').forEach(btn=>{
     this.classList.add('active');hideErr('wiz-error');
   });
 });
-document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})})
+document.querySelectorAll('.chip.multi').forEach(btn=>{btn.addEventListener('click',function(){this.classList.toggle('active')})});
 
 /* ---- Date pickers ---- */
 function updateDaysFromDates(){
@@ -1074,7 +1074,7 @@ async function loadTrips(){
 
 loadTrips();
 checkSetup();
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').then(reg=>{reg.update();});}
+if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload());navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{reg.update();});}
 
 /* ---- PWA Install ---- */
 let _installPrompt=null;

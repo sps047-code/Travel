@@ -159,7 +159,7 @@ function _syncOvernightArrivals(){
       if(sm<0||em<0||em>=sm) return; // not overnight
       state.days[di+1].stops.unshift({
         name:stop.name, type:stop.type, time:stop.endTime,
-        lat:stop.lat||0, lng:stop.lng||0, _autoArrival:true
+        _autoArrival:true
       });
       changed=true;
     });

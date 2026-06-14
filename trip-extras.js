@@ -46,6 +46,7 @@ window.saveStop = function(){
       }
     }
   }catch(e){ console.warn('[trip-extras] endTime save failed:', e); }
+  if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
 };
 
 // ── 3.  PATCH openEditStopModal TO PRE-FILL endTime ───────────────────────
@@ -111,8 +112,16 @@ function augmentCards(){
 function _startObserver(){
   _injectFormField();
   augmentCards();
+  if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
+  let _oaInitDone=false;
   const ca = document.getElementById('content-area');
-  if(ca) new MutationObserver(augmentCards).observe(ca, {childList:true, subtree:true});
+  if(ca) new MutationObserver(()=>{
+    augmentCards();
+    if(!_oaInitDone && typeof state!=='undefined' && state && state.days){
+      _oaInitDone=true;
+      if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
+    }
+  }).observe(ca, {childList:true, subtree:true});
   const mo = document.getElementById('modal-overlay');
   if(mo) new MutationObserver(_injectFormField).observe(mo, {attributes:true, attributeFilter:['class']});
 }
@@ -121,7 +130,46 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 else setTimeout(_startObserver, 0);
 
 
-// ── 5.  AI CHAT — CHANGE-AWARE PROMPT + CONFIRMATION ──────────────────────
+// ── 5.  OVERNIGHT TRAVEL AUTO-ARRIVAL ─────────────────────────────────────
+function _parseMinutes(t){
+  if(!t) return -1;
+  const m=String(t).match(/(\d+):(\d+)\s*(am|pm)?/i);
+  if(!m) return -1;
+  let h=+m[1], min=+m[2];
+  const ap=(m[3]||'').toLowerCase();
+  if(ap==='pm'&&h!==12) h+=12;
+  if(ap==='am'&&h===12) h=0;
+  return h*60+min;
+}
+
+let _oaSyncing=false;
+function _syncOvernightArrivals(){
+  if(_oaSyncing) return false;
+  if(typeof state==='undefined'||!state||!state.days) return false;
+  _oaSyncing=true;
+  const transit=['flight','train','bus','drive'];
+  // Clear previously auto-created arrival stops, then re-derive from current data
+  state.days.forEach(day=>{ if(day.stops) day.stops=day.stops.filter(s=>!s._autoArrival); });
+  let changed=false;
+  state.days.forEach((day,di)=>{
+    if(di>=state.days.length-1) return;
+    (day.stops||[]).forEach(stop=>{
+      if(!transit.includes(stop.type)||!stop.time||!stop.endTime) return;
+      const sm=_parseMinutes(stop.time), em=_parseMinutes(stop.endTime);
+      if(sm<0||em<0||em>=sm) return; // not overnight
+      state.days[di+1].stops.unshift({
+        name:stop.name, type:stop.type, time:stop.endTime,
+        lat:stop.lat||0, lng:stop.lng||0, _autoArrival:true
+      });
+      changed=true;
+    });
+  });
+  _oaSyncing=false;
+  return changed;
+}
+
+
+// ── 6.  AI CHAT — CHANGE-AWARE PROMPT + CONFIRMATION ──────────────────────
 // Build a 0-based index map of the live itinerary for the AI.
 function _itinMap(){
   try{
@@ -260,6 +308,7 @@ function _applyChanges(changes){
       }
     }catch(e){ console.warn('[trip-extras] apply failed:', c, e); fail.push(c.description||c.action); }
   });
+  _syncOvernightArrivals();
   try{ saveState(); }catch(e){ console.warn('[trip-extras] saveState failed:', e); }
   try{ renderAll(); }catch(e){ console.warn('[trip-extras] renderAll failed:', e); }
   const msg = ok+' change'+(ok!==1?'s':'')+' applied'+(fail.length?' ('+fail.length+' failed)':'')+'!';

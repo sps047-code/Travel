@@ -154,7 +154,7 @@ function _patchLegConnectors(){
   });
 }
 
-// ── 4c. END-OF-TRIP LABEL (last day “Tonight” → “End of Trip”) ────────────
+// ── 4c. END-OF-TRIP LABEL (last day "Tonight" → "End of Trip") ────────────
 function _patchEndOfTrip(){
   if(typeof state==='undefined'||!state||!state.days) return;
   if(typeof currentDayIdx==='undefined'||currentDayIdx!==state.days.length-1) return;
@@ -165,28 +165,29 @@ function _patchEndOfTrip(){
 }
 
 // ── 4d. AUDIO TOUR BADGES ──────────────────────────────────────────
-// Audio tours are saved to the device (IndexedDB) on first download so they
-// never need to be fetched again and play fully offline — straight from the
-// app, no new browser window/tab.
-function _audioDB(){
-  return new Promise((res,rej)=>{
-    const r=indexedDB.open('seasons-audio',1);
-    r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains('clips')) r.result.createObjectStore('clips'); };
-    r.onsuccess=()=>res(r.result);
-    r.onerror=()=>rej(r.error);
-  });
+// Audio tours are saved to the device using the Cache API on first download,
+// so they play fully offline straight from the app — no new browser window.
+// The Cache API (unlike fetch+blob) can store cross-origin "opaque" responses,
+// so this works even when the audio host doesn't allow CORS. The service
+// worker then serves the cached audio to the <audio> element.
+const _AUDIO_CACHE='seasons-audio';
+async function _audioCached(url){
+  try{ const c=await caches.open(_AUDIO_CACHE); return !!(await c.match(url)); }
+  catch(e){ return false; }
 }
-function _audioGet(url){
-  return _audioDB().then(db=>new Promise((res,rej)=>{
-    const tx=db.transaction('clips','readonly').objectStore('clips').get(url);
-    tx.onsuccess=()=>res(tx.result||null); tx.onerror=()=>rej(tx.error);
-  })).catch(()=>null);
-}
-function _audioPut(url,blob){
-  return _audioDB().then(db=>new Promise((res,rej)=>{
-    const tx=db.transaction('clips','readwrite').objectStore('clips').put(blob,url);
-    tx.onsuccess=()=>res(true); tx.onerror=()=>rej(tx.error);
-  }));
+async function _audioSave(url){
+  const c=await caches.open(_AUDIO_CACHE);
+  let resp;
+  // Prefer a CORS fetch (readable, supports seeking); fall back to no-cors
+  // (opaque, but still cacheable and playable via the service worker).
+  try{
+    resp=await fetch(url,{mode:'cors',cache:'no-store'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+  }catch(e){
+    resp=await fetch(url,{mode:'no-cors',cache:'no-store'});
+  }
+  await c.put(url, resp);
+  return true;
 }
 
 function _augmentAudioBadges(){
@@ -202,45 +203,25 @@ function _augmentAudioBadges(){
     const bar=document.createElement('div');
     bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:2px;border-radius:0 0 10px 10px';
     bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
-      '<audio controls preload="none" style="flex:1;min-width:180px;height:28px"></audio>'+
+      '<audio controls preload="none" src="'+_esc(url)+'" style="flex:1;min-width:180px;height:28px"></audio>'+
       '<button type="button" class="audio-save-btn" style="font-size:11px;font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
     card.appendChild(bar);
-    const audio=bar.querySelector('audio');
     const btn=bar.querySelector('.audio-save-btn');
-    // If already saved on this device, play straight from local storage (offline).
-    _audioGet(url).then(blob=>{
-      if(blob){
-        audio.src=URL.createObjectURL(blob);
-        btn.textContent='✓ Saved on device'; btn.disabled=true;
-        btn.style.cssText+=';opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)';
-      } else {
-        audio.src=url; // stream in-app until saved
-      }
-    });
-    btn.addEventListener(‘click’,async()=>{
+    const _markSaved=()=>{
+      btn.textContent='✓ Saved on device'; btn.disabled=true;
+      btn.style.cssText+=';opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)';
+    };
+    // The <audio src> streams over the network until saved; once saved, the
+    // service worker transparently serves it from the cache (works offline).
+    _audioCached(url).then(saved=>{ if(saved) _markSaved(); });
+    btn.addEventListener('click',async()=>{
       if(btn.disabled) return;
-      const orig=btn.textContent; btn.textContent=’Saving…’; btn.disabled=true;
+      const orig=btn.textContent; btn.textContent='Saving…'; btn.disabled=true;
       try{
-        // Try CORS first (works when the host allows it), then fall back to
-        // no-cors which bypasses CORS restrictions — needed for most audio hosts.
-        let blob=null;
-        let triedNoCors=false;
-        try{
-          const r=await fetch(url,{mode:’cors’,cache:’no-store’});
-          if(r.ok) blob=await r.blob();
-        }catch(corsErr){
-          triedNoCors=true;
-          const r=await fetch(url,{mode:’no-cors’,cache:’no-store’});
-          blob=await r.blob();
-        }
-        if(!blob||blob.size===0) throw new Error(‘empty’);
-        await _audioPut(url,blob);
-        const t=audio.currentTime||0;
-        audio.src=URL.createObjectURL(blob); audio.currentTime=t;
-        btn.textContent=’✓ Saved on device’;
-        btn.style.cssText+=’;opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)’;
+        await _audioSave(url);
+        _markSaved();
       }catch(e){
-        btn.textContent=’⚠ Couldn\’t save — tap to retry’; btn.disabled=false;
+        btn.textContent='⚠ Couldn\'t save — tap to retry'; btn.disabled=false;
         setTimeout(()=>{ if(!btn.disabled) btn.textContent=orig; },4000);
       }
     });

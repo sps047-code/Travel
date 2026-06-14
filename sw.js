@@ -17,7 +17,7 @@
 //      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
-const CACHE = 'seasons-v74';
+const CACHE = 'seasons-v75';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
@@ -46,8 +46,9 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
+    // Keep the current app-shell cache AND the saved audio-tour cache.
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE && k !== 'seasons-audio').map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
     .then(() => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(cs =>
       Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{}))

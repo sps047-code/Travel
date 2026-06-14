@@ -1,55 +1,68 @@
-// trip-extras.js — end time, timezone labels, AI-itinerary edits with confirmation
+// trip-extras.js — end time, timezone labels, AI-itinerary edits with confirmation,
+//                   overnight arrivals, connector distance fix, end-of-trip label, audio URLs
 //
 // IMPORTANT: This is a classic <script> loaded after trip.js. It shares the
 // global lexical scope, so trip.js's top-level `let` bindings (state,
-// _pcHistory, editingStop, addingToDay) and its function declarations
-// (saveState, renderAll, stopTz, callClaude, _pcAddMessage, etc.) are
-// referenced HERE BY BARE NAME — NOT via window.X. `let`/`const` globals are
-// NOT attached to window, so window.state would be undefined.
+// _pcHistory, editingStop, addingToDay, currentDayIdx) and its function
+// declarations (saveState, renderAll, stopTz, callClaude, _pcAddMessage,
+// haversine, _travelMins, _minsToStr, etc.) are referenced HERE BY BARE NAME
+// — NOT via window.X. `let`/`const` globals are NOT attached to window.
 (function(){
 'use strict';
 
 function _esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// ── 1.  INJECT END-TIME FIELD INTO ADD/EDIT MODAL ─────────────────────────
+// ── 1.  INJECT END-TIME + AUDIO-URL FIELDS INTO ADD/EDIT MODAL ───────────
 function _injectFormField(){
-  if(document.getElementById('f-endtime')) return;
   const timeGrp = document.querySelector('#f-time')?.closest('.form-group');
-  if(!timeGrp) return;
-  const g = document.createElement('div');
-  g.className = 'form-group';
-  g.innerHTML = '<label class="form-label">End Time</label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM"/>';
-  timeGrp.after(g);
+  if(timeGrp && !document.getElementById('f-endtime')){
+    const g = document.createElement('div');
+    g.className = 'form-group';
+    g.innerHTML = '<label class="form-label">End Time</label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM"/>';
+    timeGrp.after(g);
+  }
+  const notesGrp = document.querySelector('#f-notes')?.closest('.form-group');
+  if(notesGrp && !document.getElementById('f-audiourl')){
+    const g = document.createElement('div');
+    g.className = 'form-group';
+    g.innerHTML = '<label class="form-label">Audio Tour URL</label><input type="text" class="form-input" id="f-audiourl" placeholder="e.g. https://podcasts.ricksteves.com/audio-tours/..."/>';
+    notesGrp.before(g);
+  }
 }
 
-// ── 2.  PATCH saveStop TO CAPTURE endTime ─────────────────────────────────
+// ── 2.  PATCH saveStop TO CAPTURE endTime + audioUrl ─────────────────────
 const _origSaveStop = window.saveStop;
 window.saveStop = function(){
-  // editingStop / addingToDay are trip.js lexical globals — bare names
   const wasEditing = (typeof editingStop !== 'undefined' && editingStop)
     ? {dayIdx:editingStop.dayIdx, stopIdx:editingStop.stopIdx} : null;
   const addDay = (typeof addingToDay !== 'undefined') ? addingToDay : null;
   const endTimeVal = (document.getElementById('f-endtime')||{}).value || '';
+  const audioUrlVal = (document.getElementById('f-audiourl')||{}).value || '';
 
   _origSaveStop.apply(this, arguments);
 
   try{
     if(wasEditing){
       const s = state.days[wasEditing.dayIdx].stops[wasEditing.stopIdx];
-      if(s){ if(endTimeVal) s.endTime=endTimeVal; else delete s.endTime; saveState(); }
+      if(s){
+        if(endTimeVal) s.endTime=endTimeVal; else delete s.endTime;
+        if(audioUrlVal) s.audioUrl=audioUrlVal; else delete s.audioUrl;
+        saveState();
+      }
     } else if(addDay != null){
       const day = state.days[addDay];
       if(day && day.stops.length){
         const s = day.stops[day.stops.length-1];
         if(endTimeVal) s.endTime=endTimeVal; else delete s.endTime;
+        if(audioUrlVal) s.audioUrl=audioUrlVal; else delete s.audioUrl;
         saveState();
       }
     }
-  }catch(e){ console.warn('[trip-extras] endTime save failed:', e); }
+  }catch(e){ console.warn('[trip-extras] save failed:', e); }
   if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
 };
 
-// ── 3.  PATCH openEditStopModal TO PRE-FILL endTime ───────────────────────
+// ── 3.  PATCH openEditStopModal TO PRE-FILL endTime + audioUrl ───────────
 const _origOpenEdit = window.openEditStopModal;
 window.openEditStopModal = function(dayIdx, stopIdx){
   _origOpenEdit.apply(this, arguments);
@@ -57,6 +70,8 @@ window.openEditStopModal = function(dayIdx, stopIdx){
     const s = state.days[dayIdx].stops[stopIdx];
     const el = document.getElementById('f-endtime');
     if(el) el.value = (s && s.endTime) || '';
+    const au = document.getElementById('f-audiourl');
+    if(au) au.value = (s && s.audioUrl) || '';
   }catch(e){}
 };
 
@@ -109,14 +124,83 @@ function augmentCards(){
   });
 }
 
+// ── 4b. PATCH LEG-CONNECTORS (use transit arrival coords when stored) ──────
+function _patchLegConnectors(){
+  if(typeof state==='undefined'||!state||!state.days) return;
+  document.querySelectorAll('.leg-connector').forEach(conn=>{
+    const prev=conn.previousElementSibling;
+    if(!prev) return;
+    const m=(prev.id||'').match(/stop-card-(\d+)-(\d+)/);
+    if(!m) return;
+    const di=+m[1], si=+m[2];
+    const stop=state.days[di]?.stops[si];
+    if(!stop||!stop.destLat||!stop.destLng) return;
+    const next=state.days[di]?.stops[si+1];
+    if(!next||!next.lat||!next.lng) return;
+    const dist=haversine(stop.destLat,stop.destLng,next.lat,next.lng);
+    const mode=stop.transitMode||(stop.type==='train'?'train':stop.type==='bus'?'bus':'drive');
+    // Find the distance text node and replace it
+    for(const node of conn.childNodes){
+      if(node.nodeType===Node.TEXT_NODE&&/\d+\.?\d*\s*mi/.test(node.textContent)){
+        if(dist<0.08){ node.textContent=' '; }
+        else{
+          const mi=dist<10?dist.toFixed(1):Math.round(dist);
+          node.textContent=mi+' mi · '+_minsToStr(_travelMins(dist,mode))+' ';
+        }
+        conn.dataset.distPatched='1';
+        break;
+      }
+    }
+  });
+}
+
+// ── 4c. END-OF-TRIP LABEL (last day "Tonight" → "End of Trip") ───────────
+function _patchEndOfTrip(){
+  if(typeof state==='undefined'||!state||!state.days) return;
+  if(typeof currentDayIdx==='undefined'||currentDayIdx!==state.days.length-1) return;
+  const panel=document.querySelector('.day-panel.active');
+  if(!panel) return;
+  const label=panel.querySelector('.hotel-bookend-label');
+  if(label&&/^tonight$/i.test(label.textContent.trim())) label.textContent='End of Trip';
+}
+
+// ── 4d. AUDIO TOUR BADGES ─────────────────────────────────────────────────
+function _augmentAudioBadges(){
+  if(typeof state==='undefined'||!state) return;
+  document.querySelectorAll('.stop-card').forEach(card=>{
+    if(card.dataset.audioBadged) return;
+    const m=(card.id||'').match(/stop-card-(\d+)-(\d+)/);
+    if(!m) return;
+    const stop=state?.days?.[+m[1]]?.stops?.[+m[2]];
+    if(!stop||!stop.audioUrl) return;
+    card.dataset.audioBadged='1';
+    const isMP3=/\.(mp3|m4a|ogg|wav)(\?.*)?$/i.test(stop.audioUrl);
+    const bar=document.createElement('div');
+    bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:2px;border-radius:0 0 10px 10px';
+    bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎙️ Audio Tour</span>'+
+      (isMP3
+        ?'<audio controls preload="none" style="flex:1;min-width:180px;height:28px"><source src="'+_esc(stop.audioUrl)+'"/></audio>'+
+          '<a href="'+_esc(stop.audioUrl)+'" download style="font-size:11px;font-weight:600;color:var(--pine);text-decoration:none;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Download</a>'
+        :'<a href="'+_esc(stop.audioUrl)+'" target="_blank" rel="noopener" style="font-size:11px;color:var(--pine);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+_esc(stop.audioUrl)+'</a>'
+      );
+    card.appendChild(bar);
+  });
+}
+
 function _startObserver(){
   _injectFormField();
   augmentCards();
+  _patchLegConnectors();
+  _patchEndOfTrip();
+  _augmentAudioBadges();
   if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
   let _oaInitDone=false;
   const ca = document.getElementById('content-area');
   if(ca) new MutationObserver(()=>{
     augmentCards();
+    _patchLegConnectors();
+    _patchEndOfTrip();
+    _augmentAudioBadges();
     if(!_oaInitDone && typeof state!=='undefined' && state && state.days){
       _oaInitDone=true;
       if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }

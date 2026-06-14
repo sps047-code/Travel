@@ -2,7 +2,10 @@
   "id": "london-scotland",
   "title": "UK & Scotland Family Trip 2026",
   "subtitle": "Scott, Kimberly, Trenton, London + Bella · 11 Days · August 4–14, 2026",
-  "mapCenter": [54.0, -2.5],
+  "mapCenter": [
+    54,
+    -2.5
+  ],
   "mapZoom": 6,
   "days": [
     {
@@ -51,7 +54,9 @@
           "to": "London Victoria",
           "time": "9:30 AM",
           "stars": null,
-          "notes": "Gatwick Express runs every 15 minutes, journey ~30 minutes. Buy tickets at the station."
+          "notes": "Gatwick Express runs every 15 minutes, journey ~30 minutes. Buy tickets at the station.",
+          "destLat": 51.4952,
+          "destLng": -0.1441
         },
         {
           "name": "Royal Horseguards Hotel — Check In / Drop Bags",
@@ -84,7 +89,7 @@
         {
           "name": "British Museum",
           "lat": 51.5194,
-          "lng": -0.1270,
+          "lng": -0.127,
           "type": "hike",
           "time": "1:15 PM",
           "stars": 5,
@@ -152,7 +157,9 @@
           "to": "Hampton Court",
           "time": "8:30 AM",
           "stars": null,
-          "notes": "South Western Railway, ~35 minutes. Trains run frequently."
+          "notes": "South Western Railway, ~35 minutes. Trains run frequently.",
+          "destLat": 51.4034,
+          "destLng": -0.3378
         },
         {
           "name": "Hampton Court Palace",
@@ -165,8 +172,8 @@
         },
         {
           "name": "Lunch — Tiltyard Cafe",
-          "lat": 51.4040,
-          "lng": -0.3390,
+          "lat": 51.404,
+          "lng": -0.339,
           "type": "food",
           "time": "11:00 AM",
           "stars": 3,
@@ -181,7 +188,9 @@
           "to": "Windsor & Eton Riverside",
           "time": "12:30 PM",
           "stars": null,
-          "notes": "Change at Clapham Junction or Staines. Journey ~50 minutes total."
+          "notes": "Change at Clapham Junction or Staines. Journey ~50 minutes total.",
+          "destLat": 51.4832,
+          "destLng": -0.6114
         },
         {
           "name": "Windsor Castle",
@@ -210,7 +219,9 @@
           "to": "London Waterloo",
           "time": "5:00 PM",
           "stars": null,
-          "notes": "Return to London. Change at Clapham Junction."
+          "notes": "Return to London. Change at Clapham Junction.",
+          "destLat": 51.5036,
+          "destLng": -0.1128
         },
         {
           "name": "Dinner — Black and Blue Borough Market",
@@ -312,7 +323,7 @@
         },
         {
           "name": "The Grand Hotel York — Check In",
-          "lat": 53.9580,
+          "lat": 53.958,
           "lng": -1.0837,
           "type": "lodge",
           "time": "6:15 PM",
@@ -331,8 +342,8 @@
         },
         {
           "name": "York Ghost Walk",
-          "lat": 53.9590,
-          "lng": -1.0810,
+          "lat": 53.959,
+          "lng": -1.081,
           "type": "hike",
           "time": "9:30 PM",
           "stars": 5,
@@ -356,8 +367,8 @@
         },
         {
           "name": "City Walls Walk",
-          "lat": 53.9600,
-          "lng": -1.0870,
+          "lat": 53.96,
+          "lng": -1.087,
           "type": "hike",
           "time": "10:30 AM",
           "stars": 4,
@@ -419,7 +430,7 @@
         },
         {
           "name": "National Railway Museum",
-          "lat": 53.9580,
+          "lat": 53.958,
           "lng": -1.0961,
           "type": "hike",
           "time": "6:00 PM",
@@ -437,7 +448,7 @@
         },
         {
           "name": "The Grand Hotel York",
-          "lat": 53.9580,
+          "lat": 53.958,
           "lng": -1.0837,
           "type": "lodge",
           "time": "9:30 PM",
@@ -454,7 +465,7 @@
       "stops": [
         {
           "name": "Fuel Stop — York",
-          "lat": 53.9600,
+          "lat": 53.96,
           "lng": -1.0873,
           "type": "drive",
           "time": "8:00 AM",
@@ -537,7 +548,7 @@
         {
           "name": "Dinner — The Last Drop",
           "lat": 55.9489,
-          "lng": -3.1920,
+          "lng": -3.192,
           "type": "food",
           "time": "8:00 PM",
           "stars": 3,
@@ -562,7 +573,7 @@
         {
           "name": "Rosslyn Chapel",
           "lat": 55.8553,
-          "lng": -3.1600,
+          "lng": -3.16,
           "type": "hike",
           "time": "9:00 AM",
           "stars": 5,
@@ -571,7 +582,7 @@
         {
           "name": "Drive North — A82",
           "lat": 55.8553,
-          "lng": -3.1600,
+          "lng": -3.16,
           "type": "drive",
           "time": "10:30 AM",
           "stars": null,
@@ -598,7 +609,7 @@
         {
           "name": "Glenfinnan Viaduct",
           "lat": 56.8758,
-          "lng": -5.4310,
+          "lng": -5.431,
           "type": "hike",
           "time": "12:50 PM",
           "stars": 5,
@@ -624,8 +635,8 @@
         },
         {
           "name": "Car Return",
-          "lat": 55.9500,
-          "lng": -3.1900,
+          "lat": 55.95,
+          "lng": -3.19,
           "type": "drive",
           "time": "5:25 PM",
           "stars": null,
@@ -687,7 +698,7 @@
         {
           "name": "Lunch — Edinburgh Larder",
           "lat": 55.9499,
-          "lng": -3.1890,
+          "lng": -3.189,
           "type": "food",
           "time": "1:00 PM",
           "stars": 4,
@@ -723,7 +734,7 @@
         {
           "name": "Mimi's Bakehouse",
           "lat": 55.9545,
-          "lng": -3.2140,
+          "lng": -3.214,
           "type": "food",
           "time": "5:00 PM",
           "stars": 4,
@@ -749,7 +760,7 @@
         },
         {
           "name": "Edinburgh Vaults Tour",
-          "lat": 55.9490,
+          "lat": 55.949,
           "lng": -3.1869,
           "type": "hike",
           "time": "8:00 PM",
@@ -786,14 +797,16 @@
         {
           "name": "LNER Train — Edinburgh to Ely",
           "lat": 55.9502,
-          "lng": -3.1910,
+          "lng": -3.191,
           "type": "train",
           "from": "Edinburgh Waverley",
           "to": "Ely",
           "time": "7:30 AM",
           "stars": null,
           "notes": "LNER service departing 07:30. Coach J, seats 43, 47, 44, 45, 46. Journey ~4 hours along the stunning East Coast Main Line.",
-          "reservation": "26S1INDU1B"
+          "reservation": "26S1INDU1B",
+          "destLat": 52.3969,
+          "destLng": 0.2577
         },
         {
           "name": "Lunch — Almonry Kitchen, Ely",
@@ -822,7 +835,9 @@
           "to": "Cambridge",
           "time": "2:30 PM",
           "stars": null,
-          "notes": "Short hop, ~15 minutes."
+          "notes": "Short hop, ~15 minutes.",
+          "destLat": 52.1944,
+          "destLng": 0.1378
         },
         {
           "name": "King's College Chapel & The Backs",
@@ -842,12 +857,14 @@
           "to": "London Kings Cross",
           "time": "4:00 PM",
           "stars": null,
-          "notes": "~55 minutes. Great Northern / LNER service."
+          "notes": "~55 minutes. Great Northern / LNER service.",
+          "destLat": 51.5308,
+          "destLng": -0.1238
         },
         {
           "name": "The LaLit London — Check In",
-          "lat": 51.5030,
-          "lng": -0.0830,
+          "lat": 51.503,
+          "lng": -0.083,
           "type": "lodge",
           "time": "5:30 PM",
           "stars": 5,
@@ -856,8 +873,8 @@
         },
         {
           "name": "Dinner — Flat Iron Borough",
-          "lat": 51.5050,
-          "lng": -0.0920,
+          "lat": 51.505,
+          "lng": -0.092,
           "type": "food",
           "time": "7:00 PM",
           "stars": 4,
@@ -865,8 +882,8 @@
         },
         {
           "name": "South Bank Evening Walk",
-          "lat": 51.5070,
-          "lng": -0.1100,
+          "lat": 51.507,
+          "lng": -0.11,
           "type": "hike",
           "time": "8:30 PM",
           "stars": 4,
@@ -882,7 +899,7 @@
         {
           "name": "Borough Market",
           "lat": 51.5055,
-          "lng": -0.0910,
+          "lng": -0.091,
           "type": "food",
           "time": "8:30 AM",
           "stars": 5,
@@ -897,7 +914,9 @@
           "to": "Canterbury East",
           "time": "9:30 AM",
           "stars": null,
-          "notes": "Southeastern train, ~1h 15min."
+          "notes": "Southeastern train, ~1h 15min.",
+          "destLat": 51.2808,
+          "destLng": 1.0872
         },
         {
           "name": "Canterbury Cathedral",
@@ -935,7 +954,9 @@
           "to": "Dover Priory",
           "time": "1:15 PM",
           "stars": null,
-          "notes": "~25 minutes. Southeastern service."
+          "notes": "~25 minutes. Southeastern service.",
+          "destLat": 51.1275,
+          "destLng": 1.3138
         },
         {
           "name": "Dover Castle — Secret Wartime Tunnels",
@@ -955,11 +976,13 @@
           "to": "London Bridge",
           "time": "4:00 PM",
           "stars": null,
-          "notes": "~1h 40min back to London."
+          "notes": "~1h 40min back to London.",
+          "destLat": 51.5056,
+          "destLng": -0.0864
         },
         {
           "name": "Dinner — Padella",
-          "lat": 51.5050,
+          "lat": 51.505,
           "lng": -0.0906,
           "type": "food",
           "time": "7:00 PM",
@@ -969,7 +992,7 @@
         {
           "name": "Borough Market Evening Walk",
           "lat": 51.5055,
-          "lng": -0.0910,
+          "lng": -0.091,
           "type": "hike",
           "time": "8:30 PM",
           "stars": 3,
@@ -977,8 +1000,8 @@
         },
         {
           "name": "The LaLit London",
-          "lat": 51.5030,
-          "lng": -0.0830,
+          "lat": 51.503,
+          "lng": -0.083,
           "type": "lodge",
           "time": "9:30 PM",
           "stars": 5,
@@ -994,8 +1017,8 @@
       "stops": [
         {
           "name": "Breakfast at The LaLit London",
-          "lat": 51.5030,
-          "lng": -0.0830,
+          "lat": 51.503,
+          "lng": -0.083,
           "type": "food",
           "time": "8:00 AM",
           "stars": 4,
@@ -1012,8 +1035,8 @@
         },
         {
           "name": "Check Out — The LaLit London",
-          "lat": 51.5030,
-          "lng": -0.0830,
+          "lat": 51.503,
+          "lng": -0.083,
           "type": "lodge",
           "time": "9:45 AM",
           "stars": 5,
@@ -1029,7 +1052,9 @@
           "to": "Gatwick Airport",
           "time": "10:10 AM",
           "stars": null,
-          "notes": "Thameslink departing 10:10 AM. ~30 minutes to Gatwick. Buy tickets at the station."
+          "notes": "Thameslink departing 10:10 AM. ~30 minutes to Gatwick. Buy tickets at the station.",
+          "destLat": 51.1537,
+          "destLng": -0.1821
         },
         {
           "name": "Gatwick Airport — Check In",
@@ -1045,7 +1070,7 @@
         {
           "name": "Lunch — Grain Store (Airside)",
           "lat": 51.1544,
-          "lng": -0.1800,
+          "lng": -0.18,
           "type": "food",
           "time": "12:30 PM",
           "stars": 3,

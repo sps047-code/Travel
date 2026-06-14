@@ -217,20 +217,30 @@ function _augmentAudioBadges(){
         audio.src=url; // stream in-app until saved
       }
     });
-    btn.addEventListener('click',async()=>{
+    btn.addEventListener(‘click’,async()=>{
       if(btn.disabled) return;
-      const orig=btn.textContent; btn.textContent='Saving…'; btn.disabled=true;
+      const orig=btn.textContent; btn.textContent=’Saving…’; btn.disabled=true;
       try{
-        const resp=await fetch(url,{mode:'cors'});
-        if(!resp.ok) throw new Error('HTTP '+resp.status);
-        const blob=await resp.blob();
+        // Try CORS first (works when the host allows it), then fall back to
+        // no-cors which bypasses CORS restrictions — needed for most audio hosts.
+        let blob=null;
+        let triedNoCors=false;
+        try{
+          const r=await fetch(url,{mode:’cors’,cache:’no-store’});
+          if(r.ok) blob=await r.blob();
+        }catch(corsErr){
+          triedNoCors=true;
+          const r=await fetch(url,{mode:’no-cors’,cache:’no-store’});
+          blob=await r.blob();
+        }
+        if(!blob||blob.size===0) throw new Error(‘empty’);
         await _audioPut(url,blob);
         const t=audio.currentTime||0;
         audio.src=URL.createObjectURL(blob); audio.currentTime=t;
-        btn.textContent='✓ Saved on device';
-        btn.style.cssText+=';opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)';
+        btn.textContent=’✓ Saved on device’;
+        btn.style.cssText+=’;opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)’;
       }catch(e){
-        btn.textContent='⚠ Couldn’t save — tap to retry'; btn.disabled=false;
+        btn.textContent=’⚠ Couldn\’t save — tap to retry’; btn.disabled=false;
         setTimeout(()=>{ if(!btn.disabled) btn.textContent=orig; },4000);
       }
     });

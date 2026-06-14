@@ -164,23 +164,41 @@ function _renderChangePanel(jsonStr){
   msgs.scrollTop = msgs.scrollHeight;
 }
 
+// Resolve dayIdx: accept 0-based; if out of range try 1-based correction
+function _rdi(i){ const n=window.state.days.length; if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
+// Resolve stopIdx similarly
+function _rsi(day,i){ const n=(day?.stops||[]).length; if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
+
 function _applyChanges(changes){
   let ok=0, fail=[];
   changes.forEach(c => {
     try{
       if(c.action==='update_stop'){
-        Object.assign(window.state.days[c.dayIdx].stops[c.stopIdx], c.updates||{});
+        const di=_rdi(c.dayIdx); const day=window.state.days[di];
+        const si=_rsi(day,c.stopIdx);
+        if(di<0||si<0||!day) throw new Error('index out of range');
+        Object.assign(day.stops[si], c.updates||{});
         ok++;
       } else if(c.action==='add_stop'){
-        const day=window.state.days[c.dayIdx];
-        day.stops.splice(c.insertIdx!=null?c.insertIdx:day.stops.length, 0, c.stop||{name:'New Stop',type:'hike'});
+        const di=_rdi(c.dayIdx); const day=window.state.days[di];
+        if(di<0||!day) throw new Error('day not found');
+        const ins=c.insertIdx!=null ? Math.min(Math.max(0,c.insertIdx), day.stops.length) : day.stops.length;
+        const ns=Object.assign({name:'New Stop',type:'hike',lat:0,lng:0}, c.stop||{});
+        day.stops.splice(ins, 0, ns);
         ok++;
       } else if(c.action==='remove_stop'){
-        window.state.days[c.dayIdx].stops.splice(c.stopIdx,1);
+        const di=_rdi(c.dayIdx); const day=window.state.days[di];
+        const si=_rsi(day,c.stopIdx);
+        if(di<0||si<0||!day) throw new Error('index out of range');
+        day.stops.splice(si,1);
         ok++;
       } else if(c.action==='move_stop'){
-        const [s]=window.state.days[c.fromDayIdx].stops.splice(c.fromStopIdx,1);
-        window.state.days[c.toDayIdx].stops.splice(c.toStopIdx||0,0,s);
+        const fdi=_rdi(c.fromDayIdx), tdi=_rdi(c.toDayIdx);
+        const fday=window.state.days[fdi], tday=window.state.days[tdi];
+        const fsi=_rsi(fday,c.fromStopIdx);
+        if(fdi<0||tdi<0||fsi<0||!fday||!tday) throw new Error('index out of range');
+        const [s]=fday.stops.splice(fsi,1);
+        tday.stops.splice(Math.min(c.toStopIdx||0,tday.stops.length),0,s);
         ok++;
       }
     }catch(e){ fail.push(c.description||c.action); }
@@ -193,7 +211,7 @@ function _applyChanges(changes){
   if(toast){ toast.textContent=msg; toast.classList.add('visible'); setTimeout(()=>toast.classList.remove('visible'),3000); }
 }
 
-// Inject "✦ Request Changes" button into the plan-chat modal
+// Inject "✶ Request Changes" button into the plan-chat modal
 function _injectPlanChatBtn(){
   const content = document.getElementById('pc-content');
   if(!content || content.dataset.extBtn) return;
@@ -233,7 +251,18 @@ async function _requestStructuredChanges(){
   msgs.appendChild(thk); msgs.scrollTop=msgs.scrollHeight;
 
   const ctx = _extChat.map(m=>m.role+': '+m.text).join('\n\n');
-  const sys = 'You are a travel-planning assistant. Based on the conversation, produce ONLY a <ITINERARY_CHANGES> block containing a JSON array. Each element must have: action (update_stop|add_stop|remove_stop|move_stop), description (human-readable string), and relevant index/data fields. update_stop requires dayIdx, stopIdx, updates{}. add_stop requires dayIdx, stop{}, optional insertIdx. remove_stop requires dayIdx, stopIdx. move_stop requires fromDayIdx, fromStopIdx, toDayIdx, toStopIdx. All indices are 0-based. Output NOTHING outside the XML tags.';
+
+  // Build explicit index map so the AI uses the correct 0-based values
+  let imap = '';
+  try{
+    imap = '\n\nEXACT 0-BASED INDEX MAP — use these exact numbers:\n'+
+      (window.state.days||[]).map((d,i)=>
+        'dayIdx='+i+' (Day '+(i+1)+') "'+d.title+'": '+
+        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"').join(' | ')
+      ).join('\n');
+  }catch(e){}
+
+  const sys = 'You are a travel-planning assistant. Based on the conversation, produce ONLY a <ITINERARY_CHANGES> block containing a JSON array. Each element must have: action (update_stop|add_stop|remove_stop|move_stop), description (human-readable string), and the relevant index/data fields below. update_stop: dayIdx, stopIdx, updates{}. add_stop: dayIdx, stop{name,type,...}, optional insertIdx. remove_stop: dayIdx, stopIdx. move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx. ALL indices are 0-based integers — refer to the index map.'+imap+' Output NOTHING outside the <ITINERARY_CHANGES>...</ITINERARY_CHANGES> tags.';
 
   try{
     const text = await window.callClaude(sys, ctx+'\n\nuser: List the itinerary changes you suggested as structured JSON.');

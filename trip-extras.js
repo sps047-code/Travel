@@ -165,6 +165,30 @@ function _patchEndOfTrip(){
 }
 
 // ── 4d. AUDIO TOUR BADGES ──────────────────────────────────────────
+// Audio tours are saved to the device (IndexedDB) on first download so they
+// never need to be fetched again and play fully offline — straight from the
+// app, no new browser window/tab.
+function _audioDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('seasons-audio',1);
+    r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains('clips')) r.result.createObjectStore('clips'); };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+function _audioGet(url){
+  return _audioDB().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction('clips','readonly').objectStore('clips').get(url);
+    tx.onsuccess=()=>res(tx.result||null); tx.onerror=()=>rej(tx.error);
+  })).catch(()=>null);
+}
+function _audioPut(url,blob){
+  return _audioDB().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction('clips','readwrite').objectStore('clips').put(blob,url);
+    tx.onsuccess=()=>res(true); tx.onerror=()=>rej(tx.error);
+  }));
+}
+
 function _augmentAudioBadges(){
   if(typeof state==='undefined'||!state) return;
   document.querySelectorAll('.stop-card').forEach(card=>{
@@ -174,16 +198,42 @@ function _augmentAudioBadges(){
     const stop=state?.days?.[+m[1]]?.stops?.[+m[2]];
     if(!stop||!stop.audioUrl) return;
     card.dataset.audioBadged='1';
-    const isMP3=/\.(mp3|m4a|ogg|wav)(\?.*)?$/i.test(stop.audioUrl);
+    const url=stop.audioUrl;
     const bar=document.createElement('div');
     bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:2px;border-radius:0 0 10px 10px';
     bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
-      (isMP3
-        ?'<audio controls preload="none" style="flex:1;min-width:180px;height:28px"><source src="'+_esc(stop.audioUrl)+'"/></audio>'+
-          '<a href="'+_esc(stop.audioUrl)+'" download style="font-size:11px;font-weight:600;color:var(--pine);text-decoration:none;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Download</a>'
-        :'<a href="'+_esc(stop.audioUrl)+'" target="_blank" rel="noopener" style="font-size:11px;color:var(--pine);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+_esc(stop.audioUrl)+'</a>'
-      );
+      '<audio controls preload="none" style="flex:1;min-width:180px;height:28px"></audio>'+
+      '<button type="button" class="audio-save-btn" style="font-size:11px;font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
     card.appendChild(bar);
+    const audio=bar.querySelector('audio');
+    const btn=bar.querySelector('.audio-save-btn');
+    // If already saved on this device, play straight from local storage (offline).
+    _audioGet(url).then(blob=>{
+      if(blob){
+        audio.src=URL.createObjectURL(blob);
+        btn.textContent='✓ Saved on device'; btn.disabled=true;
+        btn.style.cssText+=';opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)';
+      } else {
+        audio.src=url; // stream in-app until saved
+      }
+    });
+    btn.addEventListener('click',async()=>{
+      if(btn.disabled) return;
+      const orig=btn.textContent; btn.textContent='Saving…'; btn.disabled=true;
+      try{
+        const resp=await fetch(url,{mode:'cors'});
+        if(!resp.ok) throw new Error('HTTP '+resp.status);
+        const blob=await resp.blob();
+        await _audioPut(url,blob);
+        const t=audio.currentTime||0;
+        audio.src=URL.createObjectURL(blob); audio.currentTime=t;
+        btn.textContent='✓ Saved on device';
+        btn.style.cssText+=';opacity:0.7;cursor:default;border-color:rgba(46,125,82,0.25)';
+      }catch(e){
+        btn.textContent='⚠ Couldn’t save — tap to retry'; btn.disabled=false;
+        setTimeout(()=>{ if(!btn.disabled) btn.textContent=orig; },4000);
+      }
+    });
   });
 }
 

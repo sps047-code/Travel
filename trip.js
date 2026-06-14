@@ -1572,13 +1572,17 @@ function renderOverview(){
   return'<div class="ov-panel">'+
     '<div class="ov-section">'+
     (state.title?'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">'+
+    '<div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">'+
     '<div class="ov-trip-name" style="margin-bottom:0">'+state.title+'</div>'+
+    '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
+    '</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;align-items:center">'+
     '<button class="ai-action-btn" onclick="gradeItinerary()">&#10024; Grade</button>'+
     '<button class="ai-action-btn" onclick="generateGuidebook()">&#128366; Guidebook</button>'+
     (jnl?'<button class="ai-action-btn" onclick="openTripRecap()" style="background:var(--amber)">&#128196; Recap</button>':'')+
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
+    '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+
     (jnl?_tripHighlightsHtml():'')+
@@ -1998,6 +2002,46 @@ function showToast(msg,duration=3000){
 function reloadOriginal(){
   localStorage.removeItem(LS_KEY);
   location.reload();
+}
+
+function renameTripPrompt(){
+  const cur = state.title || '';
+  const next = prompt('Trip name:', cur);
+  if(next === null) return;
+  const name = next.trim();
+  if(!name || name === cur) return;
+  state.title = name;
+  document.title = 'Seasons — ' + name;
+  // Update the local trips manifest entry if this is a local trip
+  try{
+    const local = JSON.parse(localStorage.getItem('localTrips') || '[]');
+    const entry = local.find(t => t.id === tripId);
+    if(entry){ entry.title = name; localStorage.setItem('localTrips', JSON.stringify(local)); }
+  }catch(e){}
+  saveState('Renamed trip');
+  renderAll();
+}
+
+function deleteTripFromView(){
+  const title = state.title || 'this trip';
+  if(!confirm('Delete "' + title + '"? This cannot be undone.')) return;
+  // Remove from localStorage
+  localStorage.removeItem(LS_KEY);
+  // Remove from local trips list if present
+  try{
+    const local = JSON.parse(localStorage.getItem('localTrips') || '[]');
+    localStorage.setItem('localTrips', JSON.stringify(local.filter(t => t.id !== tripId)));
+  }catch(e){}
+  // Add to hidden list for built-in / shared trips so they don't reappear
+  if(BUILT_IN.includes(tripId) || getTripType() !== 'solo'){
+    try{
+      const hidden = JSON.parse(localStorage.getItem('hiddenTrips') || '[]');
+      if(!hidden.includes(tripId)){ hidden.push(tripId); localStorage.setItem('hiddenTrips', JSON.stringify(hidden)); }
+    }catch(e){}
+  }
+  // Stop cloud sync before leaving
+  try{ _stopFamily(); }catch(e){}
+  window.location.href = 'index.html';
 }
 
 /* ===== FEATURE EXTENSIONS ===== */

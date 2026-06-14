@@ -1,24 +1,20 @@
 // =============================================================================
 // DEPLOYMENT INSTRUCTIONS
 // =============================================================================
-// The local `git push` in this environment goes to a proxy that does NOT
-// forward to real GitHub. Changes will NOT appear on the live site via git.
+// To deploy to https://sps047-code.github.io/Travel/ :
 //
-// To deploy to https://sps047-code.github.io/Travel/ you must use MCP tools:
-//
-//   1. Use mcp__github__push_files  (for multiple files at once)
-//      or mcp__github__create_or_update_file  (for a single file)
-//      Target branch: gh-pages
-//      Repo: sps047-code/Travel
+//   1. Commit your changes and run:  git push origin gh-pages
+//      The local git proxy DOES forward to the real GitHub gh-pages branch
+//      (verified). Prefer this over MCP for BINARY files (icons) — MCP
+//      requires hand-transcribing base64, which corrupts large files.
 //
 //   2. Bump the CACHE version below (e.g. seasons-v9 → seasons-v10)
 //      so the service worker forces all devices to reload fresh assets.
 //
-//   3. If adding a new file, add its path to the PRECACHE array below
-//      AND include it in the MCP push call.
+//   3. If adding a new file, add its path to the PRECACHE array below.
 //
-//   4. Files >~50KB must be split before pushing (MCP has a token limit).
-//      e.g. trip.html (HTML+CSS) + trip.js (JavaScript) — already done.
+//   4. Verify a deploy landed by reading the file back with
+//      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
 const CACHE = 'seasons-v72';

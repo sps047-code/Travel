@@ -121,7 +121,7 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 else setTimeout(_startObserver, 0);
 
 
-// ── 5.  AI CHAT — CHANGE-AWARE PROMPT + CONFIRMATION ─────────────────────
+// ── 5.  AI CHAT — CHANGE-AWARE PROMPT + CONFIRMATION ──────────────────────
 // Build a 0-based index map of the live itinerary for the AI.
 function _itinMap(){
   try{
@@ -129,7 +129,7 @@ function _itinMap(){
     return '\n\nLIVE ITINERARY (use these exact 0-based indices in ITINERARY_CHANGES):\n'+
       state.days.map((d,i)=>
         'dayIdx='+i+' "Day '+(i+1)+': '+(d.title||'')+'": '+
-        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')','')).join(' | ')
+        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')':'')).join(' | ')
       ).join('\n');
   }catch(e){ return ''; }
 }

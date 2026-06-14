@@ -54,8 +54,8 @@ self.addEventListener('activate', e => {
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
     .then(() => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(cs =>
-      Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{}))
-    )))
+      Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{})))
+    ))
   );
 });
 

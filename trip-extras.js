@@ -12,7 +12,7 @@
 
 function _esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// ── 1.  INJECT END-TIME + AUDIO-URL FIELDS INTO ADD/EDIT MODAL ───────────
+// ── 1.  INJECT END-TIME + AUDIO-URL FIELDS INTO ADD/EDIT MODAL ───────────────
 function _injectFormField(){
   const timeGrp = document.querySelector('#f-time')?.closest('.form-group');
   if(timeGrp && !document.getElementById('f-endtime')){
@@ -30,7 +30,7 @@ function _injectFormField(){
   }
 }
 
-// ── 2.  PATCH saveStop TO CAPTURE endTime + audioUrl ─────────────────────
+// ── 2.  PATCH saveStop TO CAPTURE endTime + audioUrl ───────────────────────
 const _origSaveStop = window.saveStop;
 window.saveStop = function(){
   const wasEditing = (typeof editingStop !== 'undefined' && editingStop)
@@ -62,7 +62,7 @@ window.saveStop = function(){
   if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
 };
 
-// ── 3.  PATCH openEditStopModal TO PRE-FILL endTime + audioUrl ───────────
+// ── 3.  PATCH openEditStopModal TO PRE-FILL endTime + audioUrl ───────────────
 const _origOpenEdit = window.openEditStopModal;
 window.openEditStopModal = function(dayIdx, stopIdx){
   _origOpenEdit.apply(this, arguments);
@@ -128,6 +128,7 @@ function augmentCards(){
 function _patchLegConnectors(){
   if(typeof state==='undefined'||!state||!state.days) return;
   document.querySelectorAll('.leg-connector').forEach(conn=>{
+    if(conn.dataset.distPatched) return;
     const prev=conn.previousElementSibling;
     if(!prev) return;
     const m=(prev.id||'').match(/stop-card-(\d+)-(\d+)/);
@@ -139,7 +140,6 @@ function _patchLegConnectors(){
     if(!next||!next.lat||!next.lng) return;
     const dist=haversine(stop.destLat,stop.destLng,next.lat,next.lng);
     const mode=stop.transitMode||(stop.type==='train'?'train':stop.type==='bus'?'bus':'drive');
-    // Find the distance text node and replace it
     for(const node of conn.childNodes){
       if(node.nodeType===Node.TEXT_NODE&&/\d+\.?\d*\s*mi/.test(node.textContent)){
         if(dist<0.08){ node.textContent=' '; }
@@ -154,7 +154,7 @@ function _patchLegConnectors(){
   });
 }
 
-// ── 4c. END-OF-TRIP LABEL (last day "Tonight" → "End of Trip") ───────────
+// ── 4c. END-OF-TRIP LABEL (last day “Tonight” → “End of Trip”) ────────────
 function _patchEndOfTrip(){
   if(typeof state==='undefined'||!state||!state.days) return;
   if(typeof currentDayIdx==='undefined'||currentDayIdx!==state.days.length-1) return;
@@ -164,7 +164,7 @@ function _patchEndOfTrip(){
   if(label&&/^tonight$/i.test(label.textContent.trim())) label.textContent='End of Trip';
 }
 
-// ── 4d. AUDIO TOUR BADGES ─────────────────────────────────────────────────
+// ── 4d. AUDIO TOUR BADGES ──────────────────────────────────────────
 function _augmentAudioBadges(){
   if(typeof state==='undefined'||!state) return;
   document.querySelectorAll('.stop-card').forEach(card=>{
@@ -177,7 +177,7 @@ function _augmentAudioBadges(){
     const isMP3=/\.(mp3|m4a|ogg|wav)(\?.*)?$/i.test(stop.audioUrl);
     const bar=document.createElement('div');
     bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:2px;border-radius:0 0 10px 10px';
-    bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎙️ Audio Tour</span>'+
+    bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
       (isMP3
         ?'<audio controls preload="none" style="flex:1;min-width:180px;height:28px"><source src="'+_esc(stop.audioUrl)+'"/></audio>'+
           '<a href="'+_esc(stop.audioUrl)+'" download style="font-size:11px;font-weight:600;color:var(--pine);text-decoration:none;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Download</a>'

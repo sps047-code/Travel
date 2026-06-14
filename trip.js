@@ -1565,7 +1565,7 @@ function renderOverview(){
 
   const startIso=dayDateStr(0);
   const startDateHtml='<div class="ov-start-date">&#128197; Starts: '+
-    '<input type="date" id="ov-start-input" value="'+startIso+'" onchange="setTripStartDate(this.value)"'+(isJournalMode()?' disabled':'')+'/>'+
+    '<input type="date" id="ov-start-input" value="'+startIso+'" onchange="setTripStartDate(this.value)"/>'+
     (startIso?'':'<span style="color:var(--muted);font-size:12px"> (pick a date to set day dates)</span>')+
     '</div>';
 

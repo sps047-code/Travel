@@ -1960,7 +1960,7 @@ function _updateTypeBadge(){
   const el=document.getElementById('trip-type-badge');
   if(!el)return;
   const t=getTripType();
-  el.innerHTML=t==='family'?'&#127968; Family':'&#128100; Solo';
+  el.innerHTML=t==='family'?'&#127968; Shared':'&#128100; Not Sharing';
   el.style.color=t==='family'?'var(--river)':'var(--amber)';
   el.style.background=t==='family'?'var(--river-tint)':'var(--amber-tint)';
   el.style.borderColor=t==='family'?'var(--river-border)':'rgba(196,123,32,0.22)';
@@ -1970,20 +1970,20 @@ function toggleTripType(){
   const current=getTripType();
   const next=current==='family'?'solo':'family';
   const msg=next==='family'
-    ?'Switch to Family mode? This trip will sync to the cloud and be visible to everyone.'
-    :'Switch to Solo mode? This trip will only be saved on this device.';
+    ?'Start sharing this trip? It will sync to the cloud and be visible to everyone in the family.'
+    :'Stop sharing this trip? It will only be saved on this device.';
   if(!confirm(msg))return;
   state.tripType=next;
   if(next==='family'){
     localStorage.setItem('tripFamily_'+tripId,'1');
     _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
-    _dbFamilyPut('/lastChange',{at:Date.now(),by:_sessionId(),desc:'Switched to Family mode'}).catch(()=>{});
+    _dbFamilyPut('/lastChange',{at:Date.now(),by:_sessionId(),desc:'Started sharing'}).catch(()=>{});
     _startFamily();
-    showToast('&#127968; Now Family — changes sync to cloud');
+    showToast('&#127968; Now Shared — changes sync to cloud');
   }else{
     localStorage.removeItem('tripFamily_'+tripId);
     _stopFamily();
-    showToast('&#128100; Now Solo — saved on this device only');
+    showToast('&#128100; Not Sharing — saved on this device only');
   }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   _updateTypeBadge();
@@ -3281,8 +3281,10 @@ function _pcAddMessage(role,text){
 async function init(){
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
+  const _famParam=new URLSearchParams(location.search).get('fam')==='1';
+  if(_famParam)localStorage.setItem('tripFamily_'+tripId,'1');
   const isFamilyOverride=localStorage.getItem('tripFamily_'+tripId)==='1';
-  const isFamily=isFamilyOverride||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
+  const isFamily=isFamilyOverride||_famParam||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
 
   if(isFamily){
     try{

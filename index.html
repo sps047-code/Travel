@@ -1001,6 +1001,25 @@ function deleteTrip(id,title,isLocal){
 /* ---- Load trips grid ---- */
 function lsGet(key,fallback){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}}
 
+const FB_DB='https://seasons-trips-default-rtdb.firebaseio.com';
+// Fetch a lightweight card for every shared trip stored in the cloud.
+async function loadSharedTrips(){
+  const r=await fetch(FB_DB+'/family.json?shallow=true&nc='+Date.now(),{cache:'no-store'});
+  if(!r.ok)return [];
+  const ids=await r.json();
+  if(!ids)return [];
+  const cards=await Promise.all(Object.keys(ids).map(async id=>{
+    try{
+      const sr=await fetch(FB_DB+'/family/'+id+'/state.json?nc='+Date.now(),{cache:'no-store'});
+      if(!sr.ok)return null;
+      const st=await sr.json();
+      if(!st||!st.title)return null;
+      return {id,title:st.title,days:(st.days&&st.days.length)||0,dates:st.dateRange||st.dates||'',destinations:st.destinations||[],local:false,shared:true};
+    }catch(e){return null;}
+  }));
+  return cards.filter(Boolean);
+}
+
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   grid.innerHTML='';
@@ -1012,7 +1031,13 @@ async function loadTrips(){
   clearTimeout(loadTimeout);
   const local=lsGet('localTrips',[]);
   const hidden=lsGet('hiddenTrips',[]);
-  const all=[...serverTrips,...local].filter(t=>!hidden.includes(t.id));
+  // Discover every SHARED trip from the cloud so all shared trips appear here,
+  // not just the ones built into the app or created on this device.
+  let sharedTrips=[];
+  try{sharedTrips=await loadSharedTrips()}catch(e){}
+  const knownIds=new Set([...serverTrips,...local].map(t=>t.id));
+  const sharedExtra=sharedTrips.filter(t=>!knownIds.has(t.id));
+  const all=[...serverTrips,...local,...sharedExtra].filter(t=>!hidden.includes(t.id));
   _allTripsCache=all;
 
   if(all.length===0){
@@ -1034,7 +1059,7 @@ async function loadTrips(){
     const isAI=t.local&&t.id.startsWith('ai-');
     const isImported=t.local&&t.id.startsWith('import-');
     let ownerBadge='';
-    if(isServer)       ownerBadge='<span class="trip-meta-pill" style="color:var(--river);border-color:var(--river-border);background:var(--river-tint)">&#127968; Family</span>';
+    if(isServer)       ownerBadge='<span class="trip-meta-pill" style="color:var(--river);border-color:var(--river-border);background:var(--river-tint)">&#127968; Shared</span>';
     else if(isReceived)ownerBadge='<span class="trip-meta-pill" style="color:#7B5EA7;border-color:rgba(123,94,167,0.22);background:rgba(123,94,167,0.10)">&#128279; Received</span>';
     else if(isAI)      ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#10024; AI</span>';
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
@@ -1043,7 +1068,7 @@ async function loadTrips(){
     const deleteBtn=isServer
       ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
       :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',true)" title="Delete trip">&#128465;</button>`;
-    return`<a class="trip-card" href="trip.html?id=${t.id}">
+    return`<a class="trip-card" href="trip.html?id=${t.id}${t.shared?'&fam=1':''}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
         <div class="trip-card-title">${t.title}</div>

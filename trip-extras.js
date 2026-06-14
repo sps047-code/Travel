@@ -91,12 +91,12 @@ function augmentCards(){
 
     // End time display with destination TZ
     if(stop.endTime){
-      if(timeEl.querySelector('.card-endtime')) return; // already added
+      if(timeEl.querySelector('.card-endtime')) return;
       const dTz = _tzOf(stop);
       const endEl = document.createElement('span');
       endEl.className = 'card-endtime';
       endEl.style.cssText = 'display:block;font-size:10px;font-weight:600;color:var(--muted);margin-top:3px;letter-spacing:0.02em;white-space:nowrap';
-      endEl.innerHTML = '→ ' + _esc(stop.endTime) + (dTz ? ' <span style="font-size:9px;font-weight:700;letter-spacing:0.10em;color:var(--river);opacity:0.85">'+_esc(dTz.abbr)+'</span>' : '');
+      endEl.innerHTML = '&#8594; ' + _esc(stop.endTime) + (dTz ? ' <span style="font-size:9px;font-weight:700;letter-spacing:0.10em;color:var(--river);opacity:0.85">'+_esc(dTz.abbr)+'</span>' : '');
       timeEl.appendChild(endEl);
     }
   });
@@ -128,7 +128,10 @@ function _itinMap(){
   }catch(e){return '';}
 }
 
-const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You can read AND make direct changes. When the user asks you to add, remove, move, or modify anything in the itinerary, explain briefly what you are doing AND include an <ITINERARY_CHANGES>[...JSON...]</ITINERARY_CHANGES> block. JSON array schema — each entry needs "action" and "description" plus: add_stop→{dayIdx,insertIdx?,stop:{name,type(hike|food|lodge|drive|flight|train|bus),notes?,time?,lat?,lng?}}; update_stop→{dayIdx,stopIdx,updates:{}}; remove_stop→{dayIdx,stopIdx}; move_stop→{fromDayIdx,fromStopIdx,toDayIdx,toStopIdx}. Use 0-based dayIdx/stopIdx from the itinerary map. For purely informational questions answer normally without a changes block. Be specific and concise. No em dashes.';
+const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app.\n\nCRITICAL: Your text alone CANNOT change the itinerary. Changes happen ONLY when you output an <ITINERARY_CHANGES> block. Never say a change has been made unless this block is present in your response.\n\nWhen the user asks you to add, remove, move, or modify anything: (1) briefly explain what you are doing, (2) output <ITINERARY_CHANGES>[...JSON array...]</ITINERARY_CHANGES>.\n\nJSON schema per entry — required: "action", "description". Plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value}\n- add_stop: dayIdx, insertIdx(optional), stop:{name,type,notes?,time?,lat?,lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nStop types: hike, food, lodge, drive, flight, train, bus\nUse EXACT 0-based dayIdx/stopIdx from the ITINERARY below. For questions/advice only, answer normally without a block.';
+
+// Detect when AI claims to have made changes but omitted the block
+const _claimRe = /\b(i(?:'ll| will| am going to)\s+(?:add|update|change|remove|move|set|modify|delete|create)|i(?:'ve| have)\s+(?:added|updated|changed|removed|moved|set|modified|deleted|created)|(?:adding|updating|changing|removing|moving)\s+(?:the|your|it|that)|that(?:'s| is)\s+(?:now\s+)?(?:updated|added|changed|set)|done[!.])\b/i;
 
 // Replace _planCallAI entirely — uses enhanced prompt, handles changes inline
 const _origPcAdd = window._pcAddMessage;
@@ -146,12 +149,35 @@ window._planCallAI = async function(userText){
     const display=text.replace(/<ITINERARY_CHANGES>[\s\S]*?<\/ITINERARY_CHANGES>/gi,'').trim();
     _extHistory.push({role:'assistant',text:display||text});
     _origPcAdd.call(window,'assistant',display||text);
-    if(changeM)_renderChangePanel(changeM[1]);
+    if(changeM){
+      _renderChangePanel(changeM[1]);
+    } else if(_claimRe.test(display)){
+      // AI described a change but forgot the block — silently extract it
+      _autoExtract(msgs);
+    }
   }catch(e){
     if(thk.parentNode)thk.parentNode.removeChild(thk);
     _origPcAdd.call(window,'error','Could not reach the AI. Please try again.');
   }
 };
+
+async function _autoExtract(msgs){
+  if(!msgs) msgs=document.getElementById('pc-messages');
+  if(!msgs) return;
+  const thk=document.createElement('div');
+  thk.className='tg-msg tg-thinking';thk.textContent='Preparing changes…';
+  msgs.appendChild(thk);msgs.scrollTop=msgs.scrollHeight;
+  const ctx=_extHistory.map(m=>m.role+': '+m.text).join('\n\n');
+  const sys='The assistant described itinerary changes but omitted the required ITINERARY_CHANGES block. Based on the conversation, output ONLY the <ITINERARY_CHANGES>[...JSON array...]</ITINERARY_CHANGES> block. Use exact 0-based dayIdx/stopIdx from the map. Output nothing else.'+_itinMap();
+  try{
+    const text=await window.callClaude(sys,ctx+'\n\nuser: Provide the ITINERARY_CHANGES block now.');
+    if(thk.parentNode)thk.parentNode.removeChild(thk);
+    const changeM=text.match(/<ITINERARY_CHANGES>([\s\S]*?)<\/ITINERARY_CHANGES>/i);
+    if(changeM)_renderChangePanel(changeM[1]);
+  }catch(e){
+    if(thk.parentNode)thk.parentNode.removeChild(thk);
+  }
+}
 
 function _renderChangePanel(jsonStr){
   let changes;
@@ -220,7 +246,7 @@ function _applyChanges(changes){
         tday.stops.splice(Math.min(c.toStopIdx||0,tday.stops.length),0,s);
         ok++;
       }
-    }catch(e){ fail.push(c.description||c.action); }
+    }catch(e){ console.warn('[trip-extras] apply failed:',c,e); fail.push(c.description||c.action); }
   });
   window.saveState();
   window.renderAll();
@@ -229,7 +255,7 @@ function _applyChanges(changes){
   if(toast){ toast.textContent=msg; toast.classList.add('visible'); setTimeout(()=>toast.classList.remove('visible'),3500); }
 }
 
-// ✶ Request Changes button — fallback when AI gave advice without a change block
+// ✶ Request Changes button — manual fallback
 function _injectPlanChatBtn(){
   const content = document.getElementById('pc-content');
   if(!content || content.dataset.extBtn) return;
@@ -239,7 +265,7 @@ function _injectPlanChatBtn(){
     row.dataset.extBtnAdded='1';
     const btn = document.createElement('button');
     btn.textContent = '✶ Request Changes';
-    btn.title = 'Convert AI advice into itinerary edits';
+    btn.title = 'Ask AI to turn its suggestions into applied edits';
     btn.style.cssText = 'display:block;width:100%;margin-top:7px;padding:8px;background:rgba(46,125,82,0.09);color:var(--pine);border:1.5px dashed rgba(46,125,82,0.38);border-radius:8px;font-family:var(--font-ui);font-size:11.5px;font-weight:600;cursor:pointer;transition:all 0.18s;letter-spacing:0.02em';
     btn.onmouseover=()=>{btn.style.background='var(--pine)';btn.style.color='#fff';btn.style.borderStyle='solid';};
     btn.onmouseout=()=>{btn.style.background='rgba(46,125,82,0.09)';btn.style.color='var(--pine)';btn.style.borderStyle='dashed';};
@@ -269,17 +295,17 @@ async function _requestStructuredChanges(){
   msgs.appendChild(thk); msgs.scrollTop=msgs.scrollHeight;
 
   const ctx = _extHistory.map(m=>m.role+': '+m.text).join('\n\n');
-  const sys = 'Based on the conversation, produce ONLY a <ITINERARY_CHANGES>[...JSON...]</ITINERARY_CHANGES> block. Each entry: action (update_stop|add_stop|remove_stop|move_stop), description, plus relevant fields (0-based dayIdx/stopIdx). add_stop needs stop{name,type,...}. update_stop needs updates{}. Output NOTHING outside the tags.'+_itinMap();
+  const sys = 'Based on the conversation, extract all itinerary changes discussed and output ONLY a <ITINERARY_CHANGES>[...JSON array...]</ITINERARY_CHANGES> block. Each entry needs action (update_stop|add_stop|remove_stop|move_stop), description, and relevant fields. update_stop: {dayIdx,stopIdx,updates:{}}. add_stop: {dayIdx,insertIdx?,stop:{name,type,...}}. Remove/move: {dayIdx,stopIdx}. Use exact 0-based dayIdx/stopIdx from the ITINERARY below. Output nothing outside the tags.'+_itinMap();
 
   try{
-    const text = await window.callClaude(sys, ctx+'\n\nuser: List the itinerary changes you suggested as structured JSON.');
+    const text = await window.callClaude(sys, ctx+'\n\nuser: Generate the ITINERARY_CHANGES block for all changes suggested in this conversation.');
     if(thk.parentNode) thk.parentNode.removeChild(thk);
     const changeM = text.match(/<ITINERARY_CHANGES>([\s\S]*?)<\/ITINERARY_CHANGES>/i);
     if(changeM){ _renderChangePanel(changeM[1]); }
     else{
       const err=document.createElement('div');
       err.className='tg-msg tg-msg-err';
-      err.textContent='Could not extract changes. Try asking the AI directly: "Add [X] to Day [N]".';
+      err.textContent='No changes found. Ask the AI to suggest specific modifications (add, remove, move stops or change times) before requesting changes.';
       msgs.appendChild(err); msgs.scrollTop=msgs.scrollHeight;
     }
   }catch(e){

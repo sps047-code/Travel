@@ -511,13 +511,21 @@ const _LODGE_NAME_RE=/\b(hotels?|motels?|hostels?|resorts?|travelodge|premier\s*
 // Reject on the NAME (a "Dinner — …" / "Lunch — …" stop), NOT merely on type,
 // so a real hotel that was mistyped as "food" is still caught by its name.
 const _MEAL_PREFIX_RE=/^(dinner|lunch|breakfast|brunch|coffee|drinks|snack|tea|supper)\b/i;
+// Names that describe an ACTIVITY, not a place you sleep. Even if such a stop is
+// mistyped as "lodge" (e.g. a walk the AI relabelled), it must never be treated
+// as the overnight hotel — you do not sleep on the city walls.
+const _ACTIVITY_NAME_RE=/\b(walk|tour|hike|trail|museum|minster|cathedral|church|castle|palace|abbey|priory|market|bridge|chapel|gallery|viaduct|fort|garden|gardens|viking|vaults?|tattoo|cruise|seat|square|park|centre|center|visitor)\b/i;
 function _isLodgeStop(s){
   if(!s)return false;
   const nm=s.name||'';
   if(/^depart\b/i.test(nm))return false;
   if(_MEAL_PREFIX_RE.test(nm))return false;
+  const looksHotel=_LODGE_NAME_RE.test(nm);
+  // An activity-named stop is lodging ONLY if it also carries a real hotel word
+  // (e.g. "Castle Hotel"). Otherwise it is an outing, never the night's hotel.
+  if(_ACTIVITY_NAME_RE.test(nm)&&!looksHotel)return false;
   if(s.type==='lodge')return true;
-  return _LODGE_NAME_RE.test(nm);
+  return looksHotel;
 }
 // Most recent lodging on or before dayIdx (a stay you may still be checked into).
 function _lastLodgeUpTo(dayIdx){

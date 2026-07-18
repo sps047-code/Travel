@@ -985,7 +985,7 @@ document.addEventListener('keydown',function(e){
 
 /* ---- Delete trip ---- */
 function deleteTrip(id,title,isLocal){
-  const msg=isLocal?'Delete "'+title+'"? This cannot be undone.':'Hide "'+title+'" from your list? (It can be restored by clearing your browser data.)';
+  const msg=isLocal?'Delete "'+title+'"? This cannot be undone.':'Hide "'+title+'" from your list? (You can bring it back later with "Restore hidden trips" at the bottom of the home page.)';
   if(!confirm(msg))return;
   if(isLocal){
     localStorage.removeItem('tripState_'+id);
@@ -995,6 +995,13 @@ function deleteTrip(id,title,isLocal){
     const hidden=JSON.parse(localStorage.getItem('hiddenTrips')||'[]');
     if(!hidden.includes(id)){hidden.push(id);localStorage.setItem('hiddenTrips',JSON.stringify(hidden))}
   }
+  loadTrips();
+}
+// Un-hide every trip that was hidden via the eye/delete button. Shared trips
+// live in the cloud, so restoring makes them reappear; this cannot recover a
+// local trip whose data was permanently deleted.
+function restoreHiddenTrips(){
+  localStorage.removeItem('hiddenTrips');
   loadTrips();
 }
 
@@ -1048,7 +1055,7 @@ async function loadTrips(){
       <div class="empty-btns">
         <button class="btn-primary" style="flex:none;padding:13px 24px" onclick="openWizard()">✨ Plan a New Trip</button>
         <button class="btn-primary river" style="flex:none;padding:13px 24px" onclick="openImport()">&#128203; Import an Itinerary</button>
-      </div>
+      </div>`+(hidden.length>0?`<div style="margin-top:14px"><button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:13px;color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button></div>`:'')+`
     </div>`;
     return;
   }
@@ -1094,7 +1101,10 @@ async function loadTrips(){
       <div class="add-icon" aria-hidden="true">&#128203;</div>
       <div class="add-label">Import an Itinerary</div>
       <div class="add-sub">Paste or upload any text &amp; AI populates it</div>
-    </button>`;
+    </button>`+(hidden.length>0?`
+    <div style="grid-column:1/-1;text-align:center;margin-top:6px">
+      <button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:13px;color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button>
+    </div>`:'');
 }
 
 loadTrips();

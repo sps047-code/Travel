@@ -502,15 +502,20 @@ function renderDaySummary(day,idx){
 }
 
 // Recognise a stop as lodging even when it was mistyped (e.g. a hotel saved as
-// "food"). type==='lodge' is the strong signal; otherwise fall back to the name
-// looking like accommodation. Word-boundary matching keeps "Dinner" (has "inn"),
-// "Winner", etc. from being treated as hotels.
-const _LODGE_NAME_RE=/\b(hotels?|motels?|hostels?|resorts?|lodges?|lodging|inns?|b&b|bed\s*(?:&|and)\s*breakfast|guest\s*house|guesthouse|travelodge|premier\s*inn|holiday\s*inn|ryokan|riad|pension|manor|chalet|cabins?|cottages?|villa|apartments?|airbnb|caravan|campsite|campground)\b/i;
+// "food"). type==='lodge' is the strong signal; otherwise the name must clearly
+// look like accommodation. High precision on purpose: bare "inn"/"lodge"/"manor"
+// are NOT used because UK pubs/restaurants use them constantly ("Guy Fawkes Inn",
+// "Star Inn"). Only unambiguous hotel words, plus explicit multi-word chains.
+const _LODGE_NAME_RE=/\b(hotels?|motels?|hostels?|resorts?|travelodge|premier\s*inn|holiday\s*inn|guest\s*house|guesthouse|b&b|bed\s*(?:&|and)\s*breakfast|ryokan|airbnb)\b/i;
+// Meal/food stops are never lodging, even if the venue name contains "Inn" etc.
+const _MEAL_PREFIX_RE=/^(dinner|lunch|breakfast|brunch|coffee|drinks|snack|tea|supper)\b/i;
 function _isLodgeStop(s){
   if(!s)return false;
-  if(/^depart\b/i.test(s.name||''))return false;
+  const nm=s.name||'';
+  if(/^depart\b/i.test(nm))return false;
   if(s.type==='lodge')return true;
-  return _LODGE_NAME_RE.test(s.name||'');
+  if(s.type==='food'||_MEAL_PREFIX_RE.test(nm))return false;
+  return _LODGE_NAME_RE.test(nm);
 }
 // Most recent lodging on or before dayIdx (a stay you may still be checked into).
 function _lastLodgeUpTo(dayIdx){

@@ -508,13 +508,15 @@ function renderDaySummary(day,idx){
 // "Star Inn"). Only unambiguous hotel words, plus explicit multi-word chains.
 const _LODGE_NAME_RE=/\b(hotels?|motels?|hostels?|resorts?|travelodge|premier\s*inn|holiday\s*inn|guest\s*house|guesthouse|b&b|bed\s*(?:&|and)\s*breakfast|ryokan|airbnb)\b/i;
 // Meal/food stops are never lodging, even if the venue name contains "Inn" etc.
+// Reject on the NAME (a "Dinner — …" / "Lunch — …" stop), NOT merely on type,
+// so a real hotel that was mistyped as "food" is still caught by its name.
 const _MEAL_PREFIX_RE=/^(dinner|lunch|breakfast|brunch|coffee|drinks|snack|tea|supper)\b/i;
 function _isLodgeStop(s){
   if(!s)return false;
   const nm=s.name||'';
   if(/^depart\b/i.test(nm))return false;
+  if(_MEAL_PREFIX_RE.test(nm))return false;
   if(s.type==='lodge')return true;
-  if(s.type==='food'||_MEAL_PREFIX_RE.test(nm))return false;
   return _LODGE_NAME_RE.test(nm);
 }
 // Most recent lodging on or before dayIdx (a stay you may still be checked into).

@@ -501,19 +501,45 @@ function renderDaySummary(day,idx){
   return'<div class="day-summary">'+chips.join('')+'</div>';
 }
 
-function getHotelForDay(dayIdx){
+// Recognise a stop as lodging even when it was mistyped (e.g. a hotel saved as
+// "food"). type==='lodge' is the strong signal; otherwise fall back to the name
+// looking like accommodation. Word-boundary matching keeps "Dinner" (has "inn"),
+// "Winner", etc. from being treated as hotels.
+const _LODGE_NAME_RE=/\b(hotels?|motels?|hostels?|resorts?|lodges?|lodging|inns?|b&b|bed\s*(?:&|and)\s*breakfast|guest\s*house|guesthouse|travelodge|premier\s*inn|holiday\s*inn|ryokan|riad|pension|manor|chalet|cabins?|cottages?|villa|apartments?|airbnb|caravan|campsite|campground)\b/i;
+function _isLodgeStop(s){
+  if(!s)return false;
+  if(/^depart\b/i.test(s.name||''))return false;
+  if(s.type==='lodge')return true;
+  return _LODGE_NAME_RE.test(s.name||'');
+}
+// Most recent lodging on or before dayIdx (a stay you may still be checked into).
+function _lastLodgeUpTo(dayIdx){
   for(let i=Math.min(dayIdx,state.days.length-1);i>=0;i--){
-    const lodge=state.days[i].stops.find(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
-    if(lodge)return lodge;
+    const stops=state.days[i].stops;
+    for(let si=stops.length-1;si>=0;si--){
+      if(_isLodgeStop(stops[si]))return stops[si];
+    }
   }
   return null;
 }
+// Hotel you START a day from (checked into on this day or an earlier one).
+function getHotelForDay(dayIdx){
+  return _lastLodgeUpTo(dayIdx);
+}
+// Hotel you sleep at at the END of a day. Prefer a lodging stop within THIS day
+// (the last one, i.e. where the day ends up). If the day has none you're
+// continuing a stay from a previous night — so look BACKWARD, never forward to a
+// future day's hotel. On the trip's final day with no lodging, you're heading
+// home: return null so no phantom "Tonight" hotel is shown.
 function getNextHotelForDay(dayIdx){
-  for(let i=dayIdx;i<state.days.length;i++){
-    const lodge=state.days[i].stops.find(s=>s.type==='lodge'&&!/^depart\b/i.test(s.name));
-    if(lodge)return lodge;
+  const day=state.days[dayIdx];
+  if(day){
+    for(let si=day.stops.length-1;si>=0;si--){
+      if(_isLodgeStop(day.stops[si]))return day.stops[si];
+    }
   }
-  return null;
+  if(dayIdx>=state.days.length-1)return null;
+  return _lastLodgeUpTo(dayIdx-1);
 }
 function hotelBookendHtml(label,lodge,otherStop){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
@@ -571,6 +597,8 @@ function renderPanel(idx){
   const todayEndsInTransit=todayLastStop&&TRANSIT.includes(todayLastStop.type);
   const showStart=!!prevHotel&&day.stops.length>0&&!prevEndsInTransit;
   const showEnd=!!todayHotel&&day.stops.length>0&&!todayEndsInTransit;
+  // If tonight's hotel IS the last stop card, don't repeat it as a bookend.
+  const _tonightIsLastStop=showEnd&&todayHotel===todayLastStop;
   const conflicts=detectConflicts(idx);
   const jnlMode=isJournalMode();
   const wxCache=_wxDayCache[idx]||null;
@@ -645,8 +673,8 @@ function renderPanel(idx){
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
     (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
-    '<div class="timeline">'+cards+(showEnd&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode==='subway'?'train':rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
-    (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop):'')+
+    '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode==='subway'?'train':rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
+    (showEnd&&!_tonightIsLastStop?hotelBookendHtml('Tonight',todayHotel,todayLastStop):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
     (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+

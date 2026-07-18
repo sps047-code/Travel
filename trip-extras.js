@@ -307,7 +307,7 @@ function _itinMap(){
   }catch(e){ return ''; }
 }
 
-const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value}\n- add_stop: dayIdx, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.';
+const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value}\n- add_stop: dayIdx, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.';
 
 // Detect when the AI claims a change without emitting the block (so we can
 // silently fetch the structured block instead of leaving the user confused).
@@ -397,15 +397,26 @@ function _renderChangePanel(jsonStr){
 function _rdi(i){ const n=state.days.length; if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
 function _rsi(day,i){ const n=(day&&day.stops?day.stops.length:0); if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
 
+// Is this stop the overnight hotel/lodging? Reuse trip.js's detector when it is
+// loaded (name-aware, catches hotels mistyped as food); fall back to type.
+function _extIsLodge(s){
+  if(!s) return false;
+  try{ if(typeof _isLodgeStop==='function') return _isLodgeStop(s); }catch(e){}
+  return s.type==='lodge';
+}
+
 function _applyChanges(changes){
-  let ok=0, fail=[];
+  let ok=0, fail=[], protectedN=0;
   changes.forEach(c => {
     try{
       if(c.action==='update_stop'){
         const di=_rdi(c.dayIdx); const day=state.days[di];
         const si=_rsi(day,c.stopIdx);
         if(di<0||si<0||!day) throw new Error('index out of range');
-        Object.assign(day.stops[si], c.updates||{});
+        const upd=Object.assign({}, c.updates||{});
+        // Never let the AI turn the overnight hotel into a non-lodging stop.
+        if(_extIsLodge(day.stops[si]) && upd.type && upd.type!=='lodge'){ delete upd.type; protectedN++; }
+        Object.assign(day.stops[si], upd);
         ok++;
       } else if(c.action==='add_stop'){
         const di=_rdi(c.dayIdx); const day=state.days[di];
@@ -418,6 +429,9 @@ function _applyChanges(changes){
         const di=_rdi(c.dayIdx); const day=state.days[di];
         const si=_rsi(day,c.stopIdx);
         if(di<0||si<0||!day) throw new Error('index out of range');
+        // MISTAKE-PROOF: refuse to delete the overnight hotel. The user can still
+        // remove a hotel manually via the stop card's own delete button.
+        if(_extIsLodge(day.stops[si])){ protectedN++; return; }
         day.stops.splice(si,1);
         ok++;
       } else if(c.action==='move_stop'){
@@ -436,7 +450,9 @@ function _applyChanges(changes){
   _syncOvernightArrivals();
   try{ saveState(); }catch(e){ console.warn('[trip-extras] saveState failed:', e); }
   try{ renderAll(); }catch(e){ console.warn('[trip-extras] renderAll failed:', e); }
-  const msg = ok+' change'+(ok!==1?'s':'')+' applied'+(fail.length?' ('+fail.length+' failed)':'')+'!';
+  const msg = ok+' change'+(ok!==1?'s':'')+' applied'+
+    (protectedN?' ('+protectedN+' hotel'+(protectedN!==1?'s':'')+' kept)':'')+
+    (fail.length?' ('+fail.length+' failed)':'')+'!';
   const toast=document.getElementById('share-toast');
   if(toast){ toast.textContent=msg; toast.classList.add('visible'); setTimeout(()=>toast.classList.remove('visible'),3500); }
 }

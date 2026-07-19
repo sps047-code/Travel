@@ -960,6 +960,7 @@ function renderAll(){
       loadStopImages();
       if(currentDayIdx>=0){
         loadDayNarrative(currentDayIdx);
+        autoLoadDayHours(currentDayIdx);
         const _todayIdx=_getTodayDayIdx();
         if(currentDayIdx===_todayIdx)loadLiveWeather(currentDayIdx);
       }
@@ -2325,12 +2326,15 @@ function _dayHoursHtml(s){
     '&#128337; '+_escHtml(s.dayHours)+'</div>';
 }
 const HOURS_SYSTEM='You are a travel assistant with knowledge of typical opening hours for attractions, museums, restaurants, and venues worldwide. Given a list of places and a specific day of the week, return each place\'s typical opening hours ON THAT DAY. Be concise and accurate. If a place has no fixed hours (a public street, park, viewpoint, walk, or outdoor area), use "Open access". If it is normally closed on that weekday, say "Closed <weekday>". Never invent precise hours you are unsure of — use "Hours vary" instead. No commentary, no markdown.';
-async function addDayOpeningHours(idx){
+const _SKIP_HOURS_TYPES=['flight','train','bus','drive'];
+const _hoursLoading=new Set();   // day indices with a fetch in flight
+const _hoursAutoTried=new Set(); // days auto-attempted this session (success or fail)
+// Core fetch. force=true refetches every place; otherwise only stops missing hours.
+async function _requestDayHours(idx,force,btn){
   const day=state.days[idx];if(!day||!day.stops.length)return;
-  const btn=document.getElementById('hours-btn-'+idx);
-  const skip=['flight','train','bus','drive'];
-  const places=day.stops.map((s,si)=>({si,s})).filter(o=>!skip.includes(o.s.type));
-  if(!places.length){alert('No places on this day to look up hours for.');return;}
+  let places=day.stops.map((s,si)=>({si,s})).filter(o=>!_SKIP_HOURS_TYPES.includes(o.s.type));
+  if(!force)places=places.filter(o=>!o.s.dayHours);
+  if(!places.length)return;
   const iso=dayDateStr(idx);
   const dObj=iso?new Date(iso+'T12:00:00'):null;
   const dow=dObj&&!isNaN(dObj)?['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dObj.getDay()]:'';
@@ -2344,18 +2348,32 @@ async function addDayOpeningHours(idx){
     const a=t.indexOf('['),b=t.lastIndexOf(']');
     const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
     if(!Array.isArray(arr))throw new Error('bad response');
-    let n=0;
     places.forEach((o,i)=>{
       const it=arr[i];
       const hrs=it&&(typeof it==='string'?it:it.hours);
-      if(hrs&&String(hrs).trim()){o.s.dayHours=String(hrs).trim();n++;}
+      if(hrs&&String(hrs).trim())o.s.dayHours=String(hrs).trim();
     });
     saveState('Added opening hours for '+day.title);
     renderAll();if(idx===currentDayIdx)renderDayMap(currentDayIdx);
   }catch(e){
     if(btn){btn.disabled=false;btn.innerHTML='&#128337; Hours';}
-    alert('Could not fetch opening hours. Please try again.');
+    throw e;
   }
+}
+// Manual button: refetch hours for every place on the day.
+function addDayOpeningHours(idx){
+  const day=state.days[idx];
+  if(day&&!day.stops.some(s=>!_SKIP_HOURS_TYPES.includes(s.type))){alert('No places on this day to look up hours for.');return;}
+  _requestDayHours(idx,true,document.getElementById('hours-btn-'+idx))
+    .catch(()=>alert('Could not fetch opening hours. Please try again.'));
+}
+// Auto: when a day is viewed, fill in any missing hours once (quietly).
+function autoLoadDayHours(idx){
+  if(_hoursAutoTried.has(idx)||_hoursLoading.has(idx))return;
+  const day=state.days[idx];if(!day)return;
+  if(!day.stops.some(s=>!_SKIP_HOURS_TYPES.includes(s.type)&&!s.dayHours))return;
+  _hoursAutoTried.add(idx);_hoursLoading.add(idx);
+  _requestDayHours(idx,false).catch(()=>{}).finally(()=>_hoursLoading.delete(idx));
 }
 function _stopPlaceMetaHtml(s){
   if(!s.website&&!s.phone&&!s.openingHours)return'';

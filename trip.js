@@ -652,6 +652,7 @@ function renderPanel(idx){
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
+      _dayHoursHtml(s)+
       (s.type==='food'?'<button class="alt-btn" onclick="showAlternates('+idx+','+si+')">&#128260; Alternates</button>':'')+
       _stopPlaceMetaHtml(s)+
       _guidebookHtml(s,idx,si)+
@@ -680,6 +681,7 @@ function renderPanel(idx){
     '<div><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+_fmtSubtitle(day.subtitle)+'</p>':'')+'</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:2px">'+
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
+    '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
     '</div>'+
     '</div>'+
@@ -2312,6 +2314,48 @@ async function lookupPlaceDetails(stop){
     saveState('Updated place details: '+stop.name);
     renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
   }catch(e){}
+}
+// Opening hours for the specific day of the itinerary, shown in the stop's
+// description area. Populated by addDayOpeningHours() (AI-estimated).
+function _dayHoursHtml(s){
+  if(!s.dayHours)return'';
+  const closed=/\bclosed\b/i.test(s.dayHours);
+  return '<div class="stop-day-hours" title="Estimated hours — verify with the venue" '+
+    'style="font-family:var(--font-ui);font-size:12px;margin-top:6px;font-weight:600;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
+    '&#128337; '+_escHtml(s.dayHours)+'</div>';
+}
+const HOURS_SYSTEM='You are a travel assistant with knowledge of typical opening hours for attractions, museums, restaurants, and venues worldwide. Given a list of places and a specific day of the week, return each place\'s typical opening hours ON THAT DAY. Be concise and accurate. If a place has no fixed hours (a public street, park, viewpoint, walk, or outdoor area), use "Open access". If it is normally closed on that weekday, say "Closed <weekday>". Never invent precise hours you are unsure of — use "Hours vary" instead. No commentary, no markdown.';
+async function addDayOpeningHours(idx){
+  const day=state.days[idx];if(!day||!day.stops.length)return;
+  const btn=document.getElementById('hours-btn-'+idx);
+  const skip=['flight','train','bus','drive'];
+  const places=day.stops.map((s,si)=>({si,s})).filter(o=>!skip.includes(o.s.type));
+  if(!places.length){alert('No places on this day to look up hours for.');return;}
+  const iso=dayDateStr(idx);
+  const dObj=iso?new Date(iso+'T12:00:00'):null;
+  const dow=dObj&&!isNaN(dObj)?['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dObj.getDay()]:'';
+  if(btn){btn.disabled=true;btn.textContent='Finding hours…';}
+  try{
+    let prompt='Day of week: '+(dow||'unknown')+(iso?' ('+iso+')':'')+'\nArea/context: '+day.title+'\n\nPlaces (in order):\n';
+    places.forEach((o,i)=>{prompt+=(i+1)+'. '+o.s.name+'\n';});
+    prompt+='\nReturn ONLY a JSON array with one object per place, in the SAME order:\n[{"hours":"<opening hours on '+(dow||'that day')+'>"}]\nExample values: "9:00 AM - 5:00 PM", "10:00 AM - 6:00 PM", "Closed '+(dow||'')+'", "Open access", "Open 24 hours", "Hours vary".';
+    const text=await callClaude(HOURS_SYSTEM,prompt);
+    const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+    const a=t.indexOf('['),b=t.lastIndexOf(']');
+    const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
+    if(!Array.isArray(arr))throw new Error('bad response');
+    let n=0;
+    places.forEach((o,i)=>{
+      const it=arr[i];
+      const hrs=it&&(typeof it==='string'?it:it.hours);
+      if(hrs&&String(hrs).trim()){o.s.dayHours=String(hrs).trim();n++;}
+    });
+    saveState('Added opening hours for '+day.title);
+    renderAll();if(idx===currentDayIdx)renderDayMap(currentDayIdx);
+  }catch(e){
+    if(btn){btn.disabled=false;btn.innerHTML='&#128337; Hours';}
+    alert('Could not fetch opening hours. Please try again.');
+  }
 }
 function _stopPlaceMetaHtml(s){
   if(!s.website&&!s.phone&&!s.openingHours)return'';

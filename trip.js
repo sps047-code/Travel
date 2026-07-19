@@ -295,11 +295,23 @@ function greatCirclePoints(p1,p2,steps=80){
   return pts;
 }
 
+function _median(nums){
+  const a=[...nums].sort((x,y)=>x-y);const n=a.length;
+  return n?(n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2):0;
+}
+// Drop stops whose coordinates are a wild outlier from the day's cluster. A bad
+// geocode (e.g. a London day with one point mislocated to Spain) must never warp
+// the driving route or make the map claim you are going somewhere you are not.
+const _ROUTE_OUTLIER_MI=500;
+function _dropCoordOutliers(stops){
+  const withCoord=stops.filter(s=>s.lat&&s.lng);
+  if(withCoord.length<3)return stops; // too few points to judge an outlier
+  const medLat=_median(withCoord.map(s=>s.lat)),medLng=_median(withCoord.map(s=>s.lng));
+  return stops.filter(s=>!s.lat||!s.lng||haversine(medLat,medLng,s.lat,s.lng)<=_ROUTE_OUTLIER_MI);
+}
 async function fetchRoute(stops){
-  const rs=stops.filter((s,i)=>{
-    if(s.alt||!s.lat||!s.lng||s.type==='flight')return false;
-    return true;
-  });
+  let rs=stops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight');
+  rs=_dropCoordOutliers(rs);
   if(rs.length<2)return null;
   const key=rs.map(s=>s.lat+','+s.lng).join('|');
   if(routeCache[key])return routeCache[key];
@@ -350,7 +362,7 @@ async function renderDayMap(idx){
     const rc=await fetchRoute(routeStops);
     if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
     else{
-      const ml=routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight').map(s=>[s.lat,s.lng]);
+      const ml=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
       if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
       st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
     }

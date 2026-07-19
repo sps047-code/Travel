@@ -1059,13 +1059,58 @@ function _suggestStopTime(stops,newIdx){
   }
   return _formatTimeMins(prevMins+visitDur+travelMins);
 }
+// How long a stop occupies: prefer an explicit end time, then its duration
+// string, then a sensible default for its type.
+const _VISIT_MINS={hike:120,museum:90,food:75,lodge:30,flight:0,train:0,bus:0,drive:20,beach:120,shop:60,tour:90,show:150};
+function _durationToMins(str){
+  if(str==null)return null;
+  const s=String(str).toLowerCase().trim();
+  if(!s)return null;
+  let mins=0,found=false;
+  const h=s.match(/(\d+(?:\.\d+)?)\s*(?:h\b|hr|hrs|hour|hours)/);
+  if(h){mins+=parseFloat(h[1])*60;found=true;}
+  const m=s.match(/(\d+)\s*(?:m\b|min|mins|minute|minutes)/);
+  if(m){mins+=parseInt(m[1]);found=true;}
+  if(!found){const n=s.match(/^(\d+)$/);if(n){mins=parseInt(n[1]);found=true;}}
+  return found?Math.round(mins):null;
+}
+function _stopVisitMins(s){
+  const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
+  if(st!=null&&et!=null&&et>st)return et-st;      // explicit span (e.g. flights)
+  const d=_durationToMins(s.duration);
+  if(d!=null)return d;
+  return _VISIT_MINS[s.type]??60;
+}
+// Travel time between two consecutive stops, matching the leg-connector logic.
+function _legTravelMins(a,b){
+  if(!a||!b)return 15;
+  const mode=b.transitMode||_defaultTransitMode(a,b);
+  if(a.lat&&a.lng&&b.lat&&b.lng)return Math.max(5,_travelMins(haversine(a.lat,a.lng,b.lat,b.lng),mode));
+  return 15;
+}
+// Recompute every stop's start time in chronological order: each stop begins
+// after the previous one's visit duration plus the travel time between them.
+// The day's start stays anchored to the earliest existing time (so reordering
+// doesn't shift when the day begins). endTime spans move with their start.
+function _recalcDayTimes(dayIdx){
+  const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;
+  const stops=day.stops;
+  const existing=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null);
+  let cur=existing.length?Math.min(...existing):540; // default 9:00am
+  for(let i=0;i<stops.length;i++){
+    const s=stops[i];
+    if(i>0)cur+=_stopVisitMins(stops[i-1])+_legTravelMins(stops[i-1],s);
+    const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
+    s.time=_formatTimeMins(cur);
+    if(oldSt!=null&&oldEt!=null&&oldEt>oldSt)s.endTime=_formatTimeMins(cur+(oldEt-oldSt));
+  }
+}
 function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops.length)return;
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  const suggested=_suggestStopTime(stops,newIdx);
-  if(suggested)stops[newIdx].time=suggested;
+  _recalcDayTimes(dayIdx);
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 

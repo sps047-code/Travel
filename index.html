@@ -214,7 +214,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div class="brand">
       <img src="leaf-logo.png" class="leaf-logo-svg" width="36" height="42" alt="Seasons leaf logo">
       <div class="brand-text">
-        <span class="brand-name-text">Seasons</span>
+        <span class="brand-name-text">Seasons <span id="app-version" style="font-family:var(--font-ui);font-size:11px;font-weight:600;letter-spacing:0.04em;color:rgba(253,252,250,0.45);vertical-align:middle"></span></span>
         <div class="brand-bar"></div>
       </div>
     </div>
@@ -223,6 +223,23 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     </div>
   </div>
 </header>
+<script>
+/* Show the ACTIVE service-worker cache version in the header, so it's obvious
+   which build is loaded. Reads the highest seasons-vNN cache name; updates the
+   moment a new service worker takes over. */
+(function(){
+  function setVer(){
+    if(!('caches' in window))return;
+    caches.keys().then(function(keys){
+      var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
+      var el=document.getElementById('app-version');
+      if(el&&vs.length)el.textContent='v'+Math.max.apply(null,vs);
+    });
+  }
+  setVer();
+  if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('controllerchange',setVer);setTimeout(setVer,1500);}
+})();
+</script>
 
 <div class="page">
   <div class="section-title">Upcoming &amp; Recent Trips</div>

@@ -302,12 +302,12 @@ function _itinMap(){
     return '\n\nLIVE ITINERARY (use these exact 0-based indices in ITINERARY_CHANGES):\n'+
       state.days.map((d,i)=>
         'dayIdx='+i+' "Day '+(i+1)+': '+(d.title||'')+'": '+
-        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')':'')).join(' | ')
+        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')':'')+(s.dayHours?' [open: '+s.dayHours+']':'')).join(' | ')
       ).join('\n');
   }catch(e){ return ''; }
 }
 
-const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value}\n- add_stop: dayIdx, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.';
+const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value}\n- add_stop: dayIdx, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.\n\nFEASIBILITY, NOT PACE: Do NOT judge or assume pace. Never call a day too rushed, too packed, too ambitious, too slow, or too empty, and never add or remove stops merely to change the pace or to give the traveler downtime. Whether a plan works is decided ONLY by concrete facts: (1) is each stop OPEN at the planned time (opening hours and days closed), (2) the mode of travel between stops, (3) realistic travel time including typical traffic, and (4) distance. Only flag a stop as a problem when it would be closed at that time, or when travel time plus visit time makes the next stop impossible to reach while it is open. When the user asks whether a day works, answer the concrete question: can it be done? For each concern, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time.\n\nDESCRIBE CHANGES IN PLAIN LANGUAGE: In your prose to the user, describe every suggested change in plain English (for example: "Move York Minster before the museum so you arrive at opening time"). NEVER write the internal action names add_stop, remove_stop, update_stop, or move_stop in your prose. Always fill each change\'s "description" field with a clear human sentence that names the stop and says what changes.';
 
 // Detect when the AI claims a change without emitting the block (so we can
 // silently fetch the structured block instead of leaving the user confused).
@@ -331,7 +331,7 @@ window._planCallAI = async function(userText){
     const text = await callClaude(_PLAN_SYS+_itinMap(), _convo());
     if(thk.parentNode) thk.parentNode.removeChild(thk);
     const changeM = text.match(/<ITINERARY_CHANGES>([\s\S]*?)<\/ITINERARY_CHANGES>/i);
-    const display = text.replace(/<ITINERARY_CHANGES>[\s\S]*?<\/ITINERARY_CHANGES>/gi,'').trim();
+    const display = _cleanChangeText(text.replace(/<ITINERARY_CHANGES>[\s\S]*?<\/ITINERARY_CHANGES>/gi,'').trim());
     try{ _pcHistory.push({role:'assistant',content:display||text}); }catch(e){}
     _pcAddMessage('assistant', display||text);
     if(changeM){
@@ -362,6 +362,27 @@ async function _autoExtract(){
   }
 }
 
+// Plain-English fallback when the AI omits a description — never show the raw
+// action name (add_stop / remove_stop / ...).
+function _humanizeChange(c){
+  try{
+    const di = (c.dayIdx!=null?c.dayIdx:(c.fromDayIdx!=null?c.fromDayIdx:null));
+    const day = (di!=null && state.days)?state.days[di]:null;
+    const nameAt = (i)=> (day && i!=null && day.stops && day.stops[i])?day.stops[i].name:'';
+    const dayN = c.dayIdx!=null?(' on Day '+(c.dayIdx+1)):'';
+    if(c.action==='add_stop')   return 'Add '+((c.stop&&c.stop.name)||'a new stop')+(c.dayIdx!=null?(' to Day '+(c.dayIdx+1)):'');
+    if(c.action==='remove_stop') return 'Remove '+(nameAt(c.stopIdx)||'a stop')+(c.dayIdx!=null?(' from Day '+(c.dayIdx+1)):'');
+    if(c.action==='update_stop') return 'Update '+(nameAt(c.stopIdx)||'a stop')+dayN;
+    if(c.action==='move_stop')   return 'Move '+(nameAt(c.fromStopIdx)||'a stop')+(c.toDayIdx!=null?(' to Day '+(c.toDayIdx+1)):'');
+  }catch(e){}
+  return 'Update the itinerary';
+}
+// Strip any internal action tokens the AI may have leaked into human text.
+function _cleanChangeText(t){
+  return String(t||'').replace(/\b(add_stop|remove_stop|update_stop|move_stop)\b/gi, m=>({
+    add_stop:'add', remove_stop:'remove', update_stop:'update', move_stop:'move'
+  }[m.toLowerCase()]||'change'));
+}
 function _renderChangePanel(jsonStr){
   let changes;
   try{ changes = JSON.parse(jsonStr.trim()); }catch(e){ console.warn('[trip-extras] bad change JSON:', e); return; }
@@ -375,7 +396,7 @@ function _renderChangePanel(jsonStr){
   let rows = '';
   changes.forEach((c,i) => {
     rows += '<div style="padding:5px 0;font-size:12px;color:var(--ink-soft);border-bottom:1px solid rgba(46,125,82,0.12)">'+
-      '<strong style="color:var(--pine)">'+(i+1)+'.</strong> '+_esc(c.description||c.action)+'</div>';
+      '<strong style="color:var(--pine)">'+(i+1)+'.</strong> '+_esc(_cleanChangeText(c.description)||_humanizeChange(c))+'</div>';
   });
 
   panel.innerHTML =

@@ -2478,7 +2478,7 @@ function _renderGradeResult(d){
 }
 
 /* --- AI Day Optimizer --- */
-const OPT_SYSTEM='You are an expert travel planner and day optimizer. Score this day across 4 dimensions then suggest improvements.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"optimization_score":78,"score_summary":"one sentence: the single biggest improvement opportunity","sub_scores":{"route":85,"timing":70,"pacing":80,"experience":75},"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string","proposed_moves":[{"stop_name":"","from_day":1,"to_day":2,"reason":""}]}\n\nScore definitions (each 0-100, their average = optimization_score):\n- route: geographic efficiency -- stops in logical order minimizing backtracking\n- timing: alignment with opening hours, avoiding arriving too early/late\n- pacing: realistic time allocation -- not too rushed, not too sparse\n- experience: narrative flow -- does the day tell a coherent, enjoyable story?\n\nThresholds: 90-100=Near Perfect, 75-89=Well Optimized, 50-74=Good, 0-49=Needs Work.\nBe honest: a day with clear backtracking scores below 60 on route. A tightly clustered day with great flow scores 85+.\nproposed_moves: optional cross-day moves if a stop clearly belongs on an adjacent day. Omit if none. Use 1-based day numbers.';
+const OPT_SYSTEM='You are an expert travel logistics checker. Judge ONLY whether the day can physically be done. Do NOT judge pace, vibe, or how rushed or relaxed the day feels, and NEVER suggest adding filler or removing stops to change the pace or add downtime.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"optimization_score":78,"score_summary":"one sentence: whether the day is doable and the single biggest logistical issue","sub_scores":{"route":85,"hours":70,"travel":80,"feasibility":75},"optimized_order":[{"name":"","rationale":""}],"timing_issues":[{"stop_name":"","issue":"","suggestion":""}],"route_notes":"string","proposed_moves":[{"stop_name":"","from_day":1,"to_day":2,"reason":""}]}\n\nScore definitions (each 0-100, their average = optimization_score):\n- route: geographic efficiency -- stops in a logical order that minimizes backtracking and distance.\n- hours: are the stops OPEN when the traveler arrives -- respect opening hours and days closed.\n- travel: is the travel between consecutive stops realistic given the mode of transport, the distance, and typical traffic.\n- feasibility: can the WHOLE day be completed -- every stop reached while it is open, with enough time to travel between stops and visit each one.\n\nHard rules:\n- Do NOT assume or comment on pace. Never say a day is too rushed, too packed, too ambitious, too slow, or too empty.\n- Do NOT suggest adding or removing stops for pacing or downtime. Suggest a change ONLY when a stop would be CLOSED at the planned time, or cannot be reached in time given travel mode, distance, and traffic.\n- optimized_order: reorder ONLY to cut backtracking or to arrive while a stop is open. If the order already works, return it unchanged.\n- timing_issues: list ONLY concrete problems -- a stop closed at its planned time, or a leg where travel time plus visit time makes the next stop impossible to reach while it is open. For each, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time. If there are none, return an empty array.\n\nThresholds: 90-100=Fully Doable, 75-89=Doable, 50-74=Tight, 0-49=Not Feasible.\nproposed_moves: optional cross-day moves ONLY if a stop cannot be done on its current day (closed or unreachable) but works on an adjacent day. Omit if none. Use 1-based day numbers.';
 async function optimizeDay(idx){
   const modal=document.getElementById('ai-optimizer-modal');
   const content=document.getElementById('ai-optimizer-content');
@@ -2494,6 +2494,7 @@ async function optimizeDay(idx){
     day.stops.forEach((s,si)=>{
       prompt+=(si+1)+'. '+s.name+' ['+s.type+']'+(s.time?' @'+s.time:'');
       if(s.lat&&s.lng)prompt+=' ('+Number(s.lat).toFixed(4)+','+Number(s.lng).toFixed(4)+')';
+      if(s.dayHours)prompt+='\n   Open today: '+s.dayHours;
       if(s.openingHours)prompt+='\n   Hours: '+JSON.stringify(s.openingHours);
       if(s.reservation)prompt+='\n   Reservation: '+s.reservation;
       if(s.notes)prompt+='\n   Notes: '+s.notes;
@@ -2515,10 +2516,10 @@ function _optScoreColor(s){
   return'var(--ruby)';
 }
 function _optScoreLabel(s){
-  if(s>=90)return'Near Perfect';
-  if(s>=75)return'Well Optimized';
-  if(s>=50)return'Good';
-  return'Needs Work';
+  if(s>=90)return'Fully Doable';
+  if(s>=75)return'Doable';
+  if(s>=50)return'Tight';
+  return'Not Feasible';
 }
 function _renderOptResult(d){
   _optLastData=d;
@@ -2527,7 +2528,7 @@ function _renderOptResult(d){
     const score=Math.max(0,Math.min(100,Math.round(d.optimization_score)));
     const color=_optScoreColor(score);
     const ss=d.sub_scores||{};
-    const pills=['route','timing','pacing','experience'].map(k=>{
+    const pills=['route','hours','travel','feasibility'].map(k=>{
       const v=ss[k]!==undefined?Math.round(ss[k]):'—';
       return'<span class="opt-subscore-pill">'+k.charAt(0).toUpperCase()+k.slice(1)+' '+v+'</span>';
     }).join('');

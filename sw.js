@@ -17,7 +17,7 @@
 //      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
-const CACHE = 'seasons-v88';
+const CACHE = 'seasons-v89';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',

@@ -2823,7 +2823,8 @@ function editStopHours(di,si){
 const HOURS_SYSTEM='You are a travel assistant with knowledge of typical opening hours for attractions, museums, restaurants, and venues worldwide. Given a list of places and a specific day of the week, return each place\'s typical opening hours ON THAT DAY. Be concise and accurate. If a place has no fixed hours (a public street, park, viewpoint, walk, or outdoor area), use "Open access". If it is normally closed on that weekday, say "Closed <weekday>". Never invent precise hours you are unsure of — use "Hours vary" instead. No commentary, no markdown.';
 const _SKIP_HOURS_TYPES=['flight','train','bus','drive'];
 const _hoursLoading=new Set();   // day indices with a fetch in flight
-const _hoursAutoTried=new Set(); // days auto-attempted this session (success or fail)
+const _hoursAutoTried=new Set(); // (retained) days auto-attempted this session
+const _hoursNextRetry={};        // day idx -> earliest ms to auto-retry a fill
 // Core fetch. force=true refetches every place; otherwise only stops missing hours.
 async function _requestDayHours(idx,force,btn){
   const day=state.days[idx];if(!day||!day.stops.length)return;
@@ -2842,22 +2843,26 @@ async function _requestDayHours(idx,force,btn){
     // Never overwrite hours the user edited by hand — even on a manual refresh.
     places.forEach(o=>{ if(osm[o.si] && o.s.dayHoursSrc!=='user'){o.s.dayHours=osm[o.si];o.s.dayHoursSrc='osm';o._done=true;} });
     // 2) AI estimate only for places OSM could not resolve. Never overwrite a
-    //    hours value the user edited by hand.
+    //    hours value the user edited by hand. If the AI call fails (e.g. usage
+    //    limit), keep the REAL OSM hours we already have — do NOT abort, or the
+    //    whole day would show no hours even though OSM resolved several.
     const remaining=places.filter(o=>!o._done&&o.s.dayHoursSrc!=='user');
     if(remaining.length){
-      let prompt='Day of week: '+(dow||'unknown')+(iso?' ('+iso+')':'')+'\nArea/context: '+day.title+'\n\nPlaces (in order):\n';
-      remaining.forEach((o,i)=>{prompt+=(i+1)+'. '+o.s.name+'\n';});
-      prompt+='\nReturn ONLY a JSON array with one object per place, in the SAME order:\n[{"hours":"<opening hours on '+(dow||'that day')+'>"}]\nExample values: "9:00 AM - 5:00 PM", "10:00 AM - 6:00 PM", "Closed '+(dow||'')+'", "Open access", "Open 24 hours", "Hours vary".';
-      const text=await callClaude(HOURS_SYSTEM,prompt);
-      const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
-      const a=t.indexOf('['),b=t.lastIndexOf(']');
-      const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
-      if(Array.isArray(arr)){
-        remaining.forEach((o,i)=>{
-          const it=arr[i];const hrs=it&&(typeof it==='string'?it:it.hours);
-          if(hrs&&String(hrs).trim()){o.s.dayHours=String(hrs).trim();o.s.dayHoursSrc='ai';}
-        });
-      }
+      try{
+        let prompt='Day of week: '+(dow||'unknown')+(iso?' ('+iso+')':'')+'\nArea/context: '+day.title+'\n\nPlaces (in order):\n';
+        remaining.forEach((o,i)=>{prompt+=(i+1)+'. '+o.s.name+'\n';});
+        prompt+='\nReturn ONLY a JSON array with one object per place, in the SAME order:\n[{"hours":"<opening hours on '+(dow||'that day')+'>"}]\nExample values: "9:00 AM - 5:00 PM", "10:00 AM - 6:00 PM", "Closed '+(dow||'')+'", "Open access", "Open 24 hours", "Hours vary".';
+        const text=await callClaude(HOURS_SYSTEM,prompt);
+        const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+        const a=t.indexOf('['),b=t.lastIndexOf(']');
+        const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
+        if(Array.isArray(arr)){
+          remaining.forEach((o,i)=>{
+            const it=arr[i];const hrs=it&&(typeof it==='string'?it:it.hours);
+            if(hrs&&String(hrs).trim()){o.s.dayHours=String(hrs).trim();o.s.dayHoursSrc='ai';}
+          });
+        }
+      }catch(aiErr){ /* AI unavailable — keep OSM hours, fill the rest later */ }
     }
     places.forEach(o=>{delete o._done;});
     saveState('Added opening hours for '+day.title,true); // derived data — local only, don't race the cloud
@@ -2874,12 +2879,19 @@ function addDayOpeningHours(idx){
   _requestDayHours(idx,true,document.getElementById('hours-btn-'+idx))
     .catch(()=>alert('Could not fetch opening hours. Please try again.'));
 }
-// Auto: when a day is viewed, fill in any missing hours once (quietly).
+// Auto: when a day is viewed, fill in any missing hours quietly. Unlike before,
+// this does NOT give up permanently after one attempt — if a fetch failed or
+// only partially filled (e.g. AI was down), it retries on later views (with a
+// short cooldown so it never hammers), so opening times appear by default
+// without the user ever asking. It stops on its own once every place has hours.
 function autoLoadDayHours(idx){
-  if(_hoursAutoTried.has(idx)||_hoursLoading.has(idx))return;
+  if(_hoursLoading.has(idx))return;
   const day=state.days[idx];if(!day)return;
   if(!day.stops.some(s=>!_SKIP_HOURS_TYPES.includes(s.type)&&!s.dayHours))return;
-  _hoursAutoTried.add(idx);_hoursLoading.add(idx);
+  const now=Date.now();
+  if(_hoursNextRetry[idx]&&now<_hoursNextRetry[idx])return;
+  _hoursNextRetry[idx]=now+30000;   // don't retry this same day for 30s
+  _hoursLoading.add(idx);
   _requestDayHours(idx,false).catch(()=>{}).finally(()=>_hoursLoading.delete(idx));
 }
 function _stopPlaceMetaHtml(s){

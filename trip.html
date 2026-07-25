@@ -577,7 +577,7 @@ body.offline #audio-discover-btn{display:none!important}
 (function(){
   function setVer(){
     var el=document.getElementById('app-version');
-    if(el&&!el.textContent)el.textContent='v114'; // fallback until the SW cache reports the live version
+    if(el&&!el.textContent)el.textContent='v115'; // fallback until the SW cache reports the live version
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});

@@ -873,6 +873,7 @@ async function importTrip(){
   const text=document.getElementById('import-text').value.trim();
   if(!text){showErr('import-error','Please paste your itinerary text or upload a file.');return}
   const targetId=_importMode==='append'?document.getElementById('import-target-trip').value:null;
+  if(_importMode==='append'&&!targetId){showErr('import-error','No trip selected to add these stops to. Pick a trip, or switch to "New trip".');return}
   closeImport();showLoading('Reading your itinerary…');
   try{
     const resp=await callClaude(IMPORT_SYSTEM,'Parse this itinerary:\n\n'+text);
@@ -1114,7 +1115,8 @@ function _tripTileUrls(state,cap){
   return [...set].slice(0,cap||500);
 }
 async function _cachePut(cache,url,opts){
-  try{const r=await fetch(url,opts||{});if(r&&(r.ok||r.type==='opaque'))await cache.put(url,r);}catch(e){}
+  try{const r=await fetch(url,opts||{});if(r&&(r.ok||r.type==='opaque')){await cache.put(url,r);return true;}}catch(e){}
+  return false;
 }
 // Resolve the freshest full state for a trip: cloud (shared) -> local -> built-in.
 async function _resolveTripState(t){
@@ -1149,18 +1151,22 @@ async function saveTripOffline(id,ev){
     const imgs=[];
     for(const s of stops){const u=s.customImage||await _fetchStopImage(s.name);if(u&&/^https?:/.test(u))imgs.push(u);}
     const jobs=[...imgs,..._tripTileUrls(state,500)];
-    let done=0,i=0;const POOL=6;
-    async function worker(){while(i<jobs.length){const url=jobs[i++];await _cachePut(cache,url,{mode:'no-cors'});done++;if(btn)btn.textContent=Math.round(done/Math.max(1,jobs.length)*100)+'%';}}
+    let done=0,i=0,failed=0;const POOL=6;
+    async function worker(){while(i<jobs.length){const url=jobs[i++];const okc=await _cachePut(cache,url,{mode:'no-cors'});if(!okc)failed++;done++;if(btn)btn.textContent=Math.round(done/Math.max(1,jobs.length)*100)+'%';}}
     await Promise.all(Array.from({length:POOL},worker));
     localStorage.setItem('offline_'+id,'1');
     loadTrips();
+    // Be honest if a lot of images/tiles couldn't be stored (usually device storage full).
+    if(jobs.length&&failed/jobs.length>0.25)alert('Saved, but '+failed+' of '+jobs.length+' photos/map tiles could not be stored (device storage may be low), so parts of the map/photos may be missing offline.');
   }catch(e){
     if(btn){btn.disabled=false;btn.innerHTML='&#11015;';}
-    alert('Could not save this trip offline. Open it once, or try again on a stronger connection.');
+    alert('Could not save this trip offline — it may not be downloaded on this device yet. Open it once, then try Save Offline again.');
   }
 }
 
+let _loadTripsGen=0;
 async function loadTrips(){
+  const gen=++_loadTripsGen; // ignore this call's async result if a newer load starts
   const grid=document.getElementById('trips-grid');
   grid.innerHTML='';
   const loadTimeout=setTimeout(()=>{
@@ -1181,6 +1187,7 @@ async function loadTrips(){
   // so a transient cloud hiccup never blanks the trips already on screen.
   let sharedTrips=null;
   try{sharedTrips=await loadSharedTrips()}catch(e){}
+  if(gen!==_loadTripsGen)return; // a newer loadTrips ran (e.g. after a delete) — don't clobber it
   if(sharedTrips!==null){
     try{localStorage.setItem('sharedCards',JSON.stringify(sharedTrips));}catch(e){}
     const sharedExtra=sharedTrips.filter(t=>!knownIds.has(t.id));

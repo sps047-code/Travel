@@ -268,11 +268,24 @@ function _parseMinutes(t){
 }
 
 let _oaSyncing=false;
+// Overnight-arrival stops the user has deleted — don't regenerate these.
+let _dismissedArr=null;
+function _dismKey(){ return 'oa_dismissed_'+(typeof tripId!=='undefined'?tripId:''); }
+function _loadDism(){
+  if(_dismissedArr)return _dismissedArr;
+  try{ _dismissedArr=new Set(JSON.parse(localStorage.getItem(_dismKey())||'[]')); }catch(e){ _dismissedArr=new Set(); }
+  return _dismissedArr;
+}
+function _dismissArrival(name,time){
+  const s=_loadDism(); s.add((name||'')+'|'+(time||''));
+  try{ localStorage.setItem(_dismKey(),JSON.stringify([...s])); }catch(e){}
+}
 function _syncOvernightArrivals(){
   if(_oaSyncing) return false;
   if(typeof state==='undefined'||!state||!state.days) return false;
   _oaSyncing=true;
   const transit=['flight','train','bus','drive'];
+  const dism=_loadDism();
   // Clear previously auto-created arrival stops, then re-derive from current data
   state.days.forEach(day=>{ if(day.stops) day.stops=day.stops.filter(s=>!s._autoArrival); });
   let changed=false;
@@ -282,6 +295,7 @@ function _syncOvernightArrivals(){
       if(!transit.includes(stop.type)||!stop.time||!stop.endTime) return;
       const sm=_parseMinutes(stop.time), em=_parseMinutes(stop.endTime);
       if(sm<0||em<0||em>=sm) return; // not overnight
+      if(dism.has((stop.name||'')+'|'+(stop.endTime||'')))return; // user deleted this arrival
       state.days[di+1].stops.unshift({
         name:stop.name, type:stop.type, time:stop.endTime,
         _autoArrival:true

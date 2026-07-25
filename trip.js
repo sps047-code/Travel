@@ -707,9 +707,20 @@ function renderPanel(idx){
       }
       const tzc=tzChangeLabel(s,next);
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
+      // Red warning right on the connector when the schedule can't fit this leg.
+      let infeasWarn='';
+      if(_validLL(next)){
+        const from2=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
+        const tv=(from2&&from2!==next)?_legTravelMins(from2,next):0;
+        const ps2=_parseTimeMins(s.time),pe2=_parseTimeMins(s.endTime),tn2=_parseTimeMins(next.time);
+        if(ps2!==null&&tn2!==null&&tv>=15&&tv<=600){
+          const dep2=(pe2!==null&&pe2>ps2)?pe2:ps2+_stopVisitMins(s);
+          if(tn2<dep2+tv-10)infeasWarn='<span style="color:var(--ruby);font-weight:700;margin-left:10px">&#9888;&#65039; Not enough time — earliest arrival '+_formatTimeMins(dep2+tv)+'</span>';
+        }
+      }
       if(leg||tzc){
         cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+
-          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+
+          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+infeasWarn+
           '</div>';
       }else{
         cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+modePill+'</div>';
@@ -2501,6 +2512,20 @@ function detectConflicts(dayIdx){
       if(ti!==null&&tp!==null&&ti>0&&tp>0){
         if(ti===tp)msgs.push('Same time as stop '+i);
         else if(ti>tp&&ti-tp<15)msgs.push('Only '+(ti-tp)+' min after stop '+i);
+      }
+    }
+    // TRAVEL FEASIBILITY: you can't arrive before you could physically get here —
+    // previous stop's departure (its end, or start+visit) plus the travel time.
+    if(i>0&&ti!==null){
+      const prev=stops[i-1];
+      const ps=_parseTimeMins(prev.time),pe=_parseTimeMins(prev.endTime);
+      if(ps!==null){
+        const dep=(pe!==null&&pe>ps)?pe:ps+_stopVisitMins(prev);
+        const travel=_legTravelMins(prev,s);
+        const earliest=dep+travel;
+        if(travel>=15&&travel<=600&&ti<earliest-10){
+          msgs.push('Impossible timing — the '+_minsToStr(travel)+' trip from the previous stop means the earliest you can arrive is '+_formatTimeMins(earliest)+', not '+_formatTimeMins(ti));
+        }
       }
     }
     if(s.openingHours&&dow>=0){

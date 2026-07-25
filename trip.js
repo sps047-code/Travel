@@ -1312,36 +1312,65 @@ function _healBadEndTimes(){
 // (< _COORD_DRIFT_MI) is preserved. Runs once on load.
 const _COORD_DRIFT_MI=25;
 function _normName(n){return String(n||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
-async function _healDriftedCoords(){
+// Canonical name → {lat,lng,type} for the current trip, loaded ONCE from its
+// built-in file. Cached so the heal can run synchronously at every point where
+// `state` is (re)adopted — initial load, background cloud refresh, and the watch
+// poll — without a race. Empty object for custom trips (nothing to heal against).
+let _canonCoords=null;
+async function _loadCanonCoords(){
+  if(_canonCoords)return _canonCoords;
+  const canon={};
   try{
-    if(!state||!Array.isArray(state.days)||!tripId)return false;
-    const res=await fetch('trips/'+tripId+'.json',{cache:'no-store'});
-    if(!res.ok)return false;
-    const base=await res.json();
-    const baseDays=Array.isArray(base)?base:base.days;
-    if(!Array.isArray(baseDays))return false;
-    const canon={};
-    baseDays.forEach(d=>(d.stops||[]).forEach(s=>{
-      if(s&&s.name&&_validLL(s)){const k=_normName(s.name);if(!(k in canon))canon[k]={lat:s.lat,lng:s.lng,type:s.type};}
-    }));
-    let healed=0;
-    state.days.forEach(d=>(d.stops||[]).forEach(s=>{
-      if(!s||!s.name)return;
-      const c=canon[_normName(s.name)];if(!c)return;
-      let fix=false;
-      if(_validLL(s)){ if(haversine(s.lat,s.lng,c.lat,c.lng)>_COORD_DRIFT_MI)fix=true; }
-      else fix=true;                        // missing / 0,0 coords → restore
-      if(fix){
-        s.lat=c.lat;s.lng=c.lng;
-        // A stop whose coordinate was corrupted commonly had its type corrupted too
-        // (e.g. Rosslyn Chapel became "food"). Restore the canonical type as well.
-        if(c.type&&s.type!==c.type)s.type=c.type;
-        healed++;
+    if(tripId){
+      const res=await fetch('trips/'+tripId+'.json',{cache:'no-store'});
+      if(res.ok){
+        const base=await res.json();
+        const baseDays=Array.isArray(base)?base:base.days;
+        (baseDays||[]).forEach(d=>(d.stops||[]).forEach(s=>{
+          if(s&&s.name&&_validLL(s)){const k=_normName(s.name);if(!(k in canon))canon[k]={lat:s.lat,lng:s.lng,type:s.type};}
+        }));
       }
-    }));
-    if(healed)saveState('Restored '+healed+' corrupted location'+(healed>1?'s':''));
-    return healed>0;
-  }catch(e){return false;}
+    }
+  }catch(e){}
+  _canonCoords=canon;
+  return _canonCoords;
+}
+// Restore any stop whose coordinate drifted >25mi from its known-correct location
+// (e.g. Rosslyn Chapel corrupted to ~Glencoe), plus its type. Synchronous; must be
+// called on EVERY state adoption so no code path can leave corruption on screen.
+// Returns the number of stops fixed.
+function _canonFor(name){
+  if(!_canonCoords)return null;
+  const k=_normName(name);
+  if(_canonCoords[k])return _canonCoords[k];
+  // Forgiving fallback: a canonical name that clearly refers to the same place
+  // (one is a substring of the other), guarded by length so short names can't
+  // cross-match. Handles minor renames like "Rosslyn Chapel Visit".
+  for(const ck in _canonCoords){
+    if(ck.length>=6&&(k.includes(ck)||ck.includes(k)))return _canonCoords[ck];
+  }
+  return null;
+}
+function _applyCoordHeal(){
+  if(!_canonCoords||!state||!Array.isArray(state.days))return 0;
+  let healed=0;
+  state.days.forEach(d=>(d.stops||[]).forEach(s=>{
+    if(!s||!s.name)return;
+    const c=_canonFor(s.name);if(!c)return;
+    let fix=false;
+    if(_validLL(s)){ if(haversine(s.lat,s.lng,c.lat,c.lng)>_COORD_DRIFT_MI)fix=true; }
+    else fix=true;                        // missing / 0,0 coords → restore
+    if(fix){
+      s.lat=c.lat;s.lng=c.lng;
+      // A corrupted coordinate usually came with a corrupted type (Rosslyn → "food").
+      if(c.type&&s.type!==c.type)s.type=c.type;
+      // destLat/destLng only mean anything for transit legs; a stray one on an
+      // activity feeds _patchLegConnectors a wrong distance — drop it.
+      if(!['flight','train','bus'].includes(s.type)){ delete s.destLat; delete s.destLng; }
+      healed++;
+    }
+  }));
+  return healed;
 }
 // Caps that keep a recalculated day inside real waking hours no matter how
 // corrupt the data is. The killer bug: a stop with a bad coordinate makes the
@@ -2344,6 +2373,9 @@ function _watchFamily(){
         _lastFamilyAt=lc.at;
         state=data.state;
         try{ _sortAllDaysByTime(); }catch(e){}
+        // Heal on every adopted cloud change too, so a corrupt push from another
+        // device can't repaint the corruption onto this screen.
+        try{ if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
         showToast('✎ Change: '+_escHtml(lc.desc||'itinerary updated'));
@@ -4025,6 +4057,9 @@ async function init(){
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
               try{ _sortAllDaysByTime(); }catch(e){}
+              // Heal the freshly-adopted cloud copy BEFORE rendering, else this
+              // background refresh silently reintroduces the corruption we just fixed.
+              try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
               renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
             }
@@ -4063,7 +4098,7 @@ async function init(){
   }
 
   try{ _sortAllDaysByTime(); }catch(e){}
-  try{ await _healDriftedCoords(); }catch(e){}
+  try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
   try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);

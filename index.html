@@ -230,7 +230,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 (function(){
   function setVer(){
     var el=document.getElementById('app-version');
-    if(el&&!el.textContent)el.textContent='v105'; // fallback until the SW cache reports the live version
+    if(el&&!el.textContent)el.textContent='v106'; // fallback until the SW cache reports the live version
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});

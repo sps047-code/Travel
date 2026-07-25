@@ -1245,9 +1245,14 @@ function _healEarlyDays(){
   if(!state||!state.days)return;
   const TR=['flight','train','bus'];
   state.days.forEach((day,di)=>{
-    const s0=day.stops&&day.stops[0];if(!s0)return;
+    const stops=day.stops;if(!stops||!stops.length)return;
+    const s0=stops[0];
     const ft=_parseTimeMins(s0.time);
-    if(ft!=null&&ft<240&&!TR.includes(s0.type))_recalcDayTimes(di);
+    let corrupt=(ft!=null&&ft<240&&!TR.includes(s0.type)); // absurdly early start
+    // Times that run BACKWARDS in list order are the wrap-around signature (a bad
+    // coordinate's huge travel time pushed the clock past midnight) — recompute.
+    if(!corrupt){let last=-1;for(const s of stops){const m=_parseTimeMins(s.time);if(m==null)continue;if(m<last){corrupt=true;break;}last=m;}}
+    if(corrupt)_recalcDayTimes(di);
   });
 }
 // Heal corrupt END times: a normal stop's end must be after its start. An end
@@ -1265,13 +1270,27 @@ function _healBadEndTimes(){
     });
   });
 }
+// Caps that keep a recalculated day inside real waking hours no matter how
+// corrupt the data is. The killer bug: a stop with a bad coordinate makes the
+// travel time to it ~20 HOURS, which pushed the running clock past midnight where
+// _formatTimeMins wrapped it into the small hours (2:26 AM). We cap each leg's
+// travel and each visit to sane maxima, and NEVER let the clock cross into the
+// next morning — so no stop can ever be assigned an absurd overnight time.
+const _MAX_LEG_TRAVEL=240;  // 4h — a single day's stops are never 20h of driving apart
+const _MAX_VISIT_CASCADE=300; // 5h
+const _DAY_END_CAP=1425;    // 23:45 — hard ceiling; the clock never wraps to AM
 function _recalcDayTimes(dayIdx,anchorMins){
   const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;
   const stops=day.stops;
   let cur=(anchorMins!=null&&anchorMins>=0)?anchorMins:_dayStartAnchor(stops);
+  if(cur>_DAY_END_CAP)cur=_DAY_END_CAP;
   for(let i=0;i<stops.length;i++){
     const s=stops[i];
-    if(i>0)cur+=_stopVisitMins(stops[i-1])+_legTravelMins(stops[i-1],s);
+    if(i>0){
+      const visit=Math.min(_stopVisitMins(stops[i-1]),_MAX_VISIT_CASCADE);
+      const travel=Math.min(_legTravelMins(stops[i-1],s),_MAX_LEG_TRAVEL);
+      cur=Math.min(cur+visit+travel,_DAY_END_CAP);
+    }
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
     s.time=_formatTimeMins(cur);
     if(oldEt!=null){
@@ -1280,7 +1299,7 @@ function _recalcDayTimes(dayIdx,anchorMins){
       // For a normal stop the end must be AFTER the start; a corrupt span (end
       // before start, or absurdly long) is rebuilt from the visit duration.
       if(!isTransit&&(span==null||span<=0||span>1080))span=_stopVisitMins(s);
-      if(span!=null)s.endTime=_formatTimeMins(cur+span);
+      if(span!=null)s.endTime=_formatTimeMins(Math.min(cur+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
     }
   }
 }

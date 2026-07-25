@@ -419,7 +419,7 @@ function renderTabs(){
     const item=document.createElement('div');
     item.className='tab-item'+(i===currentDayIdx?' active active-'+accentClass:'');
     item.setAttribute('draggable','true');item.dataset.dayIdx=i;
-    item.innerHTML='<button class="tab-move" onclick="moveDay('+i+',-1)" '+(i===0?'disabled':'')+'>&#8592;</button><button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-move" onclick="moveDay('+i+',1)" '+(i===state.days.length-1?'disabled':'')+'>&#8594;</button><button class="tab-remove" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
+    item.innerHTML='<button class="tab-move" aria-label="Move Day '+(i+1)+' earlier" title="Move day earlier" onclick="moveDay('+i+',-1)" '+(i===0?'disabled':'')+'>&#8592;</button><button class="tab-btn" onclick="switchDay('+i+')">Day '+(i+1)+'</button><button class="tab-move" aria-label="Move Day '+(i+1)+' later" title="Move day later" onclick="moveDay('+i+',1)" '+(i===state.days.length-1?'disabled':'')+'>&#8594;</button><button class="tab-remove" aria-label="Remove Day '+(i+1)+'" onclick="removeDay('+i+')" title="Remove day">&times;</button>';
     bar.appendChild(item);
   });
   const add=document.createElement('button');
@@ -662,10 +662,10 @@ function renderPanel(idx){
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+(_isUpNext?' up-next':'')+'" id="stop-card-'+idx+'-'+si+'" style="animation-delay:'+si*40+'ms">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
       '<div class="card-controls" ontouchstart="event.stopPropagation()">'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
+      '<button class="card-btn" aria-label="Move stop earlier" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
       '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
-      '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
+      '<button class="card-btn" aria-label="Move stop later" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
       '<div class="card-top">'+(s.time?'<span class="card-time">'+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
@@ -1072,6 +1072,7 @@ function renderAll(){
   // never display starting at 1:30 AM or ending before it began.
   try{ _healEarlyDays(); }catch(e){}
   try{ _healBadEndTimes(); }catch(e){}
+  try{ _ensureJnlIds(); }catch(e){}
   try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
@@ -2354,6 +2355,35 @@ const JNL_LS='seasons_jnl_'+tripId;
 let jnlData={};
 try{jnlData=JSON.parse(localStorage.getItem(JNL_LS)||'{}')}catch(e){}
 function _saveJnl(){try{localStorage.setItem(JNL_LS,JSON.stringify(jnlData))}catch(e){}}
+// Stable per-stop / per-day ids so journal notes & ratings stay attached to their
+// stop even after reordering or deleting stops/days (they used to be keyed by
+// position, which mis-associated everything on any change).
+function _ensureJnlIds(){
+  if(!state||!state.days)return false;
+  let ch=false;
+  state.days.forEach(day=>{
+    if(!day._did){day._did='d'+Math.random().toString(36).slice(2,10);ch=true;}
+    (day.stops||[]).forEach(s=>{ if(!s._sid){s._sid='s'+Math.random().toString(36).slice(2,10);ch=true;} });
+  });
+  return ch;
+}
+function _jnlNoteKey(di,si){const s=state.days[di]&&state.days[di].stops[si];return 'n_'+((s&&s._sid)||(di+'_'+si));}
+function _jnlRatingKey(di,si){const s=state.days[di]&&state.days[di].stops[si];return 'r_'+((s&&s._sid)||(di+'_'+si));}
+function _jnlDayKey(di){const d=state.days[di];return 'd_'+((d&&d._did)||di);}
+// One-time: move existing position-keyed journal data onto the new stable ids.
+function _migrateJnlKeys(){
+  if(!state||!state.days)return;
+  try{ if(localStorage.getItem('jnl_mig_'+tripId)==='1')return; }catch(e){}
+  state.days.forEach((day,di)=>{
+    const od=jnlData['d_'+di]; if(od!=null){const k=_jnlDayKey(di);if(jnlData[k]==null)jnlData[k]=od;}
+    (day.stops||[]).forEach((s,si)=>{
+      const on=jnlData['n_'+di+'_'+si]; if(on!=null){const k=_jnlNoteKey(di,si);if(jnlData[k]==null)jnlData[k]=on;}
+      const orr=jnlData['r_'+di+'_'+si]; if(orr!=null){const k=_jnlRatingKey(di,si);if(jnlData[k]==null)jnlData[k]=orr;}
+    });
+  });
+  _saveJnl();
+  try{localStorage.setItem('jnl_mig_'+tripId,'1');}catch(e){}
+}
 function isJournalMode(){
   if(!state||!state.days.length)return false;
   const last=state.days[state.days.length-1];
@@ -2365,18 +2395,18 @@ function isJournalMode(){
   d.setHours(0,0,0,0);
   return d<today;
 }
-function saveJnlStopNote(di,si,v){jnlData['n_'+di+'_'+si]=v;_saveJnl();}
+function saveJnlStopNote(di,si,v){jnlData[_jnlNoteKey(di,si)]=v;_saveJnl();}
 function saveJnlStopRating(di,si,r){
-  jnlData['r_'+di+'_'+si]=r;_saveJnl();
+  jnlData[_jnlRatingKey(di,si)]=r;_saveJnl();
   for(let k=1;k<=5;k++){const el=document.getElementById('js_'+di+'_'+si+'_'+k);if(el)el.classList.toggle('lit',k<=r);}
 }
-function saveJnlDayEntry(di,v){jnlData['d_'+di]=v;_saveJnl();}
+function saveJnlDayEntry(di,v){jnlData[_jnlDayKey(di)]=v;_saveJnl();}
 function _jnlStarsHtml(di,si,rat){
   return[1,2,3,4,5].map(k=>'<span class="jstar'+(k<=rat?' lit':'')+'" id="js_'+di+'_'+si+'_'+k+'" onclick="saveJnlStopRating('+di+','+si+','+k+')">&#9733;</span>').join('');
 }
 function _jnlStopHtml(di,si){
-  const note=jnlData['n_'+di+'_'+si]||'';
-  const rat=jnlData['r_'+di+'_'+si]||0;
+  const note=jnlData[_jnlNoteKey(di,si)]||'';
+  const rat=jnlData[_jnlRatingKey(di,si)]||0;
   if(!note&&!rat)return'<div class="journal-section"><button class="jnl-add-btn" onclick="expandJnl(this,'+di+','+si+')">&#9997; Add memory</button></div>';
   return'<div class="journal-section">'+
     '<div class="journal-sec-label">&#9997; Journal</div>'+
@@ -2385,7 +2415,7 @@ function _jnlStopHtml(di,si){
     '</div>';
 }
 function _jnlDayHtml(di){
-  const entry=jnlData['d_'+di]||'';
+  const entry=jnlData[_jnlDayKey(di)]||'';
   if(!entry)return'';
   return'<div class="day-journal-wrap">'+
     '<div class="day-journal-lbl">&#9997; Day '+(di+1)+' Memories</div>'+
@@ -2393,8 +2423,8 @@ function _jnlDayHtml(di){
     '</div>';
 }
 function expandJnl(btn,di,si){
-  const note=jnlData['n_'+di+'_'+si]||'';
-  const rat=jnlData['r_'+di+'_'+si]||0;
+  const note=jnlData[_jnlNoteKey(di,si)]||'';
+  const rat=jnlData[_jnlRatingKey(di,si)]||0;
   const sec=btn.closest('.journal-section');
   sec.innerHTML='<div class="journal-sec-label">&#9997; Journal</div>'+
     '<textarea class="journal-textarea" placeholder="How was it? Any memories..." oninput="saveJnlStopNote('+di+','+si+',this.value)">'+_escHtml(note)+'</textarea>'+
@@ -2404,7 +2434,7 @@ function expandJnl(btn,di,si){
 function _tripHighlightsHtml(){
   const rated=[];
   state.days.forEach((d,di)=>d.stops.forEach((s,si)=>{
-    const r=jnlData['r_'+di+'_'+si]||0;
+    const r=jnlData[_jnlRatingKey(di,si)]||0;
     if(r>=4)rated.push({name:s.name,r,di});
   }));
   if(!rated.length)return'';
@@ -3700,14 +3730,14 @@ function _renderRecap(){
     (startIso&&endIso?'<div class="recap-dates">'+startIso+' &ndash; '+endIso+'</div>':'')+
     '</div>';
   state.days.forEach((d,di)=>{
-    const dayNote=jnlData['d_'+di]||'';
+    const dayNote=jnlData[_jnlDayKey(di)]||'';
     h+='<div class="recap-day-hdr">'+_escHtml(d.title)+
       (d.subtitle?'<span style="font-weight:400;font-size:13px;margin-left:8px;color:var(--muted)">'+_escHtml(d.subtitle)+'</span>':'')+
       '</div>';
     if(dayNote)h+='<div class="recap-day-jnl">'+_escHtml(dayNote)+'</div>';
     d.stops.forEach((s,si)=>{
-      const note=jnlData['n_'+di+'_'+si]||'';
-      const rating=parseInt(jnlData['r_'+di+'_'+si]||0);
+      const note=jnlData[_jnlNoteKey(di,si)]||'';
+      const rating=parseInt(jnlData[_jnlRatingKey(di,si)]||0);
       const hasContent=note||rating||s.customImage;
       if(!hasContent){
         h+='<div class="recap-compact">'+_escHtml(s.name)+'</div>';
@@ -3901,6 +3931,7 @@ async function init(){
   }
 
   try{ _sortAllDaysByTime(); }catch(e){}
+  try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;

@@ -229,10 +229,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
    moment a new service worker takes over. */
 (function(){
   function setVer(){
+    var el=document.getElementById('app-version');
+    if(el&&!el.textContent)el.textContent='v105'; // fallback until the SW cache reports the live version
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
-      var el=document.getElementById('app-version');
       if(el&&vs.length)el.textContent='v'+Math.max.apply(null,vs);
     });
   }
@@ -592,9 +593,10 @@ function _applyWizStep(n){
   btn.classList.toggle('generate',n===3);
 }
 
+let _wizHist=0; // count of wizard history entries pushed, so closing can unwind them
 function showWizStep(n){
   _applyWizStep(n);
-  history.pushState({wizOpen:true,step:n},'');
+  history.pushState({wizOpen:true,step:n},'');_wizHist++;
 }
 
 function openWizard(){
@@ -614,17 +616,21 @@ function openWizard(){
   document.getElementById('budget-calc').style.display='none';
   _budgetAmtType='total';
   document.getElementById('wizard-overlay').classList.add('open');
-  history.pushState({wizOpen:true,step:1},'');
+  history.pushState({wizOpen:true,step:1},'');_wizHist=1;
   _applyWizStep(1);
   const tc=trapFocus(document.querySelector('#wizard-overlay .modal-card'));
   document.getElementById('wizard-overlay')._trapCleanup=tc;
   setTimeout(()=>document.getElementById('w-dest').focus(),150);
 }
 
-function closeWizard(){
+function closeWizard(fromPop){
   document.getElementById('wizard-overlay').classList.remove('open');
   const tc=document.getElementById('wizard-overlay')._trapCleanup;
   if(tc)tc();
+  // Unwind the wizard's pushed history entries so the browser Back button doesn't
+  // re-open it. Skip when we were called BY a back-navigation (already unwound).
+  if(!fromPop&&_wizHist>0){const n=_wizHist;_wizHist=0;history.go(-n);}
+  else _wizHist=0;
   if(_wizOpener)_wizOpener.focus();
 }
 
@@ -645,6 +651,8 @@ function validateWizStep(s){
   if(s===1){
     if(!document.getElementById('w-dest').value.trim())return'Please enter a destination.';
     if(!document.querySelector('#who-chips .chip.active'))return'Please select who\'s coming.';
+    const _ws=document.getElementById('w-start').value,_we=document.getElementById('w-end').value;
+    if(_ws&&_we&&new Date(_we)<new Date(_ws))return'Your end date is before your start date — please fix the dates.';
   }
   if(s===2){
     if(!document.querySelector('#pace-chips .chip.active'))return'Please choose a pace.';
@@ -957,15 +965,15 @@ function updateDaysFromDates(){
   const s=document.getElementById('w-start').value;
   const e=document.getElementById('w-end').value;
   if(!s||!e)return;
-  const diff=Math.round((new Date(e)-new Date(s))/(1000*60*60*24));
-  if(diff>=1&&diff<=60){
-    wizData.days=diff;
-    document.getElementById('days-val').textContent=diff;
-    document.getElementById('days-minus').disabled=diff<=1;
-    document.getElementById('days-plus').disabled=diff>=14;
-    document.getElementById('days-label').textContent='days (calculated from your dates)';
-    updateBudgetCalc();
-  }
+  let diff=Math.round((new Date(e)-new Date(s))/(1000*60*60*24));
+  if(diff<1)return;                 // end before start — ignore (validation warns)
+  const clamped=Math.min(diff,14);  // keep in sync with the 1–14 stepper cap
+  wizData.days=clamped;
+  document.getElementById('days-val').textContent=clamped;
+  document.getElementById('days-minus').disabled=clamped<=1;
+  document.getElementById('days-plus').disabled=clamped>=14;
+  document.getElementById('days-label').textContent=diff>14?'days (max 14 — trim your dates for a longer trip)':'days (calculated from your dates)';
+  updateBudgetCalc();
 }
 document.getElementById('w-start').addEventListener('change',function(){
   const s=this.value;if(!s)return;
@@ -982,9 +990,10 @@ window.addEventListener('popstate',function(e){
   const wizOpen=document.getElementById('wizard-overlay').classList.contains('open');
   if(e.state&&e.state.wizOpen){
     if(!wizOpen)document.getElementById('wizard-overlay').classList.add('open');
+    _wizHist=e.state.step||1;
     _applyWizStep(e.state.step||1);
   }else if(wizOpen){
-    closeWizard();
+    closeWizard(true); // back-navigation already popped the entry
   }
 });
 

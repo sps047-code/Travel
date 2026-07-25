@@ -491,7 +491,7 @@ body.offline #audio-discover-btn{display:none!important}
 .unbooked-all-clear{padding:12px 14px;background:var(--pine-tint);border:1.5px solid var(--pine-border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--pine);display:flex;align-items:center;gap:8px}
 .ov-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;background:var(--ruby);color:white;font-family:var(--font-ui);font-size:10px;font-weight:700;border-radius:20px;padding:0 6px;margin-left:6px;vertical-align:middle;line-height:1}
 /* === Tour Guide floating button + modal === */
-.tour-guide-float{position:fixed;bottom:76px;right:18px;z-index:800;background:var(--pine);color:white;border:none;border-radius:50px;padding:11px 15px;font-family:var(--font-ui);font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(46,125,82,0.4);transition:all 0.2s;display:none;align-items:center;gap:6px;white-space:nowrap}
+.tour-guide-float{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0px));right:18px;z-index:800;background:var(--pine);color:white;border:none;border-radius:50px;padding:11px 15px;font-family:var(--font-ui);font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(46,125,82,0.4);transition:all 0.2s;display:none;align-items:center;gap:6px;white-space:nowrap}
 .tour-guide-float:hover{background:#1a6640;box-shadow:0 6px 20px rgba(46,125,82,0.5)}
 .tour-guide-float.visible{display:flex}
 #tour-guide-modal .modal{max-width:500px}
@@ -543,7 +543,7 @@ body.offline #audio-discover-btn{display:none!important}
 /* === Duration badge on stop cards === */
 .card-duration{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--muted);background:var(--mist);border:1px solid var(--border);border-radius:20px;padding:1px 8px;margin-top:4px;margin-right:5px}
 /* === Plan Chat floating button + modal === */
-.plan-chat-float{position:fixed;bottom:20px;right:18px;z-index:800;background:var(--river);color:white;border:none;border-radius:50px;padding:11px 15px;font-family:var(--font-ui);font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(43,108,176,0.4);transition:all 0.2s;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.plan-chat-float{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));right:18px;z-index:800;background:var(--river);color:white;border:none;border-radius:50px;padding:11px 15px;font-family:var(--font-ui);font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(43,108,176,0.4);transition:all 0.2s;display:flex;align-items:center;gap:6px;white-space:nowrap}
 .plan-chat-float:hover{background:#1E5A9A;box-shadow:0 6px 20px rgba(43,108,176,0.5)}
 #plan-chat-modal .modal{max-width:540px}
 .plan-ctx{font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:7px 11px;background:var(--river-tint);border:1px solid var(--river-border);border-radius:var(--radius-sm);margin-bottom:12px;line-height:1.5}
@@ -576,10 +576,11 @@ body.offline #audio-discover-btn{display:none!important}
    moment a new service worker takes over. */
 (function(){
   function setVer(){
+    var el=document.getElementById('app-version');
+    if(el&&!el.textContent)el.textContent='v105'; // fallback until the SW cache reports the live version
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
-      var el=document.getElementById('app-version');
       if(el&&vs.length)el.textContent='v'+Math.max.apply(null,vs);
     });
   }
@@ -596,9 +597,9 @@ body.offline #audio-discover-btn{display:none!important}
   <button class="undo-btn" onclick="undoLastChange()">Undo</button>
 </div>
 <div id="tabs-bar" style="background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:stretch">
-  <button id="tabs-scroll-left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
+  <button id="tabs-scroll-left" aria-label="Scroll days left" onclick="tabsScroll(-1)" style="display:none;flex-shrink:0;background:linear-gradient(to right,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 10px 0 8px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8249;</button>
   <div class="tabs" id="tabs-inner" style="flex:1;min-width:0"></div>
-  <button id="tabs-scroll-right" onclick="tabsScroll(1)" style="display:none;flex-shrink:0;background:linear-gradient(to left,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 8px 0 10px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8250;</button>
+  <button id="tabs-scroll-right" aria-label="Scroll days right" onclick="tabsScroll(1)" style="display:none;flex-shrink:0;background:linear-gradient(to left,var(--ink) 60%,transparent);border:none;color:rgba(253,252,250,0.55);font-size:16px;cursor:pointer;padding:0 8px 0 10px;transition:color 0.18s;z-index:2" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(253,252,250,0.55)'">&#8250;</button>
 </div>
 <div class="map-legend">
   <span class="legend-item"><span class="legend-dot" style="background:var(--ruby)"></span>Hike</span>

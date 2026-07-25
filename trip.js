@@ -27,8 +27,16 @@ let _dragDayFrom=-1;
 // edit from another device/tab under last-writer-wins. Those values are derived
 // and each device recomputes them anyway.
 function saveState(changeDesc='',localOnly=false){
+  if(IS_READONLY)return; // a read-only viewer must never persist or push changes
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
+}
+// Accept an incoming (cloud) state only if it is structurally a trip and would
+// not wipe a non-empty local itinerary with an empty one.
+function _validTripState(st){
+  if(!st||typeof st!=='object'||!Array.isArray(st.days))return false;
+  if(st.days.length===0 && typeof state!=='undefined' && state && Array.isArray(state.days) && state.days.length>0)return false;
+  return true;
 }
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
@@ -360,7 +368,7 @@ async function renderDayMap(idx){
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
-    m.bindPopup('<div style="font-weight:700;font-size:13px">'+s.name+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
+    m.bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(s.name)+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
     markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
@@ -593,7 +601,7 @@ function hotelBookendHtml(label,lodge,otherStop){
     const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+lodge.lat+','+lodge.lng+'&destination='+otherStop.lat+','+otherStop.lng+'&travelmode='+(tmode==='walk'?'walking':tmode==='train'?'transit':'driving');
     travelHtml='<div class="hotel-bookend-travel"><span class="hotel-bookend-dist">'+mi+' mi · '+tStr+' '+(TM_LABEL[tmode]||'Drive').toLowerCase()+'</span><a class="map-link" href="'+mapsUrl+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a></div>';
   }
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+label+'</div><div class="hotel-bookend-name">'+nm+'</div>'+travelHtml+'</div></div>';
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+travelHtml+'</div></div>';
 }
 
 function transitBookendHtml(transitStop,firstStop){
@@ -603,7 +611,7 @@ function transitBookendHtml(transitStop,firstStop){
   const label=LABELS[transitStop.type]||'In transit';
   const arrTime=firstStop&&firstStop.time?(' &middot; arriving '+firstStop.time):'';
   const nm=transitStop.name.replace(/^check.?in\s*[—–\-]\s*/i,'').trim();
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">'+icon+'</span><div style="flex:1"><div class="hotel-bookend-label">'+label+arrTime+'</div><div class="hotel-bookend-name">'+nm+'</div></div></div>';
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">'+icon+'</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+arrTime+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div></div></div>';
 }
 
 function _getTodayDayIdx(){
@@ -660,13 +668,13 @@ function renderPanel(idx){
       '<button class="card-btn" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top">'+(s.time?'<span class="card-time">'+s.time+(stopTz(s)?'<span class="card-tz">'+stopTz(s).abbr+'</span>':'')+' </span>':'')+'<div class="card-main">'+
-      '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+s.name+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
-      (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_tr.from+' → '+_tr.to+'</div>':'')+
+      '<div class="card-top">'+(s.time?'<span class="card-time">'+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
+      '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
+      (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       (s.duration?'<span class="card-duration">&#9201; '+_escHtml(s.duration)+'</span>':'')+
-      (s.stars?'<div class="card-stars">&#9733; '+s.stars+'</div>':'')+
-      (s.notes?'<div class="card-notes">'+s.notes+'</div>':'')+
-      (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+s.reservation+'</div>':'')+
+      (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
+      (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
+      (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
       (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
@@ -711,7 +719,7 @@ function renderPanel(idx){
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
     '<div class="day-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
-    '<div><h2>'+day.title+'</h2>'+(day.subtitle?'<p>'+_fmtSubtitle(day.subtitle)+'</p>':'')+'</div>'+
+    '<div><h2>'+_escHtml(day.title)+'</h2>'+(day.subtitle?'<p>'+_escHtml(_fmtSubtitle(day.subtitle))+'</p>':'')+'</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:2px">'+
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
@@ -727,7 +735,7 @@ function renderPanel(idx){
     (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
-    (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+day.tip+'</p></div>':'')+
+    (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+_escHtml(day.tip)+'</p></div>':'')+
     '</div>';
 }
 
@@ -779,7 +787,7 @@ async function loadStopImages(){
     const el=document.getElementById('stopimg-'+di+'-'+si);
     if(!el||el.classList.contains('loaded'))continue;
     if(stop.customImage){
-      el.innerHTML='<img class="stop-img" src="'+stop.customImage+'" alt="'+stop.name+'" loading="lazy"/>';
+      el.innerHTML='<img class="stop-img" src="'+_escHtml(/^(https?:|data:image\/)/i.test(stop.customImage)?stop.customImage:'')+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/>';
       el.classList.add('loaded');continue;
     }
     const url=await fetchStopImage(stop.name);
@@ -788,7 +796,7 @@ async function loadStopImages(){
     if(gen!==_renderGen)return;
     const el2=document.getElementById('stopimg-'+di+'-'+si);
     if(url&&el2&&!el2.classList.contains('loaded')){
-      el2.innerHTML='<img class="stop-img" src="'+url+'" alt="'+stop.name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
+      el2.innerHTML='<img class="stop-img" src="'+_escHtml(url)+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
       el2.classList.add('loaded');
     }
   }
@@ -939,7 +947,9 @@ async function fetchDayWeather(day){
 const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Climate Avg". End the weather line with the label "Climate Avg". Estimate typical weather for this location and time of year. (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
 const NARR_PROSE_SYSTEM='You are a charismatic tour guide delivering the morning briefing over breakfast. Write exactly 2-3 flowing, engaging sentences about what the group will experience today. Second person, specific, evocative, exciting. Pure prose only — no weather line (weather is shown separately), no bullets, no headers.';
 
-function _escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// Only allow safe link schemes (http/https/mailto/tel) — blocks javascript: URLs.
+function _safeUrl(u){u=String(u==null?'':u).trim();return /^(https?:|mailto:|tel:)/i.test(u)?u:'';}
 function renderNarrHtml(text){
   const nl=text.indexOf('\n');
   if(nl===-1)return'<div class="day-narr-text">'+_escHtml(text)+'</div>';
@@ -1255,7 +1265,7 @@ function setModalMode(isEdit){
 }
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
-  ['place-search','f-name','f-date','f-time','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  ['place-search','f-name','f-date','f-time','f-endtime','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -1333,7 +1343,7 @@ let searchTimer=null;
 document.getElementById('place-search').addEventListener('input',function(){
   clearTimeout(searchTimer);
   const q=this.value.trim();
-  if(q.length<3){document.getElementById('search-results').classList.remove('open');return}
+  if(q.length<3){document.getElementById('search-results').classList.remove('open');document.getElementById('search-spinner').classList.remove('active');return}
   document.getElementById('search-spinner').classList.add('active');
   searchTimer=setTimeout(()=>doSearch(q),600);
 });
@@ -1350,7 +1360,7 @@ async function doSearch(q){
     el.innerHTML=data.map((item,i)=>{
       const name=item.name||item.display_name.split(',')[0];
       const addr=formatAddress(item);
-      return'<div class="search-result-item" onclick="pickResult('+i+')"><div class="result-name">'+name+'</div><div class="result-addr">'+addr+'</div></div>';
+      return'<div class="search-result-item" onclick="pickResult('+i+')"><div class="result-name">'+_escHtml(name)+'</div><div class="result-addr">'+_escHtml(addr)+'</div></div>';
     }).join('');
     el.classList.add('open');
   }catch(e){sp.classList.remove('active');el.innerHTML='<div class="no-results">Search unavailable ('+e.message+'). Enter details manually.</div>';el.classList.add('open')}
@@ -1791,7 +1801,7 @@ function renderOverview(){
     '<div class="ov-section">'+
     (state.title?'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">'+
     '<div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">'+
-    '<div class="ov-trip-name" style="margin-bottom:0">'+state.title+'</div>'+
+    '<div class="ov-trip-name" style="margin-bottom:0">'+_escHtml(state.title)+'</div>'+
     '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
     '</div>'+
     '<div style="display:flex;gap:8px;flex-shrink:0;align-items:center">'+
@@ -2163,12 +2173,15 @@ function _watchFamily(){
       const presence=data.presence||{};
       const lc=data.lastChange;
       if(lc&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
+        // Validate the incoming cloud state before adopting it — a malformed or
+        // empty push must never silently wipe/corrupt everyone's itinerary.
+        if(!_validTripState(data.state)){ _lastFamilyAt=lc.at; return; }
         _lastFamilyAt=lc.at;
         state=data.state;
         try{ _sortAllDaysByTime(); }catch(e){}
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
-        showToast('✎ Change: '+(lc.desc||'itinerary updated'));
+        showToast('✎ Change: '+_escHtml(lc.desc||'itinerary updated'));
       }
     }catch(e){}
   },3000);
@@ -2394,7 +2407,7 @@ function detectConflicts(dayIdx){
     }
     if(s.openingHours&&dow>=0){
       const arr=Array.isArray(s.openingHours)?s.openingHours:Object.values(s.openingHours);
-      const todayText=arr[dow]||'';
+      const todayText=arr[(dow+6)%7]||''; // Google weekday_text is Monday-indexed; dow is Sunday-indexed
       if(/closed/i.test(todayText)){msgs.push('Typically closed today');}
       else if(todayText&&ti!==null){
         const hm=todayText.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
@@ -2634,14 +2647,14 @@ function _stopPlaceMetaHtml(s){
   let h='<div class="stop-place-meta">';
   if(s.openingHours){
     const arr=Array.isArray(s.openingHours)?s.openingHours:Object.values(s.openingHours);
-    const todayTxt=arr[new Date().getDay()]||'';
+    const todayTxt=arr[(new Date().getDay()+6)%7]||''; // weekday_text is Monday-indexed
     if(todayTxt){
       const closed=/closed/i.test(todayTxt);
       const display=todayTxt.replace(/^[^:]*:\s*/,'');
       h+='<span class="'+(closed?'hours-closed':'hours-open')+'">&#128337; '+(closed?'Closed today':display)+'</span>';
     }
   }
-  if(s.website)h+=(s.openingHours?' &middot; ':'')+'<a href="'+s.website+'" target="_blank" rel="noopener">&#127760; Website</a>';
+  if(_safeUrl(s.website))h+=(s.openingHours?' &middot; ':'')+'<a href="'+_escHtml(_safeUrl(s.website))+'" target="_blank" rel="noopener">&#127760; Website</a>';
   if(s.phone)h+='<span style="display:block">&#128222; '+_escHtml(s.phone)+'</span>';
   h+='</div>';
   return h;
@@ -2842,11 +2855,16 @@ function applyOptimizedOrder(){
   const order=(_optLastData.optimized_order||[]).map(o=>typeof o==='string'?o:(o.name||''));
   const newStops=[];const used=new Set();
   order.forEach(name=>{
-    const si=day.stops.findIndex((s,i)=>!used.has(i)&&s.name.toLowerCase().includes(name.toLowerCase().slice(0,18)));
+    const key=(name||'').toLowerCase().trim();
+    if(!key)return; // an empty name would match the first stop — skip it
+    const si=day.stops.findIndex((s,i)=>!used.has(i)&&s.name.toLowerCase().includes(key.slice(0,18)));
     if(si>=0){newStops.push(day.stops[si]);used.add(si);}
   });
   day.stops.forEach((s,i)=>{if(!used.has(i))newStops.push(s);});
   day.stops=newStops;
+  // Rewrite times to match the new order — otherwise the render-time chrono sort
+  // immediately reverts this reorder (times still imply the old sequence).
+  _recalcDayTimes(idx,_dayStartAnchor(newStops));
   saveState('Applied optimized order');
   document.getElementById('ai-optimizer-modal').classList.remove('open');
   renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
@@ -2909,7 +2927,8 @@ function showTimingFix(ti){
   const issue=_optLastData.timing_issues[ti];
   if(_optDayIdx<0)return;
   const day=state.days[_optDayIdx];if(!day)return;
-  const si=day.stops.findIndex(s=>s.name.toLowerCase().includes((issue.stop_name||'').toLowerCase().slice(0,15)));
+  const _k=(issue.stop_name||'').toLowerCase().trim();if(!_k)return; // empty name would match the first stop
+  const si=day.stops.findIndex(s=>s.name.toLowerCase().includes(_k.slice(0,15)));
   if(si<0)return;
   const suggestedTime=_extractTimeFromText(issue.suggestion);
   if(suggestedTime){
@@ -3196,7 +3215,7 @@ if(IS_READONLY){
   const bar=document.getElementById('readonly-bar');
   if(bar)bar.classList.add('on');
   const s=document.createElement('style');
-  s.textContent='.add-stop-btn,.card-btn,.tab-remove,.tab-move,.tab-add,.lodge-next-btn,.day-narr-refresh,.stop-desc-btn,.stop-desc-regen,.pack-gen-btn,.add-check-row,.dl-btn{display:none!important}#modal-overlay,#copy-modal,#travelers-modal{display:none!important}';
+  s.textContent='.add-stop-btn,.card-btn,.tab-remove,.tab-move,.tab-add,.lodge-next-btn,.day-narr-refresh,.stop-desc-btn,.stop-desc-regen,.pack-gen-btn,.add-check-row,.dl-btn,.ai-action-btn,.plan-chat-float,.tour-guide-float,.alt-btn,.opt-apply-btn,.opt-fix-btn{display:none!important}#modal-overlay,#copy-modal,#travelers-modal,#ai-optimizer-modal,#ai-grader-modal,#plan-chat-modal{display:none!important}';
   document.head.appendChild(s);
 }
 
@@ -3562,8 +3581,8 @@ function _bookingLinkHtml(s){
     label='&#127981; Tickets & Info';
     searchQuery=encodeURIComponent(s.name+' tickets');
   }
-  const href=s.url||('https://www.google.com/search?q='+searchQuery);
-  return'<a class="map-link" href="'+href+'" target="_blank" rel="noopener">'+label+'</a>';
+  const href=_safeUrl(s.url)||('https://www.google.com/search?q='+searchQuery);
+  return'<a class="map-link" href="'+_escHtml(href)+'" target="_blank" rel="noopener">'+label+'</a>';
 }
 
 /* ============================================================
@@ -3573,9 +3592,8 @@ function _applyProposedMove(move){
   const{stop_name,from_day,to_day}=move;
   const fromIdx=(from_day||0)-1,toIdx=(to_day||0)-1;
   if(fromIdx<0||toIdx<0||fromIdx>=state.days.length||toIdx>=state.days.length)return false;
-  const si=state.days[fromIdx].stops.findIndex(s=>
-    s.name.toLowerCase().includes((stop_name||'').toLowerCase().slice(0,20))
-  );
+  const _k=(stop_name||'').toLowerCase().trim();if(!_k)return false; // empty name would match the first stop
+  const si=state.days[fromIdx].stops.findIndex(s=>s.name.toLowerCase().includes(_k.slice(0,20)));
   if(si<0)return false;
   const [moved]=state.days[fromIdx].stops.splice(si,1);
   state.days[toIdx].stops.push(moved);
@@ -3787,7 +3805,7 @@ async function init(){
         try{
           const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
           const data=await raw.json();
-          if(data&&data.state){
+          if(data&&_validTripState(data.state)){
             _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
@@ -3803,7 +3821,7 @@ async function init(){
       try{
         const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
         const data=await raw.json();
-        if(data&&data.state){
+        if(data&&_validTripState(data.state)){
           state=data.state;
           _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
           try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}

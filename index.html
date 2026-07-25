@@ -797,7 +797,7 @@ function openImport(){
   document.getElementById('mode-append').classList.remove('active');
   const sel=document.getElementById('import-target-trip');
   sel.style.display='none';
-  sel.innerHTML=_allTripsCache.map(t=>`<option value="${t.id}">${t.title}${t.dates?' ('+t.dates+')':''}</option>`).join('');
+  sel.innerHTML=_allTripsCache.map(t=>`<option value="${_esc(t.id)}">${_esc(t.title)}${t.dates?' ('+_esc(t.dates)+')':''}</option>`).join('');
   _settingsOpener=document.activeElement;
   document.getElementById('import-overlay').classList.add('open');
   const tc=trapFocus(document.querySelector('#import-overlay .modal-card'));
@@ -883,7 +883,10 @@ async function importTrip(){
       // Store parsed days in sessionStorage; trip.js will merge them AFTER loading
       // the live state (including Firebase for family trips), then saveState() properly
       sessionStorage.setItem('pendingImport_'+targetId,JSON.stringify(parsed.days));
-      hideLoading();window.location.href='trip.html?id='+targetId;
+      // Preserve the shared flag so an append to a shared trip syncs to the cloud
+      // instead of forking into a local copy.
+      const _tt=(_allTripsCache||[]).find(x=>x.id===targetId);
+      hideLoading();window.location.href='trip.html?id='+targetId+(_tt&&_tt.shared?'&fam=1':'');
     }else{
       const dest=(parsed.title||'').replace(/trip$/i,'').trim()||'Trip';
       const id=saveTrip(parsed,'import-',dest,'','');
@@ -1001,7 +1004,9 @@ document.addEventListener('keydown',function(e){
 });
 
 /* ---- Delete trip ---- */
-function deleteTrip(id,title,isLocal){
+function deleteTrip(id,isLocal){
+  const t=(_allTripsCache||[]).find(x=>x.id===id);
+  const title=(t&&t.title)||'this trip';
   const msg=isLocal?'Delete "'+title+'"? This cannot be undone.':'Hide "'+title+'" from your list? (You can bring it back later with "Restore hidden trips" at the bottom of the home page.)';
   if(!confirm(msg))return;
   if(isLocal){
@@ -1024,6 +1029,9 @@ function restoreHiddenTrips(){
 
 /* ---- Load trips grid ---- */
 function lsGet(key,fallback){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}}
+// Escape untrusted trip data (cloud/AI-sourced titles, dates, destinations)
+// before putting it in the DOM.
+function _esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 const FB_DB='https://seasons-trips-default-rtdb.firebaseio.com';
 // fetch that rejects if it takes too long, so a slow/unreachable cloud can never
@@ -1210,23 +1218,22 @@ function renderTripsGrid(rawAll,hidden){
     else if(isAI)      ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#10024; AI</span>';
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
     else               ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#9998; Yours</span>';
-    const safeTitle=t.title.replace(/'/g,"\\'");
     const isOffline=localStorage.getItem('offline_'+t.id)==='1';
     const deleteBtn=isServer
-      ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
-      :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',true)" title="Delete trip">&#128465;</button>`;
+      ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
+      :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}',true)" title="Delete trip">&#128465;</button>`;
     const offlineBtn=`<button id="off-${t.id}" class="card-delete" onclick="saveTripOffline('${t.id}',event)" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:13px;color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
-    return`<a class="trip-card" href="trip.html?id=${t.id}${t.shared?'&fam=1':''}">
+    return`<a class="trip-card" href="trip.html?id=${_esc(t.id)}${t.shared?'&fam=1':''}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
-        <div class="trip-card-title">${t.title}</div>
+        <div class="trip-card-title">${_esc(t.title)}</div>
         <div class="trip-card-meta">
-          ${t.dates?`<span class="trip-meta-pill">${t.dates}</span>`:''}
+          ${t.dates?`<span class="trip-meta-pill">${_esc(t.dates)}</span>`:''}
           <span class="trip-meta-pill">${t.days} Day${t.days!==1?'s':''}</span>
           ${ownerBadge}
           ${isOffline?'<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#11015; Offline</span>':''}
         </div>
-        <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
+        <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${_esc(d)}</span>`).join('')}</div>
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>

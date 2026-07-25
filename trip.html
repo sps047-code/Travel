@@ -700,7 +700,7 @@ body.offline #audio-discover-btn{display:none!important}
 
 <!-- Ticket viewer -->
 <div id="ticket-viewer" onclick="closeTicketViewer()">
-  <img id="ticket-viewer-img" alt="Ticket"/>
+  <img id="ticket-viewer-img" alt="Ticket" onclick="event.stopPropagation()"/>
   <button id="ticket-viewer-close" onclick="closeTicketViewer()">Close</button>
 </div>
 

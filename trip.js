@@ -365,12 +365,29 @@ async function renderDayMap(idx,fit=true){
     hm.bindPopup('<div style="font-weight:700;font-size:13px">Starting from: '+nm+'</div>',{maxWidth:200});
     markersLayer.addLayer(hm);bounds.push([startHotel.lat,startHotel.lng]);
   }
+  // include tonight's hotel as the route DESTINATION (mirror of the start hotel)
+  const todayLast=day.stops.length?day.stops[day.stops.length-1]:null;
+  const todayEndsInTransit=todayLast&&TRANSIT.includes(todayLast.type);
+  let endHotel=(!todayEndsInTransit&&day.stops.length>0)?getNextHotelForDay(idx):null;
+  if(endHotel&&(!endHotel.lat||!endHotel.lng))endHotel=null;
+  // skip if the day's last stop already IS that hotel (route already ends there)
+  if(endHotel&&todayLast&&todayLast.lat===endHotel.lat&&todayLast.lng===endHotel.lng)endHotel=null;
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
     m.bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(s.name)+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
     markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
   });
+  // End-hotel marker. If tonight's hotel is the same place you started from
+  // (a round trip), don't stack a second marker on it — the route still closes
+  // back to it below.
+  const _endSameAsStart=startHotel&&endHotel&&startHotel.lat===endHotel.lat&&startHotel.lng===endHotel.lng;
+  if(endHotel&&!_endSameAsStart){
+    const enm=endHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
+    const ehm=L.marker([endHotel.lat,endHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127976;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
+    ehm.bindPopup('<div style="font-weight:700;font-size:13px">Tonight: '+enm+'</div>',{maxWidth:200});
+    markersLayer.addLayer(ehm);bounds.push([endHotel.lat,endHotel.lng]);
+  }
   if(fit&&bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   for(let i=0;i<day.stops.length-1;i++){
     const a=day.stops[i],b=day.stops[i+1];
@@ -378,7 +395,8 @@ async function renderDayMap(idx,fit=true){
       L.polyline(greatCirclePoints([a.lat,a.lng],[b.lat,b.lng]),{color:'#4A7EC7',weight:2.5,opacity:0.8,dashArray:'8,5'}).addTo(routeLayer);
     }
   }
-  const routeStops=startHotel?[startHotel,...day.stops]:day.stops;
+  let routeStops=startHotel?[startHotel,...day.stops]:day.stops.slice();
+  if(endHotel)routeStops=[...routeStops,endHotel];   // draw the final leg to tonight's hotel
   try{
     const rc=await fetchRoute(routeStops);
     if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}

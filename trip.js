@@ -1303,6 +1303,46 @@ function _healBadEndTimes(){
     });
   });
 }
+// Restore a stop's coordinates (and type) when they've drifted far from the
+// KNOWN-CORRECT location for that named stop in the trip's canonical file. This
+// undoes the corruption where "Rosslyn Chapel" ended up ~90 mi away near Glencoe,
+// which produced a wrong "20 mi" leg AND a misplaced map pin from the one bad
+// coordinate. Only the built-in trips have a canonical source; a stop the user
+// renamed won't match and is left untouched, and a small deliberate pin nudge
+// (< _COORD_DRIFT_MI) is preserved. Runs once on load.
+const _COORD_DRIFT_MI=25;
+function _normName(n){return String(n||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+async function _healDriftedCoords(){
+  try{
+    if(!state||!Array.isArray(state.days)||!tripId)return false;
+    const res=await fetch('trips/'+tripId+'.json',{cache:'no-store'});
+    if(!res.ok)return false;
+    const base=await res.json();
+    const baseDays=Array.isArray(base)?base:base.days;
+    if(!Array.isArray(baseDays))return false;
+    const canon={};
+    baseDays.forEach(d=>(d.stops||[]).forEach(s=>{
+      if(s&&s.name&&_validLL(s)){const k=_normName(s.name);if(!(k in canon))canon[k]={lat:s.lat,lng:s.lng,type:s.type};}
+    }));
+    let healed=0;
+    state.days.forEach(d=>(d.stops||[]).forEach(s=>{
+      if(!s||!s.name)return;
+      const c=canon[_normName(s.name)];if(!c)return;
+      let fix=false;
+      if(_validLL(s)){ if(haversine(s.lat,s.lng,c.lat,c.lng)>_COORD_DRIFT_MI)fix=true; }
+      else fix=true;                        // missing / 0,0 coords → restore
+      if(fix){
+        s.lat=c.lat;s.lng=c.lng;
+        // A stop whose coordinate was corrupted commonly had its type corrupted too
+        // (e.g. Rosslyn Chapel became "food"). Restore the canonical type as well.
+        if(c.type&&s.type!==c.type)s.type=c.type;
+        healed++;
+      }
+    }));
+    if(healed)saveState('Restored '+healed+' corrupted location'+(healed>1?'s':''));
+    return healed>0;
+  }catch(e){return false;}
+}
 // Caps that keep a recalculated day inside real waking hours no matter how
 // corrupt the data is. The killer bug: a stop with a bad coordinate makes the
 // travel time to it ~20 HOURS, which pushed the running clock past midnight where
@@ -4023,6 +4063,7 @@ async function init(){
   }
 
   try{ _sortAllDaysByTime(); }catch(e){}
+  try{ await _healDriftedCoords(); }catch(e){}
   try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);

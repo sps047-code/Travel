@@ -1225,9 +1225,20 @@ function _durationToMins(str){
 }
 function _stopVisitMins(s){
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
-  if(st!=null&&et!=null&&et>st)return et-st;      // explicit span (e.g. flights)
+  const span=(st!=null&&et!=null&&et>st)?et-st:null;
   const d=_durationToMins(s.duration);
-  if(d!=null)return d;
+  const isTransit=['flight','train','bus'].includes(s.type);
+  // Transit (flights/trains/buses): the explicit start→arrival span is the truth.
+  // Normal activities: the DURATION chip the user sees and edits is the single
+  // source of truth — the end-time arrow is derived from it, so "45min" and the
+  // "12:08 → 12:53" arrow can never disagree.
+  if(isTransit){
+    if(span!=null)return span;
+    if(d!=null)return d;
+  }else{
+    if(d!=null)return d;
+    if(span!=null)return span;
+  }
   return _VISIT_MINS[s.type]??60;
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.
@@ -1283,7 +1294,12 @@ function _healBadEndTimes(){
       if(!s.endTime||TR.includes(s.type))return;
       const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
       if(st==null||et==null)return;
-      if(et<=st||et-st>1080)s.endTime=_formatTimeMins(st+_stopVisitMins(s));
+      // End before/equal to start, or absurdly long → rebuild from the visit length.
+      if(et<=st||et-st>1080){s.endTime=_formatTimeMins(st+_stopVisitMins(s));return;}
+      // An activity's end-time arrow must equal its duration chip. If the user set
+      // a duration (e.g. "45min") the arrow can't silently say 25min — reconcile it.
+      const d=_durationToMins(s.duration);
+      if(d!=null&&Math.abs((et-st)-d)>1)s.endTime=_formatTimeMins(st+d);
     });
   });
 }
@@ -1312,10 +1328,16 @@ function _recalcDayTimes(dayIdx,anchorMins){
     s.time=_formatTimeMins(cur);
     if(oldEt!=null){
       const isTransit=['flight','train','bus'].includes(s.type);
-      let span=(oldSt!=null)?(oldEt-oldSt):null;
-      // For a normal stop the end must be AFTER the start; a corrupt span (end
-      // before start, or absurdly long) is rebuilt from the visit duration.
-      if(!isTransit&&(span==null||span<=0||span>1080))span=_stopVisitMins(s);
+      // Transit keeps its explicit start→arrival span (arrival time matters).
+      // A normal activity's end is ALWAYS start + its duration-driven visit length,
+      // so the end-time arrow can never disagree with the duration chip.
+      let span;
+      if(isTransit){
+        span=(oldSt!=null)?(oldEt-oldSt):null;
+        if(span==null||span<=0||span>1080)span=_stopVisitMins(s);
+      }else{
+        span=_stopVisitMins(s);
+      }
       if(span!=null)s.endTime=_formatTimeMins(Math.min(cur+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
     }
   }

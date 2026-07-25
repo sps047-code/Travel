@@ -1037,19 +1037,24 @@ function _fetchT(url,ms){
       .catch(e=>{clearTimeout(timer);reject(e);});
   });
 }
-// Fetch a lightweight card for every shared trip stored in the cloud.
+// Fetch a lightweight card for every shared trip stored in the cloud. Only the
+// tiny fields a card needs are downloaded (title, day COUNT via a shallow query,
+// dates, destinations) — never the full itinerary — so this stays fast.
 async function loadSharedTrips(){
   const r=await _fetchT(FB_DB+'/family.json?shallow=true&nc='+Date.now(),6000);
-  if(!r.ok)return [];
+  if(!r.ok)return null;               // fetch failed — signal "unknown", keep cache
   const ids=await r.json();
-  if(!ids)return [];
+  if(!ids)return [];                  // genuinely no shared trips
   const cards=await Promise.all(Object.keys(ids).map(async id=>{
+    const base=FB_DB+'/family/'+id+'/state/';
+    const j=async(p)=>{try{const x=await _fetchT(base+p,6000);return x.ok?await x.json():null;}catch(e){return null;}};
     try{
-      const sr=await _fetchT(FB_DB+'/family/'+id+'/state.json?nc='+Date.now(),6000);
-      if(!sr.ok)return null;
-      const st=await sr.json();
-      if(!st||!st.title)return null;
-      return {id,title:st.title,days:(st.days&&st.days.length)||0,dates:st.dateRange||st.dates||'',destinations:st.destinations||[],local:false,shared:true};
+      const [title,daysKeys,dateRange,dates,destinations]=await Promise.all([
+        j('title.json'), j('days.json?shallow=true'), j('dateRange.json'), j('dates.json'), j('destinations.json')
+      ]);
+      if(!title)return null;
+      const days=daysKeys&&typeof daysKeys==='object'?Object.keys(daysKeys).length:0;
+      return {id,title,days,dates:dateRange||dates||'',destinations:destinations||[],local:false,shared:true};
     }catch(e){return null;}
   }));
   return cards.filter(Boolean);
@@ -1153,15 +1158,21 @@ async function loadTrips(){
   clearTimeout(loadTimeout);
   const local=lsGet('localTrips',[]);
   const hidden=lsGet('hiddenTrips',[]);
-  // Render the built-in + on-device trips IMMEDIATELY so a slow or unreachable
-  // cloud can never leave the home page blank.
-  renderTripsGrid([...serverTrips,...local],hidden);
-  // Then discover SHARED trips from the cloud and merge them in when they arrive.
-  let sharedTrips=[];
-  try{sharedTrips=await loadSharedTrips()}catch(e){}
   const knownIds=new Set([...serverTrips,...local].map(t=>t.id));
-  const sharedExtra=sharedTrips.filter(t=>!knownIds.has(t.id));
-  renderTripsGrid([...serverTrips,...local,...sharedExtra],hidden);
+  // Render built-in + on-device trips AND the last-known shared trips (from a
+  // local cache) IMMEDIATELY, so the home page is populated instantly on open.
+  const cachedShared=lsGet('sharedCards',[]).filter(t=>!knownIds.has(t.id));
+  renderTripsGrid([...serverTrips,...local,...cachedShared],hidden);
+  // Then refresh the shared trips from the cloud in the background. Only update
+  // the cache + re-render when the refresh SUCCEEDS (null = failed → keep cache),
+  // so a transient cloud hiccup never blanks the trips already on screen.
+  let sharedTrips=null;
+  try{sharedTrips=await loadSharedTrips()}catch(e){}
+  if(sharedTrips!==null){
+    try{localStorage.setItem('sharedCards',JSON.stringify(sharedTrips));}catch(e){}
+    const sharedExtra=sharedTrips.filter(t=>!knownIds.has(t.id));
+    renderTripsGrid([...serverTrips,...local,...sharedExtra],hidden);
+  }
 }
 
 function renderTripsGrid(rawAll,hidden){

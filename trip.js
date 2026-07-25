@@ -3658,24 +3658,41 @@ async function init(){
   const isFamily=isFamilyOverride||_famParam||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
 
   if(isFamily){
-    try{
-      const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
-      const data=await raw.json();
-      if(data&&data.state){
-        state=data.state;
-        _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
-        try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-      }else{
-        const saved=localStorage.getItem(LS_KEY);
-        if(saved){state=JSON.parse(saved);}
-        else{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
-        state.tripType='family';
-        _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
-      }
-    }catch(e){
-      const saved=localStorage.getItem(LS_KEY);
-      if(saved){state=JSON.parse(saved);}
-      else{
+    const saved=localStorage.getItem(LS_KEY);
+    let haveLocal=false;
+    if(saved){ try{ state=JSON.parse(saved); haveLocal=true; }catch(e){} }
+    if(haveLocal){
+      // Fast path: render the cached copy now; refresh from the cloud in the
+      // background and re-render only if it actually changed.
+      (async()=>{
+        try{
+          const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
+          const data=await raw.json();
+          if(data&&data.state){
+            _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
+            if(JSON.stringify(data.state)!==JSON.stringify(state)){
+              state=data.state; if(!state.tripType)state.tripType='family';
+              try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+              renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
+            }
+          }
+        }catch(e){}
+      })();
+    }else{
+      // No cached copy — must fetch before the first render.
+      try{
+        const raw=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
+        const data=await raw.json();
+        if(data&&data.state){
+          state=data.state;
+          _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
+          try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+        }else{
+          const r=await fetch('trips/'+tripId+'.json');state=await r.json();
+          state.tripType='family';
+          _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
+        }
+      }catch(e){
         try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
         catch(e2){state={days:[],title:'Trip'};}
       }

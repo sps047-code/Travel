@@ -666,6 +666,7 @@ function renderPanel(idx){
       _audioBadgeHtml(s)+
       (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link" onclick="fixStopLocation('+idx+','+si+')" style="border:none;background:none;cursor:pointer;font:inherit" title="Wrong pin on the map? Re-locate this stop from its name">&#128205; Fix pin</button>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       _bookingLinkHtml(s)+
       (_isUpNext&&s.lat&&s.lng?'<a class="live-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng+'" target="_blank" rel="noopener">&#127907; Navigate Here</a>':'')+
@@ -2480,8 +2481,10 @@ async function _osmHoursForDay(places,dowIdx){
     for(const e of els){
       const d=haversine(o.s.lat,o.s.lng,e.lat,e.lon);if(d>0.15)continue;
       const nm=e.name?_normPlaceName(e.name):'';
-      let score=(0.2-d);
-      if(nm&&key&&(key.includes(nm)||nm.includes(key)))score+=100+Math.min(nm.length,key.length);
+      // Require a NAME match — never borrow a neighbouring venue's hours just
+      // because it is nearby (that would mislabel a guess as verified).
+      if(!(nm&&key&&(key.includes(nm)||nm.includes(key))))continue;
+      const score=100+Math.min(nm.length,key.length)+(0.2-d);
       if(score>bestScore){bestScore=score;best=e;}
     }
     if(best){const h=_parseOsmOpening(best.oh,dowIdx);if(h)out[o.si]=h;}
@@ -2497,6 +2500,23 @@ function _dayHoursHtml(s,di,si){
     'style="font-family:var(--font-ui);font-size:12px;margin-top:6px;font-weight:600;cursor:pointer;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
     '&#128337; '+_escHtml(s.dayHours)+(verified?'':' <span style="color:var(--muted);font-weight:400">(est.)</span>')+
     ' <span style="color:var(--muted);font-weight:400">&#9998;</span></div>';
+}
+// Re-locate a stop from its name via OpenStreetMap (free, no key) when the map
+// pin is in the wrong place because of a bad stored coordinate.
+async function fixStopLocation(di,si){
+  const s=state.days[di]&&state.days[di].stops[si];if(!s)return;
+  const q=(s.name||'').replace(/^(dinner|lunch|breakfast|brunch|coffee|drinks)\s*[—–-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
+  if(!q){alert('This stop has no searchable name. Edit it to set the location manually.');return;}
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+    if(!r.ok)throw new Error('http');
+    const d=await r.json();
+    if(!d||!d[0]){alert('Could not find a location for "'+q+'". Open the stop Edit form and search for it there.');return;}
+    const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon);
+    if(!confirm('Move "'+s.name+'" to:\n'+(d[0].display_name||q)+'\n('+lat.toFixed(4)+', '+lng.toFixed(4)+')?'))return;
+    s.lat=lat;s.lng=lng;
+    saveState('Fixed location: '+s.name);renderAll();if(di===currentDayIdx)renderDayMap(di);
+  }catch(e){alert('Could not reach the location service. Please try again.');}
 }
 // Manual correction — the reliable fix for any wrong hours.
 function editStopHours(di,si){

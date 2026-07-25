@@ -464,7 +464,9 @@ function _applyChanges(changes){
         const di=_rdi(c.dayIdx); const day=state.days[di];
         if(di<0||!day) throw new Error('day not found');
         const ins=c.insertIdx!=null ? Math.min(Math.max(0,c.insertIdx), day.stops.length) : day.stops.length;
-        const ns=Object.assign({name:'New Stop',type:'hike',lat:0,lng:0}, c.stop||{});
+        // Do NOT default coordinates to 0,0 (a real point off West Africa). Leave
+        // them unset so the stop is treated as coordinate-less consistently.
+        const ns=Object.assign({name:'New Stop',type:'hike'}, c.stop||{});
         // A new stop can only be 'lodge' if it actually looks like a hotel.
         if(ns.type==='lodge' && !_extIsLodge(ns)){ ns.type='hike'; }
         day.stops.splice(ins, 0, ns);

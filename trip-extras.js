@@ -31,34 +31,12 @@ function _injectFormField(){
 }
 
 // ── 2.  PATCH saveStop TO CAPTURE endTime + audioUrl ───────────────────────
+// End Time + Audio URL are now read directly inside trip.js saveStop (so they
+// attach to the correct stop before the day is sorted, and repaint immediately).
+// This wrapper only needs to re-derive overnight-arrival stops afterwards.
 const _origSaveStop = window.saveStop;
 window.saveStop = function(){
-  const wasEditing = (typeof editingStop !== 'undefined' && editingStop)
-    ? {dayIdx:editingStop.dayIdx, stopIdx:editingStop.stopIdx} : null;
-  const addDay = (typeof addingToDay !== 'undefined') ? addingToDay : null;
-  const endTimeVal = (document.getElementById('f-endtime')||{}).value || '';
-  const audioUrlVal = (document.getElementById('f-audiourl')||{}).value || '';
-
   _origSaveStop.apply(this, arguments);
-
-  try{
-    if(wasEditing){
-      const s = state.days[wasEditing.dayIdx].stops[wasEditing.stopIdx];
-      if(s){
-        if(endTimeVal) s.endTime=endTimeVal; else delete s.endTime;
-        if(audioUrlVal) s.audioUrl=audioUrlVal; else delete s.audioUrl;
-        saveState();
-      }
-    } else if(addDay != null){
-      const day = state.days[addDay];
-      if(day && day.stops.length){
-        const s = day.stops[day.stops.length-1];
-        if(endTimeVal) s.endTime=endTimeVal; else delete s.endTime;
-        if(audioUrlVal) s.audioUrl=audioUrlVal; else delete s.audioUrl;
-        saveState();
-      }
-    }
-  }catch(e){ console.warn('[trip-extras] save failed:', e); }
   if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
 };
 

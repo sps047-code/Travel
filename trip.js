@@ -1039,6 +1039,7 @@ function promptGoogleKey(){
     state.settings.googlePlacesKey=key.trim();
     saveState('Set Google Places key');
     showToast('Google Places key saved');
+    renderAll(); // refresh so the "add a key" hint disappears
   }
 }
 
@@ -1169,6 +1170,7 @@ function openCopyModal(dayIdx,stopIdx){
 function closeCopyModal(){document.getElementById('copy-modal').classList.remove('open')}
 function doCopy(toDayIdx,atStart){
   const stop=JSON.parse(JSON.stringify(state.days[copyingFrom.dayIdx].stops[copyingFrom.stopIdx]));
+  delete stop._sid; // give the copy its own journal id so notes/ratings don't bleed between copies
   if(atStart)state.days[toDayIdx].stops.unshift(stop);
   else state.days[toDayIdx].stops.push(stop);
   saveState();closeCopyModal();renderAll();renderDayMap(currentDayIdx);
@@ -1487,7 +1489,12 @@ function saveStop(){
   const attendance=_getAttendanceFromForm();
   const _urlVal=(document.getElementById('f-url')?.value||'').trim()||undefined;
   const _durVal=(document.getElementById('f-duration')?.value||'').trim()||undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  // End Time + Audio URL live in fields injected by trip-extras; read them HERE so
+  // they attach to this stop BEFORE the day is re-sorted (previously a wrapper set
+  // them by index after the sort, landing them on the wrong stop).
+  const _endTimeVal=(document.getElementById('f-endtime')?.value||'').trim()||undefined;
+  const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   if(existingStop?.openingHours)stop.openingHours=existingStop.openingHours;
@@ -1824,7 +1831,7 @@ function renderOverview(){
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+
       '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+_fmtDateWithYear(datePart)+'</span>':'')+'</div>'+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+(s.reservation?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+nm+(s.reservation||booked?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
@@ -1854,7 +1861,7 @@ function renderOverview(){
   const panelLodge='<div class="ov-tab-panel" id="ovtab-lodging"'+(activeOvTab!=='lodging'?' style="display:none"':'')+'>'+
     '<div class="lodge-list">'+lodgeHtml+'</div></div>';
   const panelCheck='<div class="ov-tab-panel" id="ovtab-checklist"'+(activeOvTab!=='checklist'?' style="display:none"':'')+'>'+
-    (totalBook?'<div class="checklist-count">'+bookedCount+' of '+totalBook+' bookings confirmed</div>':'')+
+    (totalBook?'<div class="checklist-count" id="checklist-count">'+bookedCount+' of '+totalBook+' bookings confirmed</div>':'')+
     '<div class="check-list">'+checkHtml+'</div>'+
     '<div id="add-check-form" class="add-check-form">'+
     '<div class="add-check-form-row">'+
@@ -1912,11 +1919,21 @@ function switchOvTab(id){
   try{sessionStorage.setItem('ov_tab_'+tripId,id);}catch(e){}
 }
 
+function _updateChecklistCount(){
+  const el=document.getElementById('checklist-count');if(!el)return;
+  const done=(state.checklist||[]).filter(i=>i.done).length;
+  const total=(state.checklist||[]).length;
+  if(total===0){el.style.display='none';return;}
+  el.style.display='';el.textContent=done+' of '+total+' bookings confirmed';
+}
 function toggleCheckItem(id,done){
   const item=(state.checklist||[]).find(i=>i.id===id);
   if(item){item.done=done;saveState();}
   const el=document.getElementById('chk-'+id);
   if(el){el.classList.toggle('done',done);const cb=el.querySelector('input[type=checkbox]');if(cb)cb.checked=done;}
+  _updateChecklistCount();
+  // keep any duplicate control for the same item (e.g. the lodge-card "Booked" box) in sync
+  document.querySelectorAll('input[type=checkbox][onchange*="toggleCheckItem(\''+id+'\'"]').forEach(cb=>{cb.checked=done;});
 }
 function showAddCheckForm(){
   const form=document.getElementById('add-check-form');
@@ -1947,6 +1964,7 @@ function addCheckItem(){
   if(input)input.value='';if(typeEl)typeEl.value='';if(resvEl)resvEl.value='';
   const list=document.querySelector('.check-list');
   if(list)list.insertAdjacentHTML('beforeend',_chkItemHtml(item));
+  _updateChecklistCount();
   hideAddCheckForm();
 }
 function deleteCheckItem(id){
@@ -1966,6 +1984,7 @@ function confirmDeleteCheckItem(id){
   if(item&&item.auto)_addDismissed(id);
   state.checklist=(state.checklist||[]).filter(i=>i.id!==id);saveState();
   const el=document.getElementById('chk-'+id);if(el)el.remove();
+  _updateChecklistCount();
 }
 function cancelDeleteCheckItem(id){
   const item=(state.checklist||[]).find(i=>i.id===id);if(!item)return;
@@ -1996,9 +2015,9 @@ function saveEditCheckItem(id){
   const lbl=(document.getElementById('cedit-lbl-'+id)?.value||'').trim();
   const resv=(document.getElementById('cedit-resv-'+id)?.value||'').trim();
   if(!lbl)return;
-  /* preserve type prefix for auto items */
-  const prefixM=item.text.replace(/^⚠️\s*/,'').match(/^(Hotel|Flight|Train|Book):/);
-  const prefix=prefixM?prefixM[1]+': ':'';
+  /* preserve WHATEVER prefix the item had (Hotel/Flight/Activity/Other/custom), not just a fixed set */
+  const prefixM=item.text.replace(/^⚠️\s*/,'').match(/^([^:·]+):\s*/);
+  const prefix=prefixM?prefixM[1].trim()+': ':'';
   item.text=prefix+lbl+(resv?' · '+resv:'');
   saveState();
   const el=document.getElementById('chk-'+id);if(el)el.outerHTML=_chkItemHtml(item);
@@ -2584,7 +2603,7 @@ async function lookupPlaceDetails(stop){
     if(res.opening_hours?.weekday_text)stop.openingHours=res.opening_hours.weekday_text;
     if(res.website)stop.website=res.website;
     if(res.formatted_phone_number)stop.phone=res.formatted_phone_number;
-    saveState('Updated place details: '+stop.name);
+    saveState('Updated place details: '+stop.name,true); // derived data — local only, don't clobber others' edits
     renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
   }catch(e){}
 }
@@ -3149,7 +3168,7 @@ function confirmApplyAlternate(dayIdx,stopIdx,altIdx){
   document.getElementById('alternates-modal').classList.remove('open');
   renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
   showUndoBanner('"'+alt.name+'" applied.',()=>{
-    const d=state.days[dayIdx];if(d?.stops?.[stopIdx]){Object.assign(d.stops[stopIdx],origStop);saveState('Undid restaurant alternate');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
+    const d=state.days[dayIdx];if(d?.stops?.[stopIdx]){Object.assign(d.stops[stopIdx],origStop);delete d.stops[stopIdx].recentlyChanged;saveState('Undid restaurant alternate');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
   });
 }
 
@@ -3337,7 +3356,7 @@ async function enableTravelAlerts(dayIdx){
   if(!scheduled){showToast('No upcoming timed stops to alert for');return;}
   showToast('&#128276; '+scheduled+' departure alert'+(scheduled>1?'s':'')+' set for today — keep this tab open');
   const btn=document.getElementById('alerts-btn-'+dayIdx);
-  if(btn){btn.style.background='var(--ruby)';btn.style.color='white';btn.textContent='&#128276; Alerts On';}
+  if(btn){btn.style.background='var(--ruby)';btn.style.color='white';btn.innerHTML='&#128276; Alerts On';}
 }
 
 /* --- Read-Only Mode --- */
@@ -3413,21 +3432,24 @@ window.addEventListener('offline',_updateOfflineState);
 const GUIDEBOOK_SYSTEM='You are a knowledgeable travel writer creating rich stop descriptions for a travel guidebook. Write 2-3 paragraphs covering: the history and cultural significance, what visitors typically skip that is worth seeing, ticket and entry tips, realistic time needed, and the best photo spot. Be specific and practical. Use plain prose with no markdown headers, no bullet points, no em dashes. Respond with only the guidebook text.';
 const NEARBY_SYSTEM='You are a local expert writing a brief 2-3 sentence note for travelers about what else is worth knowing in the immediate area around a day\'s stops. Focus on hidden gems, practical tips, or context that makes the day richer. No em dashes. Respond with only the note text.';
 
+// Guidebook expand/collapse is a per-VIEW UI state — kept OUT of the trip state so
+// it never syncs to the cloud and flips another person's view. Keyed by stable id.
+let _gbOpen={};
 function _guidebookHtml(s,di,si){
   if(['drive','flight','train','bus'].includes(s.type))return'';
   if(!s.guidebook)return'';
-  const isOpen=!!s._guidebookOpen;
+  const isOpen=!!_gbOpen[s._sid];
   return'<button class="guidebook-btn" onclick="toggleGuidebook('+di+','+si+')">&#128366; Guidebook '+(isOpen?'&#9650;':'&#9660;')+'</button>'+
     '<div class="guidebook-content" id="gb-'+di+'-'+si+'" style="display:'+(isOpen?'block':'none')+'">'+_escHtml(s.guidebook)+'</div>';
 }
 
 function toggleGuidebook(di,si){
   const s=state.days[di]?.stops[si];if(!s||!s.guidebook)return;
-  s._guidebookOpen=!s._guidebookOpen;
+  _gbOpen[s._sid]=!_gbOpen[s._sid];
   const btn=document.querySelector('#stop-card-'+di+'-'+si+' .guidebook-btn');
   const content=document.getElementById('gb-'+di+'-'+si);
-  if(content)content.style.display=s._guidebookOpen?'block':'none';
-  if(btn)btn.innerHTML='&#128366; Guidebook '+(s._guidebookOpen?'&#9650;':'&#9660;');
+  if(content)content.style.display=_gbOpen[s._sid]?'block':'none';
+  if(btn)btn.innerHTML='&#128366; Guidebook '+(_gbOpen[s._sid]?'&#9650;':'&#9660;');
 }
 
 async function generateGuidebook(regenerate){

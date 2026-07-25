@@ -770,9 +770,12 @@ async function fetchStopImage(name){
   }catch(e){imgData[name]=null;return null}
 }
 
+let _renderGen=0; // bumped on every renderAll — invalidates in-flight image loads
 async function loadStopImages(){
+  const gen=_renderGen;
   const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({stop:s,di,si})));
   for(const {stop,di,si} of allStops){
+    if(gen!==_renderGen)return; // a newer render replaced the DOM — stop writing
     const el=document.getElementById('stopimg-'+di+'-'+si);
     if(!el||el.classList.contains('loaded'))continue;
     if(stop.customImage){
@@ -780,9 +783,13 @@ async function loadStopImages(){
       el.classList.add('loaded');continue;
     }
     const url=await fetchStopImage(stop.name);
-    if(url&&!el.classList.contains('loaded')){
-      el.innerHTML='<img class="stop-img" src="'+url+'" alt="'+stop.name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
-      el.classList.add('loaded');
+    // Re-check generation AND re-fetch the element after the await so a stale
+    // fetch can never paint a photo onto a stop that has since moved/changed.
+    if(gen!==_renderGen)return;
+    const el2=document.getElementById('stopimg-'+di+'-'+si);
+    if(url&&el2&&!el2.classList.contains('loaded')){
+      el2.innerHTML='<img class="stop-img" src="'+url+'" alt="'+stop.name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
+      el2.classList.add('loaded');
     }
   }
 }
@@ -1048,6 +1055,7 @@ function refreshStopDesc(dayIdx,stopIdx){
 }
 
 function renderAll(){
+  _renderGen++; // invalidate any image loads still in flight from the last render
   // HARD INVARIANT: every day is put in chronological order BEFORE anything is
   // drawn, so it is impossible to see a day out of order regardless of how the
   // data got that way (AI edit, sync, import).
@@ -1200,11 +1208,22 @@ function _legTravelMins(a,b){
 // after the previous one's visit duration plus the travel time between them.
 // The day's start stays anchored to the earliest existing time (so reordering
 // doesn't shift when the day begins). endTime spans move with their start.
-function _recalcDayTimes(dayIdx){
+// Reasonable day-start anchor: the day's own start time, but never an absurdly
+// early value (pre-6am) when the day clearly has daytime stops — a stray
+// overnight/parse artifact must not reset the whole day to 1 AM.
+function _dayStartAnchor(stops){
+  const times=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null);
+  if(!times.length)return 540; // 9:00am default
+  const first=_parseTimeMins(stops[0].time);
+  const daytime=times.filter(t=>t>=360); // 6:00am+
+  if(first!=null&&first>=360)return first;
+  if(daytime.length)return Math.min(...daytime);
+  return Math.min(...times);
+}
+function _recalcDayTimes(dayIdx,anchorMins){
   const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;
   const stops=day.stops;
-  const existing=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null);
-  let cur=existing.length?Math.min(...existing):540; // default 9:00am
+  let cur=(anchorMins!=null&&anchorMins>=0)?anchorMins:_dayStartAnchor(stops);
   for(let i=0;i<stops.length;i++){
     const s=stops[i];
     if(i>0)cur+=_stopVisitMins(stops[i-1])+_legTravelMins(stops[i-1],s);
@@ -1217,8 +1236,10 @@ function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops.length)return;
+  // The day keeps the SAME start time; only the sequence re-flows from there.
+  const anchor=_dayStartAnchor(stops);
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  _recalcDayTimes(dayIdx);
+  _recalcDayTimes(dayIdx,anchor);
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 
@@ -2339,9 +2360,13 @@ function _tripHighlightsHtml(){
 /* --- Passive Conflict Detection --- */
 function _parseTimeMins(str){
   if(!str)return null;
-  const m=str.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  // ANCHORED: the whole string must be a clock time. This rejects duration
+  // strings like "1h 30min" and ranges like "2-3pm" that previously parsed to
+  // 1:00/2:00 AM and dragged the whole day's recalculated timeline to 1 AM.
+  const m=String(str).trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if(!m)return null;
   let h=parseInt(m[1]),mn=parseInt(m[2]||0),ap=(m[3]||'').toLowerCase();
+  if(h>23||mn>59)return null;
   if(ap==='pm'&&h!==12)h+=12;
   if(ap==='am'&&h===12)h=0;
   return h*60+mn;

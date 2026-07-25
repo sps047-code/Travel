@@ -27,7 +27,7 @@ function saveState(changeDesc=''){
 }
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);
 let markersLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),routeCache={};
 const TC={hike:"#C23B3B",food:"#C47B20",lodge:"#2E7D52",drive:"#2B6CB0",flight:"#7B5EA7",train:"#4A6572",bus:"#1D4E73"};
 
@@ -763,6 +763,66 @@ async function loadStopImages(){
       el.innerHTML='<img class="stop-img" src="'+url+'" alt="'+stop.name+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
       el.classList.add('loaded');
     }
+  }
+}
+
+/* ---- Offline download ---- */
+const _OFFLINE_CACHE='seasons-offline';
+function _lon2tileX(lon,z){return Math.floor((lon+180)/360*Math.pow(2,z));}
+function _lat2tileY(lat,z){const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z));}
+// Map tiles covering every stop, a few zoom levels each, deduped and capped.
+function _tripTileUrls(cap){
+  const set=new Set();
+  const stops=state.days.flatMap(d=>d.stops).filter(s=>s.lat&&s.lng);
+  for(const z of [5,9,12,14]){
+    for(const s of stops){
+      const x=_lon2tileX(s.lng,z),y=_lat2tileY(s.lat,z);
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+        set.add('https://tile.openstreetmap.org/'+z+'/'+(x+dx)+'/'+(y+dy)+'.png');
+      }
+    }
+  }
+  return [...set].slice(0,cap||500);
+}
+async function _cachePut(cache,url,opts){
+  try{const r=await fetch(url,opts||{});if(r&&(r.ok||r.type==='opaque'))await cache.put(url,r);}catch(e){}
+}
+// Download everything needed to view this trip with no internet: the app pages,
+// the itinerary state, every stop image, and the map tiles for each stop. Stored
+// in a cache that survives app updates and served back by the service worker.
+async function downloadTripOffline(){
+  const btn=document.getElementById('offline-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='&#8987; Saving 0%';}
+  try{
+    // 1. Persist the itinerary state so it renders offline.
+    try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
+    const cache=await caches.open(_OFFLINE_CACHE);
+    // 2. App shell + this trip's page (so navigation works offline).
+    const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest',
+      'leaf-logo.png','icon-192.png','icon-512.png',location.pathname+location.search];
+    await Promise.all(shell.map(u=>_cachePut(cache,u,{cache:'reload'})));
+    if(!location.pathname.includes(tripId))await _cachePut(cache,'trips/'+tripId+'.json',{cache:'reload'});
+    // 3. Stop images + 4. map tiles, with a progress counter.
+    const stops=state.days.flatMap(d=>d.stops);
+    const imgUrls=[];
+    for(const s of stops){
+      const u=s.customImage||await fetchStopImage(s.name);
+      if(u&&/^https?:/.test(u))imgUrls.push(u);
+    }
+    const tiles=_tripTileUrls(500);
+    const jobs=[...imgUrls,...tiles];
+    let done=0;
+    const step=()=>{done++;if(btn)btn.innerHTML='&#8987; Saving '+Math.round(done/Math.max(1,jobs.length)*100)+'%';};
+    // Small concurrency pool so we don't fire hundreds of requests at once.
+    const POOL=6;let i=0;
+    async function worker(){while(i<jobs.length){const url=jobs[i++];await _cachePut(cache,url,{mode:'no-cors'});step();}}
+    await Promise.all(Array.from({length:POOL},worker));
+    localStorage.setItem('offline_'+tripId,'1');
+    if(btn){btn.disabled=false;btn.innerHTML='&#10003; Saved Offline';}
+    showToast('&#10003; Saved for offline viewing');
+  }catch(e){
+    if(btn){btn.disabled=false;btn.innerHTML='&#11015; Save Offline';}
+    alert('Could not finish the offline download. Please try again on a stronger connection.');
   }
 }
 
@@ -1686,6 +1746,7 @@ function renderOverview(){
     (jnl?'<button class="ai-action-btn" onclick="openTripRecap()" style="background:var(--amber)">&#128196; Recap</button>':'')+
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
+    '<button class="ai-action-btn" id="offline-btn" onclick="downloadTripOffline()" style="background:var(--river)" title="Download this itinerary so you can view it without internet">'+(localStorage.getItem("offline_"+tripId)==="1"?"&#10003; Saved Offline":"&#11015; Save Offline")+'</button>'+
     '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+

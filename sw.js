@@ -17,7 +17,7 @@
 //      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
-const CACHE = 'seasons-v90';
+const CACHE = 'seasons-v91';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
@@ -46,9 +46,10 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    // Keep the current app-shell cache AND the saved audio-tour cache.
+    // Keep the current app-shell cache, the saved audio-tour cache, AND the
+    // offline-download cache (so downloaded itineraries survive app updates).
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE && k !== 'seasons-audio').map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE && k !== 'seasons-audio' && k !== 'seasons-offline').map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
     .then(() => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(cs =>
       Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{}))
@@ -59,6 +60,21 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = e.request.url;
+  // Page navigations (e.g. trip.html?id=london-scotland&fam=1): network-first so
+  // you get fresh HTML online, but fall back to the cached page when offline. The
+  // query string is ignored so any trip URL resolves to the cached page shell.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      caches.match(e.request, {ignoreSearch:true}).then(cached => {
+        const network = fetch(e.request).then(res => {
+          if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{}); }
+          return res;
+        }).catch(() => cached || caches.match(new URL(e.request.url).pathname) || caches.match('/Travel/index.html'));
+        return cached || network;
+      })
+    );
+    return;
+  }
   // Hard reload (Cache-Control: no-cache) — bypass SW cache, fetch fresh from network
   const cc = e.request.headers.get('cache-control');
   if (cc && cc.includes('no-cache')) {
@@ -70,18 +86,17 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
-  // Stale-while-revalidate for OSM map tiles
+  // Stale-while-revalidate for OSM map tiles. Check ALL caches (incl. the
+  // offline-download cache) so downloaded tiles are served when offline.
   if (url.includes('tile.openstreetmap.org')) {
     e.respondWith(
-      caches.open(CACHE).then(cache =>
-        cache.match(e.request).then(cached => {
-          const network = fetch(e.request).then(res => {
-            if (res.ok) cache.put(e.request, res.clone());
-            return res;
-          }).catch(() => cached);
-          return cached || network;
-        })
-      )
+      caches.match(e.request).then(cached => {
+        const network = fetch(e.request).then(res => {
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        }).catch(() => cached);
+        return cached || network;
+      })
     );
     return;
   }

@@ -372,6 +372,14 @@ async function renderDayMap(idx,fit=true){
   if(endHotel&&(!endHotel.lat||!endHotel.lng))endHotel=null;
   // skip if the day's last stop already IS that hotel (route already ends there)
   if(endHotel&&todayLast&&todayLast.lat===endHotel.lat&&todayLast.lng===endHotel.lng)endHotel=null;
+  // getNextHotelForDay returns null on the FINAL day ("heading home"). But a day
+  // that starts from a base hotel and ends with sightseeing (not a flight/train
+  // out) returns to that SAME hotel that night — so close the route back to the
+  // start hotel. This is the round-trip case (e.g. day-tripping from Edinburgh).
+  if(!endHotel&&startHotel&&!todayEndsInTransit&&day.stops.length>0
+     &&!(todayLast&&todayLast.lat===startHotel.lat&&todayLast.lng===startHotel.lng)){
+    endHotel=startHotel;
+  }
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});

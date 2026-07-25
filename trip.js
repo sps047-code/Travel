@@ -344,7 +344,7 @@ async function fetchRoute(stops){
   }catch(e){return null}
 }
 
-async function renderDayMap(idx){
+async function renderDayMap(idx,fit=true){
   markersLayer.clearLayers();routeLayer.clearLayers();
   const day=state.days[idx];if(!day)return;
   const st=document.getElementById('route-status');
@@ -371,7 +371,7 @@ async function renderDayMap(idx){
     m.bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(s.name)+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
     markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
   });
-  if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
+  if(fit&&bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   for(let i=0;i<day.stops.length-1;i++){
     const a=day.stops[i],b=day.stops[i+1];
     if(a.type==='flight'&&a.lat&&b.lat){
@@ -1108,6 +1108,10 @@ function renderAll(){
     const ca=document.getElementById('content-area');
     if(ca)ca.innerHTML='<div style="padding:32px;font-family:var(--font-ui);color:var(--ruby)">⚠️ Render error: '+_escHtml(e.message)+'<br><small style="color:var(--muted)">Check browser console for details.</small></div>';
   }
+  // ALWAYS refresh the map to match the data (markers/route), without re-zooming.
+  // This is why the map stays in sync no matter which action changed the data —
+  // no action has to remember to update the map separately anymore.
+  try{ if(currentDayIdx===-1)renderOverviewMap(false); else renderDayMap(currentDayIdx,false); }catch(e){console.error('[renderAll map]',e);}
 }
 
 function switchDay(idx){
@@ -2124,7 +2128,7 @@ async function callClaude(systemPrompt,userPrompt){
   return text;
 }
 
-async function renderOverviewMap(){
+async function renderOverviewMap(fit=true){
   markersLayer.clearLayers();routeLayer.clearLayers();
   const bounds=[];
   state.days.forEach((day,di)=>{
@@ -2135,7 +2139,7 @@ async function renderOverviewMap(){
       markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
     });
   });
-  if(bounds.length)map.fitBounds(bounds,{padding:[40,40]});
+  if(fit&&bounds.length)map.fitBounds(bounds,{padding:[40,40]});
   document.getElementById('route-status').style.display='none';
 }
 

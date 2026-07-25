@@ -4003,13 +4003,16 @@ async function _planCallAI(userText){
   _pcHistory.push({role:'user',content:userText});
   try{
     const convo=_pcHistory.map(m=>m.role+': '+m.content).join('\n\n');
-    const text=await callClaude(PLAN_CHAT_SYSTEM,convo);
+    // Include the itinerary map here too (the conversation no longer seeds it).
+    const sys=PLAN_CHAT_SYSTEM+(typeof _itinMap==='function'?_itinMap():'');
+    const text=await callClaude(sys,convo);
     if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
     _pcHistory.push({role:'assistant',content:text});
     _pcAddMessage('assistant',text);
   }catch(e){
     if(thinking.parentNode)thinking.parentNode.removeChild(thinking);
-    _pcAddMessage('error','Could not reach the AI. Please try again.');
+    const why=(e&&e.message)?String(e.message):'could not reach the server';
+    _pcAddMessage('error','AI request failed: '+why+'. Please try again.');
   }
 }
 

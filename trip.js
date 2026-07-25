@@ -664,7 +664,7 @@ function renderPanel(idx){
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
       (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
-      _dayHoursHtml(s)+
+      _dayHoursHtml(s,idx,si)+
       (s.type==='food'?'<button class="alt-btn" onclick="showAlternates('+idx+','+si+')">&#128260; Alternates</button>':'')+
       _stopPlaceMetaHtml(s)+
       _guidebookHtml(s,idx,si)+
@@ -2391,12 +2391,103 @@ async function lookupPlaceDetails(stop){
 }
 // Opening hours for the specific day of the itinerary, shown in the stop's
 // description area. Populated by addDayOpeningHours() (AI-estimated).
-function _dayHoursHtml(s){
+// ---- Real opening hours from OpenStreetMap (free, no API key) ----
+const _DOW_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const _OSM_DAY={su:0,mo:1,tu:2,we:3,th:4,fr:5,sa:6};
+function _normPlaceName(n){
+  return String(n||'').toLowerCase()
+    .replace(/^(dinner|lunch|breakfast|brunch|coffee|drinks)\s*[—–-]\s*/,'')
+    .replace(/[^a-z0-9 ]/g,' ').replace(/\b(the|a|an|of|at|de|la|le|and)\b/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+function _to12h(hhmm){
+  const m=String(hhmm).match(/^(\d{1,2}):(\d{2})$/);if(!m)return null;
+  let h=+m[1];const mn=+m[2];if(h>24||mn>59)return null;
+  const ap=(h<12||h===24)?'AM':'PM';let h12=h%12;if(h12===0)h12=12;
+  return h12+':'+(mn<10?'0':'')+mn+' '+ap;
+}
+// Parse an OSM opening_hours string for one weekday. Conservative: returns null
+// on anything seasonal/complex so we fall back to an AI estimate rather than guess.
+function _parseOsmOpening(oh,dowIdx){
+  if(!oh)return null;oh=oh.trim();
+  if(/^24\/7$/.test(oh))return'Open 24 hours';
+  if(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sunrise|sunset|week\s*\d|\[)/i.test(oh))return null;
+  let result=null;
+  oh.split(';').map(s=>s.trim()).filter(Boolean).forEach(rule=>{
+    const r=rule.replace(/\bPH\b/gi,'').trim();if(!r)return;
+    let applies=false,rest=r;
+    const dayPart=r.match(/^((?:(?:mo|tu|we|th|fr|sa|su)(?:-(?:mo|tu|we|th|fr|sa|su))?\s*,?\s*)+)/i);
+    if(dayPart){
+      rest=r.slice(dayPart[0].length).trim();
+      dayPart[1].toLowerCase().replace(/\s+/g,'').split(',').filter(Boolean).forEach(tk=>{
+        const rng=tk.split('-');
+        if(rng.length===1){if(_OSM_DAY[rng[0]]===dowIdx)applies=true;}
+        else{let a=_OSM_DAY[rng[0]],b=_OSM_DAY[rng[1]];if(a==null||b==null)return;let d=a;for(let k=0;k<7;k++){if(d===dowIdx){applies=true;break;}if(d===b)break;d=(d+1)%7;}}
+      });
+    }else applies=true;
+    if(!applies)return;
+    if(/\boff\b|\bclosed\b/i.test(rest)){result='closed';return;}
+    const times=rest.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g);
+    if(times&&times.length){
+      const parts=times.map(t=>{const mm=t.split('-').map(x=>x.trim());const a=_to12h(mm[0]),b=_to12h(mm[1]);return(a&&b)?a+' - '+b:null;}).filter(Boolean);
+      if(parts.length)result=parts.join(', ');
+    }
+  });
+  if(result==='closed')return'Closed '+_DOW_NAMES[dowIdx];
+  return result;
+}
+// One Overpass query for the whole day; match each stop to a nearby named feature.
+async function _osmHoursForDay(places,dowIdx){
+  const out={};
+  const withCoord=places.filter(o=>o.s.lat&&o.s.lng);
+  if(!withCoord.length||dowIdx<0)return out;
+  const around=withCoord.map(o=>'nwr(around:150,'+o.s.lat+','+o.s.lng+')["opening_hours"];').join('');
+  const q='[out:json][timeout:20];('+around+');out tags center 100;';
+  let data;
+  try{
+    const r=await fetch('https://overpass-api.de/api/interpreter',
+      {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    if(!r.ok)return out;data=await r.json();
+  }catch(e){return out;}
+  const els=((data&&data.elements)||[]).map(el=>({
+    lat:el.lat!=null?el.lat:(el.center&&el.center.lat),
+    lon:el.lon!=null?el.lon:(el.center&&el.center.lon),
+    name:el.tags&&el.tags.name,oh:el.tags&&el.tags.opening_hours
+  })).filter(e=>e.lat!=null&&e.oh);
+  if(!els.length)return out;
+  for(const o of withCoord){
+    const key=_normPlaceName(o.s.name);let best=null,bestScore=-1;
+    for(const e of els){
+      const d=haversine(o.s.lat,o.s.lng,e.lat,e.lon);if(d>0.15)continue;
+      const nm=e.name?_normPlaceName(e.name):'';
+      let score=(0.2-d);
+      if(nm&&key&&(key.includes(nm)||nm.includes(key)))score+=100+Math.min(nm.length,key.length);
+      if(score>bestScore){bestScore=score;best=e;}
+    }
+    if(best){const h=_parseOsmOpening(best.oh,dowIdx);if(h)out[o.si]=h;}
+  }
+  return out;
+}
+function _dayHoursHtml(s,di,si){
   if(!s.dayHours)return'';
   const closed=/\bclosed\b/i.test(s.dayHours);
-  return '<div class="stop-day-hours" title="Estimated hours — verify with the venue" '+
-    'style="font-family:var(--font-ui);font-size:12px;margin-top:6px;font-weight:600;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
-    '&#128337; '+_escHtml(s.dayHours)+'</div>';
+  const verified=s.dayHoursSrc==='osm'||s.dayHoursSrc==='user';
+  const tip=verified?'Opening hours — tap to edit':'Estimated hours — tap to correct';
+  return '<div class="stop-day-hours" title="'+tip+'" onclick="editStopHours('+di+','+si+')" '+
+    'style="font-family:var(--font-ui);font-size:12px;margin-top:6px;font-weight:600;cursor:pointer;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
+    '&#128337; '+_escHtml(s.dayHours)+(verified?'':' <span style="color:var(--muted);font-weight:400">(est.)</span>')+
+    ' <span style="color:var(--muted);font-weight:400">&#9998;</span></div>';
+}
+// Manual correction — the reliable fix for any wrong hours.
+function editStopHours(di,si){
+  const s=state.days[di]&&state.days[di].stops[si];if(!s)return;
+  const cur=s.dayHours||'';
+  const v=prompt('Opening hours for '+s.name+' (e.g. "9:30 AM - 5:00 PM", "Closed", "Open access"):',cur);
+  if(v===null)return;
+  const val=v.trim();
+  if(val){s.dayHours=val;s.dayHoursSrc='user';}
+  else{delete s.dayHours;delete s.dayHoursSrc;}
+  saveState('Edited hours: '+s.name);renderAll();
 }
 const HOURS_SYSTEM='You are a travel assistant with knowledge of typical opening hours for attractions, museums, restaurants, and venues worldwide. Given a list of places and a specific day of the week, return each place\'s typical opening hours ON THAT DAY. Be concise and accurate. If a place has no fixed hours (a public street, park, viewpoint, walk, or outdoor area), use "Open access". If it is normally closed on that weekday, say "Closed <weekday>". Never invent precise hours you are unsure of — use "Hours vary" instead. No commentary, no markdown.';
 const _SKIP_HOURS_TYPES=['flight','train','bus','drive'];
@@ -2410,22 +2501,33 @@ async function _requestDayHours(idx,force,btn){
   if(!places.length)return;
   const iso=dayDateStr(idx);
   const dObj=iso?new Date(iso+'T12:00:00'):null;
-  const dow=dObj&&!isNaN(dObj)?['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dObj.getDay()]:'';
+  const dowIdx=dObj&&!isNaN(dObj)?dObj.getDay():-1;
+  const dow=dowIdx>=0?_DOW_NAMES[dowIdx]:'';
   if(btn){btn.disabled=true;btn.textContent='Finding hours…';}
   try{
-    let prompt='Day of week: '+(dow||'unknown')+(iso?' ('+iso+')':'')+'\nArea/context: '+day.title+'\n\nPlaces (in order):\n';
-    places.forEach((o,i)=>{prompt+=(i+1)+'. '+o.s.name+'\n';});
-    prompt+='\nReturn ONLY a JSON array with one object per place, in the SAME order:\n[{"hours":"<opening hours on '+(dow||'that day')+'>"}]\nExample values: "9:00 AM - 5:00 PM", "10:00 AM - 6:00 PM", "Closed '+(dow||'')+'", "Open access", "Open 24 hours", "Hours vary".';
-    const text=await callClaude(HOURS_SYSTEM,prompt);
-    const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
-    const a=t.indexOf('['),b=t.lastIndexOf(']');
-    const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
-    if(!Array.isArray(arr))throw new Error('bad response');
-    places.forEach((o,i)=>{
-      const it=arr[i];
-      const hrs=it&&(typeof it==='string'?it:it.hours);
-      if(hrs&&String(hrs).trim())o.s.dayHours=String(hrs).trim();
-    });
+    // 1) REAL hours from OpenStreetMap (accurate, no hallucination). One query.
+    let osm={};
+    try{ osm=await _osmHoursForDay(places,dowIdx); }catch(e){}
+    places.forEach(o=>{ if(osm[o.si]){o.s.dayHours=osm[o.si];o.s.dayHoursSrc='osm';o._done=true;} });
+    // 2) AI estimate only for places OSM could not resolve. Never overwrite a
+    //    hours value the user edited by hand.
+    const remaining=places.filter(o=>!o._done&&o.s.dayHoursSrc!=='user');
+    if(remaining.length){
+      let prompt='Day of week: '+(dow||'unknown')+(iso?' ('+iso+')':'')+'\nArea/context: '+day.title+'\n\nPlaces (in order):\n';
+      remaining.forEach((o,i)=>{prompt+=(i+1)+'. '+o.s.name+'\n';});
+      prompt+='\nReturn ONLY a JSON array with one object per place, in the SAME order:\n[{"hours":"<opening hours on '+(dow||'that day')+'>"}]\nExample values: "9:00 AM - 5:00 PM", "10:00 AM - 6:00 PM", "Closed '+(dow||'')+'", "Open access", "Open 24 hours", "Hours vary".';
+      const text=await callClaude(HOURS_SYSTEM,prompt);
+      const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+      const a=t.indexOf('['),b=t.lastIndexOf(']');
+      const arr=JSON.parse(a>=0&&b>a?t.slice(a,b+1):t);
+      if(Array.isArray(arr)){
+        remaining.forEach((o,i)=>{
+          const it=arr[i];const hrs=it&&(typeof it==='string'?it:it.hours);
+          if(hrs&&String(hrs).trim()){o.s.dayHours=String(hrs).trim();o.s.dayHoursSrc='ai';}
+        });
+      }
+    }
+    places.forEach(o=>{delete o._done;});
     saveState('Added opening hours for '+day.title);
     renderAll();if(idx===currentDayIdx)renderDayMap(currentDayIdx);
   }catch(e){

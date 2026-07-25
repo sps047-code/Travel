@@ -291,10 +291,15 @@ function _syncOvernightArrivals(){
 function _itinMap(){
   try{
     if(!state || !state.days) return '';
-    return '\n\nLIVE ITINERARY (use these exact 0-based indices in ITINERARY_CHANGES):\n'+
+    // The SINGLE copy of the itinerary sent to the AI. It carries everything the
+    // old verbose context did (type, date, notes) so the conversation seed no
+    // longer needs to duplicate it — halving the request size, which was large
+    // enough on long trips to make the request fail.
+    const start=(typeof dayDateStr==='function'?(dayDateStr(0)||''):'');
+    return '\n\nLIVE ITINERARY'+(start?' (starts '+start+')':'')+' — use these exact 0-based indices in ITINERARY_CHANGES:\n'+
       state.days.map((d,i)=>
-        'dayIdx='+i+' "Day '+(i+1)+': '+(d.title||'')+'": '+
-        (d.stops||[]).map((s,j)=>'stopIdx='+j+' "'+s.name+'"'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')':'')+(s.dayHours?' [open: '+s.dayHours+']':'')).join(' | ')
+        'dayIdx='+i+' "Day '+(i+1)+': '+(d.title||'')+'"'+(d.subtitle?' ('+d.subtitle+')':'')+':\n'+
+        (d.stops||[]).map((s,j)=>'  stopIdx='+j+' "'+s.name+'" ['+(s.type||'')+']'+(s.time?' @'+s.time:'')+(s.duration?' ('+s.duration+')':'')+(s.dayHours?' [open: '+s.dayHours+']':'')+(s.notes?' -- '+s.notes:'')).join('\n')
       ).join('\n');
   }catch(e){ return ''; }
 }
@@ -333,7 +338,10 @@ window._planCallAI = async function(userText){
     }
   }catch(e){
     if(thk.parentNode) thk.parentNode.removeChild(thk);
-    _pcAddMessage('error','Could not reach the AI. Please try again.');
+    // Surface the REAL failure so a size/rate-limit/server error is visible
+    // instead of a generic "could not reach" that hides the cause.
+    const why=(e&&e.message)?String(e.message):'could not reach the server';
+    _pcAddMessage('error','AI request failed: '+why+'. Please try again.');
   }
 };
 

@@ -3958,8 +3958,10 @@ function openPlanChat(){
   const content=document.getElementById('pc-content');if(!content)return;
   // Only reset history if reopening a fresh session
   if(!_pcHistory.length){
-    const ctx=_buildTripContext();
-    _pcHistory=[{role:'user',content:'Here is my trip itinerary:\n\n'+ctx+'\nI have questions about my trip.'},
+    // Do NOT seed the full itinerary here — the AI receives it once via _itinMap()
+    // appended to the system prompt on every call. Seeding it again duplicated a
+    // large payload on long trips and could make the request fail.
+    _pcHistory=[{role:'user',content:'I have questions about my trip. My full itinerary is provided to you separately as the LIVE ITINERARY.'},
       {role:'assistant',content:'I have your full itinerary. What would you like to know about your trip?'}];
   }
   const chips=['Is my pacing realistic?','What am I missing?','Any booking deadlines I should know?'];

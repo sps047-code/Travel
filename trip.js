@@ -21,9 +21,14 @@ let state,currentDayIdx=0,addingToDay=0,editingStop=null;
 let _optDayIdx=-1,_optLastData=null,_lastUndoFn=null,_optUndoTimer=null;
 let _altDayIdx=-1,_altStopIdx=-1,_altResults=[];
 let _dragDayFrom=-1;
-function saveState(changeDesc=''){
+// localOnly=true persists to this device but does NOT push to the shared cloud.
+// Use it for MACHINE-generated mutations (auto opening-hours, overnight-arrival
+// sync, one-time migrations) so they can never out-race and clobber a real human
+// edit from another device/tab under last-writer-wins. Those values are derived
+// and each device recomputes them anyway.
+function saveState(changeDesc='',localOnly=false){
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-  if(getTripType()==='family')_syncFamily(changeDesc);
+  if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
 }
 
 const map=L.map('map',{zoomControl:true,center:[39,-98],zoom:4});
@@ -1043,12 +1048,20 @@ function refreshStopDesc(dayIdx,stopIdx){
 }
 
 function renderAll(){
+  // HARD INVARIANT: every day is put in chronological order BEFORE anything is
+  // drawn, so it is impossible to see a day out of order regardless of how the
+  // data got that way (AI edit, sync, import).
+  try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
+    // Safety net: if the sort somehow left a day out of order, say so loudly
+    // instead of silently showing it.
+    const _cv=_firstChronoViolation();
+    const _errBanner=_cv?'<div style="margin:10px 0;padding:12px 14px;background:rgba(194,59,59,0.12);border:1.5px solid var(--ruby);border-radius:10px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);font-weight:600">&#9888;&#65039; Day '+_cv+' is out of chronological order. This should be impossible &mdash; please tell me the trip and day so I can fix it.</div>':'';
     if(currentDayIdx===-1){
-      document.getElementById('content-area').innerHTML=renderOverview();
+      document.getElementById('content-area').innerHTML=_errBanner+renderOverview();
     }else{
-      document.getElementById('content-area').innerHTML=state.days.map((_,i)=>renderPanel(i)).join('');
+      document.getElementById('content-area').innerHTML=_errBanner+state.days.map((_,i)=>renderPanel(i)).join('');
       loadStopImages();
       if(currentDayIdx>=0){
         loadDayNarrative(currentDayIdx);
@@ -2548,7 +2561,8 @@ async function _requestDayHours(idx,force,btn){
     // 1) REAL hours from OpenStreetMap (accurate, no hallucination). One query.
     let osm={};
     try{ osm=await _osmHoursForDay(places,dowIdx); }catch(e){}
-    places.forEach(o=>{ if(osm[o.si]){o.s.dayHours=osm[o.si];o.s.dayHoursSrc='osm';o._done=true;} });
+    // Never overwrite hours the user edited by hand — even on a manual refresh.
+    places.forEach(o=>{ if(osm[o.si] && o.s.dayHoursSrc!=='user'){o.s.dayHours=osm[o.si];o.s.dayHoursSrc='osm';o._done=true;} });
     // 2) AI estimate only for places OSM could not resolve. Never overwrite a
     //    hours value the user edited by hand.
     const remaining=places.filter(o=>!o._done&&o.s.dayHoursSrc!=='user');
@@ -2568,7 +2582,7 @@ async function _requestDayHours(idx,force,btn){
       }
     }
     places.forEach(o=>{delete o._done;});
-    saveState('Added opening hours for '+day.title);
+    saveState('Added opening hours for '+day.title,true); // derived data — local only, don't race the cloud
     renderAll();if(idx===currentDayIdx)renderDayMap(currentDayIdx);
   }catch(e){
     if(btn){btn.disabled=false;btn.innerHTML='&#128337; Hours';}
@@ -2837,6 +2851,22 @@ function _sortDayByTime(dayIdx){
 function _sortAllDaysByTime(){
   if(!state||!state.days)return;
   for(let i=0;i<state.days.length;i++)_sortDayByTime(i);
+}
+// Invariant check: are the TIMED stops of a day in non-decreasing time order?
+// Untimed stops are allowed anywhere (they carry-forward). Returns the 1-based
+// day number of the FIRST violation, or 0 if every day is chronological.
+function _firstChronoViolation(){
+  if(!state||!state.days)return 0;
+  for(let d=0;d<state.days.length;d++){
+    let last=-1;
+    for(const s of (state.days[d].stops||[])){
+      const m=_parseTimeMins(s.time);
+      if(m===null)continue;
+      if(m<last)return d+1;
+      last=m;
+    }
+  }
+  return 0;
 }
 function _extractTimeFromText(text){
   if(!text)return null;
@@ -3790,7 +3820,7 @@ async function init(){
         const k=s.name.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,44);
         if(old[k]){s.desc=old[k];changed=true;}
       }));
-      if(changed){saveState();localStorage.removeItem('stop_desc_v1');}
+      if(changed){saveState('',true);localStorage.removeItem('stop_desc_v1');}
     }
   }catch(e){}
   /* apply pending import from index.html (stored in sessionStorage to survive Firebase reload) */

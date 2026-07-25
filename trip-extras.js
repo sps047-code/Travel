@@ -59,7 +59,7 @@ window.saveStop = function(){
       }
     }
   }catch(e){ console.warn('[trip-extras] save failed:', e); }
-  if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
+  if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
 };
 
 // ── 3.  PATCH openEditStopModal TO PRE-FILL endTime + audioUrl ───────────────
@@ -234,7 +234,7 @@ function _startObserver(){
   _patchLegConnectors();
   _patchEndOfTrip();
   _augmentAudioBadges();
-  if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
+  if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
   let _oaInitDone=false;
   const ca = document.getElementById('content-area');
   if(ca) new MutationObserver(()=>{
@@ -244,7 +244,7 @@ function _startObserver(){
     _augmentAudioBadges();
     if(!_oaInitDone && typeof state!=='undefined' && state && state.days){
       _oaInitDone=true;
-      if(_syncOvernightArrivals()){ try{saveState();}catch(e){} try{renderAll();}catch(e){} }
+      if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
     }
   }).observe(ca, {childList:true, subtree:true});
   const mo = document.getElementById('modal-overlay');
@@ -307,7 +307,7 @@ function _itinMap(){
   }catch(e){ return ''; }
 }
 
-const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, stopIdx, updates:{field:value} (fields: name, type, time, endTime, duration, notes, dayHours, lat, lng)\n- add_stop: dayIdx, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, stopIdx\n- move_stop: fromDayIdx, fromStopIdx, toDayIdx, toStopIdx\n\nTo correct a stop\'s opening hours, use update_stop with updates:{"dayHours":"9:30 AM - 5:00 PM"} (the displayed opening-hours line is the "dayHours" field). Use "Closed <weekday>" if closed that day.\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.\n\nFEASIBILITY, NOT PACE: Do NOT judge or assume pace. Never call a day too rushed, too packed, too ambitious, too slow, or too empty, and never add or remove stops merely to change the pace or to give the traveler downtime. Whether a plan works is decided ONLY by concrete facts: (1) is each stop OPEN at the planned time (opening hours and days closed), (2) the mode of travel between stops, (3) realistic travel time including typical traffic, and (4) distance. Only flag a stop as a problem when it would be closed at that time, or when travel time plus visit time makes the next stop impossible to reach while it is open. When the user asks whether a day works, answer the concrete question: can it be done? For each concern, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time.\n\nDESCRIBE CHANGES IN PLAIN LANGUAGE: In your prose to the user, describe every suggested change in plain English (for example: "Move York Minster before the museum so you arrive at opening time"). NEVER write the internal action names add_stop, remove_stop, update_stop, or move_stop in your prose. Always fill each change\'s "description" field with a clear human sentence that names the stop and says what changes.\n\nSCHEDULING RULES -- follow every time you add, move, or set the time of a stop:\n1. OPENING HOURS: Never place or recommend a stop at a time it is closed. Use the [open: ...] hours shown for each stop in the itinerary map. If hours are not shown, use typical hours: most museums and attractions open about 9-10am and close about 5pm (some close one weekday); shops about 9am-6pm. If a place would be closed at the chosen time, pick a time when it is open, or do not add it. Never recommend a place that is closed that day.\n2. MEALS: At most ONE breakfast, ONE lunch, and ONE dinner per day -- never a second lunch or second dinner. Breakfast 7:00-9:00am, lunch 12:00-1:30pm, dinner 6:00-8:00pm. Never schedule lunch before 11:30am or after 2:30pm; never schedule dinner before 5:30pm. Do not stack meals close together.\n3. CHRONOLOGICAL ORDER: Every stop must have a time, and times must increase through the day. When you insert a stop, give it a time that fits between its neighbors so the day stays in order.\n4. FEASIBILITY / DENSITY: A stop takes time to travel to and to visit. The visit times plus the travel between stops must fit the waking day. Do NOT overpack -- an impossible day like 11 stops in 12 hours is wrong. A realistic full day is roughly 4-6 substantial stops plus meals. If the user wants more than fits, say so and offer to move some to another day rather than cramming them in.';
+const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, dayName, stopIdx, stopName, updates:{field:value} (fields: name, type, time, endTime, duration, notes, dayHours)\n- add_stop: dayIdx, dayName, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, dayName, stopIdx, stopName\n- move_stop: fromDayIdx, fromDayName, fromStopIdx, stopName, toDayIdx, toDayName, toStopIdx\n\nALWAYS include "stopName" (the stop\'s EXACT current name from the index map) and "dayName" (the day\'s title) on every update_stop/remove_stop/move_stop — they are used to target the correct stop even if positions shifted. Use the 0-based dayIdx/stopIdx too, but the names are the source of truth.\n\nNEVER change a stop\'s coordinates (lat/lng) in update_stop — you cannot see the true location and would move the map pin to the wrong place. Location changes are done by the user, not you.\n\nTo correct a stop\'s opening hours, use update_stop with updates:{"dayHours":"9:30 AM - 5:00 PM"} (the displayed opening-hours line is the "dayHours" field). Use "Closed <weekday>" if closed that day.\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.\n\nFEASIBILITY, NOT PACE: Do NOT judge or assume pace. Never call a day too rushed, too packed, too ambitious, too slow, or too empty, and never add or remove stops merely to change the pace or to give the traveler downtime. Whether a plan works is decided ONLY by concrete facts: (1) is each stop OPEN at the planned time (opening hours and days closed), (2) the mode of travel between stops, (3) realistic travel time including typical traffic, and (4) distance. Only flag a stop as a problem when it would be closed at that time, or when travel time plus visit time makes the next stop impossible to reach while it is open. When the user asks whether a day works, answer the concrete question: can it be done? For each concern, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time.\n\nDESCRIBE CHANGES IN PLAIN LANGUAGE: In your prose to the user, describe every suggested change in plain English (for example: "Move York Minster before the museum so you arrive at opening time"). NEVER write the internal action names add_stop, remove_stop, update_stop, or move_stop in your prose. Always fill each change\'s "description" field with a clear human sentence that names the stop and says what changes.\n\nSCHEDULING RULES -- follow every time you add, move, or set the time of a stop:\n1. OPENING HOURS: Never place or recommend a stop at a time it is closed. Use the [open: ...] hours shown for each stop in the itinerary map. If hours are not shown, use typical hours: most museums and attractions open about 9-10am and close about 5pm (some close one weekday); shops about 9am-6pm. If a place would be closed at the chosen time, pick a time when it is open, or do not add it. Never recommend a place that is closed that day.\n2. MEALS: At most ONE breakfast, ONE lunch, and ONE dinner per day -- never a second lunch or second dinner. Breakfast 7:00-9:00am, lunch 12:00-1:30pm, dinner 6:00-8:00pm. Never schedule lunch before 11:30am or after 2:30pm; never schedule dinner before 5:30pm. Do not stack meals close together.\n3. CHRONOLOGICAL ORDER: Every stop must have a time, and times must increase through the day. When you insert a stop, give it a time that fits between its neighbors so the day stays in order.\n4. FEASIBILITY / DENSITY: A stop takes time to travel to and to visit. The visit times plus the travel between stops must fit the waking day. Do NOT overpack -- an impossible day like 11 stops in 12 hours is wrong. A realistic full day is roughly 4-6 substantial stops plus meals. If the user wants more than fits, say so and offer to move some to another day rather than cramming them in.';
 
 // Detect when the AI claims a change without emitting the block (so we can
 // silently fetch the structured block instead of leaving the user confused).
@@ -414,9 +414,37 @@ function _renderChangePanel(jsonStr){
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// Resolve indices: accept 0-based; auto-correct an off-by-one 1-based value.
-function _rdi(i){ const n=state.days.length; if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
-function _rsi(day,i){ const n=(day&&day.stops?day.stops.length:0); if(i>=0&&i<n)return i; if(i>0&&i<=n)return i-1; return -1; }
+// Resolve a DAY by its title first (robust to index drift / off-by-one), then a
+// strict 0-based index. No 1-vs-0 guessing — that landed edits on the wrong day.
+function _resolveDay(dayIdx, dayName){
+  const days=state.days||[];
+  if(dayName){
+    const key=String(dayName).toLowerCase().trim();
+    let i=days.findIndex(d=>String(d.title||'').toLowerCase().trim()===key);
+    if(i>=0)return i;
+    i=days.findIndex(d=>{const t=String(d.title||'').toLowerCase().trim();return t&&key.length>3&&(t.includes(key)||key.includes(t));});
+    if(i>=0)return i;
+  }
+  if(Number.isInteger(dayIdx)&&dayIdx>=0&&dayIdx<days.length)return dayIdx;
+  return -1;
+}
+// Resolve the target STOP by its name first (stable across index drift and any
+// 0-vs-1-based confusion), then a strict 0-based index. This is what stops an
+// edit meant for stop C from silently landing on stop D.
+function _resolveStop(day, stopIdx, stopName){
+  if(!day||!day.stops)return -1;
+  const stops=day.stops;
+  if(stopName){
+    const key=String(stopName).toLowerCase().trim();
+    let i=stops.findIndex(s=>String(s.name||'').toLowerCase().trim()===key);
+    if(i>=0)return i;
+    i=stops.findIndex(s=>{const n=String(s.name||'').toLowerCase().trim();return n&&key.length>3&&(n.includes(key)||key.includes(n));});
+    if(i>=0)return i;
+  }
+  if(Number.isInteger(stopIdx)&&stopIdx>=0&&stopIdx<stops.length)return stopIdx;
+  return -1;
+}
+const _VALID_STOP_TYPES=['hike','food','lodge','drive','flight','train','bus'];
 
 // Is this stop the overnight hotel/lodging? Reuse trip.js's detector when it is
 // loaded (name-aware, catches hotels mistyped as food); fall back to type.
@@ -448,10 +476,15 @@ function _applyChanges(changes){
   changes.forEach(c => {
     try{
       if(c.action==='update_stop'){
-        const di=_rdi(c.dayIdx); const day=state.days[di];
-        const si=_rsi(day,c.stopIdx);
-        if(di<0||si<0||!day) throw new Error('index out of range');
+        const di=_resolveDay(c.dayIdx,c.dayName); const day=state.days[di];
+        const si=_resolveStop(day,c.stopIdx,c.stopName);
+        if(di<0||si<0||!day) throw new Error('stop not found');
         const upd=Object.assign({}, c.updates||{});
+        // NEVER let an AI edit move a stop's location — hallucinated coordinates
+        // silently corrupt the map. Coordinates change only via search / Fix pin.
+        delete upd.lat; delete upd.lng;
+        // Only accept a valid stop type.
+        if(upd.type && !_VALID_STOP_TYPES.includes(upd.type)) delete upd.type;
         // Never let the AI turn the overnight hotel into a non-lodging stop.
         if(_extIsLodge(day.stops[si]) && upd.type && upd.type!=='lodge'){ delete upd.type; protectedN++; }
         Object.assign(day.stops[si], upd);
@@ -461,30 +494,33 @@ function _applyChanges(changes){
         if(day.stops[si].type==='lodge' && !_extIsLodge(day.stops[si])){ day.stops[si].type='hike'; }
         ok++;
       } else if(c.action==='add_stop'){
-        const di=_rdi(c.dayIdx); const day=state.days[di];
+        const di=_resolveDay(c.dayIdx,c.dayName); const day=state.days[di];
         if(di<0||!day) throw new Error('day not found');
         const ins=c.insertIdx!=null ? Math.min(Math.max(0,c.insertIdx), day.stops.length) : day.stops.length;
         // Do NOT default coordinates to 0,0 (a real point off West Africa). Leave
         // them unset so the stop is treated as coordinate-less consistently.
         const ns=Object.assign({name:'New Stop',type:'hike'}, c.stop||{});
+        if(!_VALID_STOP_TYPES.includes(ns.type)) ns.type='hike';
+        // Reject an out-of-range coordinate outright (bad geocode).
+        if(!(Number.isFinite(ns.lat)&&Number.isFinite(ns.lng)&&Math.abs(ns.lat)<=90&&Math.abs(ns.lng)<=180)){ delete ns.lat; delete ns.lng; }
         // A new stop can only be 'lodge' if it actually looks like a hotel.
         if(ns.type==='lodge' && !_extIsLodge(ns)){ ns.type='hike'; }
         day.stops.splice(ins, 0, ns);
         ok++;
       } else if(c.action==='remove_stop'){
-        const di=_rdi(c.dayIdx); const day=state.days[di];
-        const si=_rsi(day,c.stopIdx);
-        if(di<0||si<0||!day) throw new Error('index out of range');
+        const di=_resolveDay(c.dayIdx,c.dayName); const day=state.days[di];
+        const si=_resolveStop(day,c.stopIdx,c.stopName);
+        if(di<0||si<0||!day) throw new Error('stop not found');
         // MISTAKE-PROOF: refuse to delete the overnight hotel. The user can still
         // remove a hotel manually via the stop card's own delete button.
         if(_extIsLodge(day.stops[si])){ protectedN++; return; }
         day.stops.splice(si,1);
         ok++;
       } else if(c.action==='move_stop'){
-        const fdi=_rdi(c.fromDayIdx), tdi=_rdi(c.toDayIdx);
+        const fdi=_resolveDay(c.fromDayIdx,c.fromDayName), tdi=_resolveDay(c.toDayIdx,c.toDayName);
         const fday=state.days[fdi], tday=state.days[tdi];
-        const fsi=_rsi(fday,c.fromStopIdx);
-        if(fdi<0||tdi<0||fsi<0||!fday||!tday) throw new Error('index out of range');
+        const fsi=_resolveStop(fday,c.fromStopIdx,c.stopName||c.fromStopName);
+        if(fdi<0||tdi<0||fsi<0||!fday||!tday) throw new Error('stop not found');
         const [s]=fday.stops.splice(fsi,1);
         tday.stops.splice(Math.min(c.toStopIdx||0,tday.stops.length),0,s);
         ok++;
@@ -496,7 +532,9 @@ function _applyChanges(changes){
   // HARD GUARD: put every touched day back into chronological order so the AI can
   // never leave stops out of time order.
   const touched=new Set();
-  changes.forEach(c=>{ [c.dayIdx,c.toDayIdx,c.fromDayIdx].forEach(v=>{ const di=_rdi(v); if(di>=0)touched.add(di); }); });
+  changes.forEach(c=>{
+    [[c.dayIdx,c.dayName],[c.toDayIdx,c.toDayName],[c.fromDayIdx,c.fromDayName]].forEach(([v,nm])=>{ const di=_resolveDay(v,nm); if(di>=0)touched.add(di); });
+  });
   touched.forEach(di=>_sortDayChrono(state.days[di]));
   _syncOvernightArrivals();
   try{ saveState(); }catch(e){ console.warn('[trip-extras] saveState failed:', e); }

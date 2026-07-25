@@ -1066,9 +1066,11 @@ function refreshStopDesc(dayIdx,stopIdx){
 
 function renderAll(){
   _renderGen++; // invalidate any image loads still in flight from the last render
-  // Heal any day whose timeline was corrupted into the small hours, THEN enforce
-  // chronological order — so a day can never display starting at 1:30 AM.
+  // Heal any day whose timeline was corrupted into the small hours or whose stops
+  // have an end-before-start, THEN enforce chronological order — so a day can
+  // never display starting at 1:30 AM or ending before it began.
   try{ _healEarlyDays(); }catch(e){}
+  try{ _healBadEndTimes(); }catch(e){}
   try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
@@ -1244,6 +1246,21 @@ function _healEarlyDays(){
     if(ft!=null&&ft<240&&!TR.includes(s0.type))_recalcDayTimes(di);
   });
 }
+// Heal corrupt END times: a normal stop's end must be after its start. An end
+// before/equal to the start (e.g. 9:30 AM -> 2:38 AM) is rebuilt from the visit
+// duration. Transit legs may cross midnight, so they're left alone.
+function _healBadEndTimes(){
+  if(!state||!state.days)return;
+  const TR=['flight','train','bus'];
+  state.days.forEach(day=>{
+    (day.stops||[]).forEach(s=>{
+      if(!s.endTime||TR.includes(s.type))return;
+      const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
+      if(st==null||et==null)return;
+      if(et<=st||et-st>1080)s.endTime=_formatTimeMins(st+_stopVisitMins(s));
+    });
+  });
+}
 function _recalcDayTimes(dayIdx,anchorMins){
   const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;
   const stops=day.stops;
@@ -1253,7 +1270,14 @@ function _recalcDayTimes(dayIdx,anchorMins){
     if(i>0)cur+=_stopVisitMins(stops[i-1])+_legTravelMins(stops[i-1],s);
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
     s.time=_formatTimeMins(cur);
-    if(oldSt!=null&&oldEt!=null&&oldEt>oldSt)s.endTime=_formatTimeMins(cur+(oldEt-oldSt));
+    if(oldEt!=null){
+      const isTransit=['flight','train','bus'].includes(s.type);
+      let span=(oldSt!=null)?(oldEt-oldSt):null;
+      // For a normal stop the end must be AFTER the start; a corrupt span (end
+      // before start, or absurdly long) is rebuilt from the visit duration.
+      if(!isTransit&&(span==null||span<=0||span>1080))span=_stopVisitMins(s);
+      if(span!=null)s.endTime=_formatTimeMins(cur+span);
+    }
   }
 }
 function moveStop(dayIdx,stopIdx,dir){

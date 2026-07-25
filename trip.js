@@ -1066,9 +1066,9 @@ function refreshStopDesc(dayIdx,stopIdx){
 
 function renderAll(){
   _renderGen++; // invalidate any image loads still in flight from the last render
-  // HARD INVARIANT: every day is put in chronological order BEFORE anything is
-  // drawn, so it is impossible to see a day out of order regardless of how the
-  // data got that way (AI edit, sync, import).
+  // Heal any day whose timeline was corrupted into the small hours, THEN enforce
+  // chronological order — so a day can never display starting at 1:30 AM.
+  try{ _healEarlyDays(); }catch(e){}
   try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
@@ -1218,17 +1218,31 @@ function _legTravelMins(a,b){
 // after the previous one's visit duration plus the travel time between them.
 // The day's start stays anchored to the earliest existing time (so reordering
 // doesn't shift when the day begins). endTime spans move with their start.
-// Reasonable day-start anchor: the day's own start time, but never an absurdly
-// early value (pre-6am) when the day clearly has daytime stops — a stray
-// overnight/parse artifact must not reset the whole day to 1 AM.
+// The day's start anchor. This must NEVER return an absurdly-early time — that is
+// the bug that made a moved-stop day start at 1:30 AM and then perpetuate itself
+// (the corrupted early times became the new anchor every time). Rule: use the
+// FIRST stop's time if it's a real start (4:00 AM or later); if the first stop
+// has no time, use the earliest real time; otherwise reset the day to 9:00 AM.
 function _dayStartAnchor(stops){
-  const times=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null);
-  if(!times.length)return 540; // 9:00am default
+  if(!stops||!stops.length)return 540;
   const first=_parseTimeMins(stops[0].time);
-  const daytime=times.filter(t=>t>=360); // 6:00am+
-  if(first!=null&&first>=360)return first;
-  if(daytime.length)return Math.min(...daytime);
-  return Math.min(...times);
+  if(first!=null&&first>=240)return first;          // 4:00 AM+ = a genuine start
+  if(first==null){
+    const sane=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null&&t>=240);
+    if(sane.length)return Math.min(...sane);
+  }
+  return 540;                                       // absurdly early / untimed → 9:00 AM
+}
+// Heal any day whose (non-transit) first stop is absurdly early — a corruption
+// signature — by recomputing its timeline from a sane 9:00 AM start.
+function _healEarlyDays(){
+  if(!state||!state.days)return;
+  const TR=['flight','train','bus'];
+  state.days.forEach((day,di)=>{
+    const s0=day.stops&&day.stops[0];if(!s0)return;
+    const ft=_parseTimeMins(s0.time);
+    if(ft!=null&&ft<240&&!TR.includes(s0.type))_recalcDayTimes(di);
+  });
 }
 function _recalcDayTimes(dayIdx,anchorMins){
   const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;

@@ -1126,8 +1126,13 @@ async function saveTripOffline(id,ev){
   try{
     const state=await _resolveTripState(t);
     if(!state)throw new Error('no state');
-    localStorage.setItem('tripState_'+id,JSON.stringify(state));
+    const stateJson=JSON.stringify(state);
     const cache=await caches.open('seasons-offline');
+    // Persist the itinerary. localStorage is small (~5MB) and big trips (photos,
+    // tickets) can exceed it, so ALSO store it in the Cache API (large quota).
+    try{localStorage.setItem('tripState_'+id,stateJson);}catch(e){}
+    try{await cache.put('/Travel/offline-state/'+encodeURIComponent(id)+'.json',
+      new Response(stateJson,{headers:{'Content-Type':'application/json'}}));}catch(e){}
     const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest','leaf-logo.png','icon-192.png','icon-512.png',
       'trip.html?id='+encodeURIComponent(id)+(t.shared?'&fam=1':'')];
     await Promise.all(shell.map(u=>_cachePut(cache,u,{cache:'reload'})));

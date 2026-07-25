@@ -425,13 +425,21 @@ function _extIsLodge(s){
   try{ if(typeof _isLodgeStop==='function') return _isLodgeStop(s); }catch(e){}
   return s.type==='lodge';
 }
-// Put a day's stops back into chronological order by start time. Stable, and
-// stops without a time keep their relative position at the end.
+// Put a day's stops back into chronological order by start time. Stops without a
+// time stay anchored just after the previous timed stop (carry-forward) rather
+// than being dumped at the end, so they never jump out of order.
 function _sortDayChrono(day){
   if(!day || !day.stops || day.stops.length<2) return;
-  const t=(s)=>{ try{ const m=_parseTimeMins(s.time); return (m==null?1e9:m); }catch(e){ return 1e9; } };
-  const arr=day.stops.map((s,i)=>({s,i}));
-  arr.sort((a,b)=>(t(a.s)-t(b.s))||(a.i-b.i));
+  const pt=(s)=>{ try{ return _parseTimeMins(s.time); }catch(e){ return null; } };
+  const timed=day.stops.filter(s=>pt(s)!==null);
+  if(timed.length<2)return;
+  let last=-1;
+  const arr=day.stops.map((s,i)=>{
+    let m=pt(s);
+    if(m===null){ m=(last>=0?last:0)+0.001; } else last=m;
+    return {s,i,m};
+  });
+  arr.sort((a,b)=>(a.m-b.m)||(a.i-b.i));
   day.stops=arr.map(x=>x.s);
 }
 

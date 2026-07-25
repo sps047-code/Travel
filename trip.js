@@ -794,9 +794,13 @@ async function downloadTripOffline(){
   const btn=document.getElementById('offline-btn');
   if(btn){btn.disabled=true;btn.innerHTML='&#8987; Saving 0%';}
   try{
-    // 1. Persist the itinerary state so it renders offline.
-    try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
+    // 1. Persist the itinerary state so it renders offline. localStorage is small
+    //    (~5MB); also store in the Cache API (large quota) as a robust fallback.
+    const stateJson=JSON.stringify(state);
     const cache=await caches.open(_OFFLINE_CACHE);
+    try{localStorage.setItem(LS_KEY,stateJson);}catch(e){}
+    try{await cache.put('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json',
+      new Response(stateJson,{headers:{'Content-Type':'application/json'}}));}catch(e){}
     // 2. App shell + this trip's page (so navigation works offline).
     const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest',
       'leaf-logo.png','icon-192.png','icon-512.png',location.pathname+location.search];
@@ -2111,6 +2115,7 @@ function _watchFamily(){
       if(lc&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
         _lastFamilyAt=lc.at;
         state=data.state;
+        try{ _sortAllDaysByTime(); }catch(e){}
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
         showToast('✎ Change: '+(lc.desc||'itinerary updated'));
@@ -2775,17 +2780,28 @@ function applyOptimizedOrder(){
     const d=state.days[idx];if(d){d.stops=savedStops;saveState('Undid optimizer changes');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
   });
 }
+// Sort a day chronologically by start time. Stops WITHOUT a time stay anchored
+// just after the previous timed stop (carry-forward) instead of being dumped at
+// the end — so a timeless stop never jumps out of chronological order.
 function _sortDayByTime(dayIdx){
-  const stops=state.days[dayIdx]?.stops;if(!stops||stops.length<2)return;
-  const timed=stops.filter(s=>s.time&&_parseTimeMins(s.time)!==null);
+  const day=state.days[dayIdx];const stops=day&&day.stops;if(!stops||stops.length<2)return;
+  const timed=stops.filter(s=>_parseTimeMins(s.time)!==null);
   if(timed.length<2)return;
-  stops.sort((a,b)=>{
-    const ta=_parseTimeMins(a.time),tb=_parseTimeMins(b.time);
-    if(ta===null&&tb===null)return 0;
-    if(ta===null)return 1;
-    if(tb===null)return -1;
-    return ta-tb;
+  let last=-1;
+  const arr=stops.map((s,i)=>{
+    let m=_parseTimeMins(s.time);
+    if(m===null){ m=(last>=0?last:0)+0.001; }   // keep with the preceding timed stop
+    else last=m;
+    return {s,i,m};
   });
+  arr.sort((a,b)=>(a.m-b.m)||(a.i-b.i));
+  day.stops=arr.map(x=>x.s);
+}
+// Re-order every day chronologically (used on load so a trip synced/edited out of
+// order self-corrects on open).
+function _sortAllDaysByTime(){
+  if(!state||!state.days)return;
+  for(let i=0;i<state.days.length;i++)_sortDayByTime(i);
 }
 function _extractTimeFromText(text){
   if(!text)return null;
@@ -3649,6 +3665,19 @@ function _pcAddMessage(role,text){
   msgs.scrollTop=msgs.scrollHeight;
 }
 
+// Read a trip's offline-saved state: localStorage first, then the Cache API
+// fallback used for itineraries too large for localStorage.
+async function _readSavedState(){
+  const s=localStorage.getItem(LS_KEY);
+  if(s){try{return JSON.parse(s);}catch(e){}}
+  if('caches' in window){
+    try{
+      const r=await caches.match('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json');
+      if(r){return await r.json();}
+    }catch(e){}
+  }
+  return null;
+}
 async function init(){
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
@@ -3658,9 +3687,9 @@ async function init(){
   const isFamily=isFamilyOverride||_famParam||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
 
   if(isFamily){
-    const saved=localStorage.getItem(LS_KEY);
+    const savedState=await _readSavedState();
     let haveLocal=false;
-    if(saved){ try{ state=JSON.parse(saved); haveLocal=true; }catch(e){} }
+    if(savedState){ state=savedState; haveLocal=true; }
     if(haveLocal){
       // Fast path: render the cached copy now; refresh from the cloud in the
       // background and re-render only if it actually changed.
@@ -3672,6 +3701,7 @@ async function init(){
             _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
+              try{ _sortAllDaysByTime(); }catch(e){}
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
               renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
             }
@@ -3700,8 +3730,8 @@ async function init(){
     if(!state.tripType)state.tripType='family';
     _startFamily();
   }else{
-    const saved=localStorage.getItem(LS_KEY);
-    if(saved){state=JSON.parse(saved);}
+    const savedState=await _readSavedState();
+    if(savedState){state=savedState;}
     else{
       try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
       catch(e){state={days:[],title:'Trip'};}
@@ -3709,6 +3739,7 @@ async function init(){
     if(!state.tripType)state.tripType='solo';
   }
 
+  try{ _sortAllDaysByTime(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);
   currentDayIdx=-1;

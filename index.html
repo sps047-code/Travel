@@ -1055,6 +1055,93 @@ async function loadSharedTrips(){
   return cards.filter(Boolean);
 }
 
+/* ---- Offline download (from the home screen, without opening the trip) ---- */
+const _IMG_LS='stop_img_v4';
+let _imgData={}; try{_imgData=JSON.parse(localStorage.getItem(_IMG_LS)||'{}')}catch(e){}
+function _extractImageKeyword(name){
+  const GENERIC=/^(land(?:ing)?|drive|driving|train|flight|bus|depart(?:ure)?|arriv(?:e|al)|transfer|return|pick.?up|drop.?off|check.?in|check.?out|flying|fly)\b/i;
+  const FILLER=/\s+(dinner|lunch|breakfast|brunch|drinks|coffee|evening|morning|afternoon|tour|session|hike|trail|restaurant|cafe|hotel|motel|inn|buffet|bar|grill|patio)\s*$/i;
+  let s=name.replace(/\bNP\b/,'National Park').replace(/\bSP\b/,'State Park').replace(/\bNF\b/,'National Forest');
+  const segs=s.split(/\s*[—–]\s*|\s+-\s+/).map(p=>p.replace(/\s*\([^)]*\)/g,'').replace(FILLER,'').trim()).filter(p=>p.length>2);
+  for(const seg of segs){
+    if(seg.split(/\s+/).length<=2&&GENERIC.test(seg))continue;
+    const toM=seg.match(/^.+?\s+to\s+(.+)$/i);
+    if(toM)return toM[1].replace(/\s*\([^)]*\)/g,'').trim();
+    return seg.replace(/^(?:the|a|an)\s+/i,'');
+  }
+  const fb=name.match(/\bto\s+([A-Z][^,\n]+)/);
+  if(fb)return fb[1].replace(/\s*\([^)]*\)/g,'').trim();
+  return name.replace(/\s*[—–]\s*.*/,'').replace(/\s*\([^)]*\)/g,'').trim();
+}
+async function _fetchStopImage(name){
+  if(name in _imgData)return _imgData[name];
+  const q=_extractImageKeyword(name);
+  if(!q||q.length<4){_imgData[name]=null;return null;}
+  try{
+    const url='https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&generator=search&gsrsearch='+
+      encodeURIComponent(q)+'&gsrlimit=1&pithumbsize=500&format=json&origin=*';
+    const r=await fetch(url); if(!r.ok){_imgData[name]=null;return null;}
+    const d=await r.json();
+    const pages=Object.values((d.query&&d.query.pages)||{});
+    const img=(pages[0]&&pages[0].thumbnail&&pages[0].thumbnail.source)||null;
+    _imgData[name]=img;
+    try{localStorage.setItem(_IMG_LS,JSON.stringify(_imgData));}catch(e){}
+    return img;
+  }catch(e){_imgData[name]=null;return null;}
+}
+function _lon2tileX(lon,z){return Math.floor((lon+180)/360*Math.pow(2,z));}
+function _lat2tileY(lat,z){const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z));}
+function _tripTileUrls(state,cap){
+  const set=new Set();
+  const stops=(state.days||[]).flatMap(d=>d.stops||[]).filter(s=>s.lat&&s.lng);
+  for(const z of [5,9,12,14]) for(const s of stops){
+    const x=_lon2tileX(s.lng,z),y=_lat2tileY(s.lat,z);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)set.add('https://tile.openstreetmap.org/'+z+'/'+(x+dx)+'/'+(y+dy)+'.png');
+  }
+  return [...set].slice(0,cap||500);
+}
+async function _cachePut(cache,url,opts){
+  try{const r=await fetch(url,opts||{});if(r&&(r.ok||r.type==='opaque'))await cache.put(url,r);}catch(e){}
+}
+// Resolve the freshest full state for a trip: cloud (shared) -> local -> built-in.
+async function _resolveTripState(t){
+  const fns=[
+    async()=>{try{const r=await _fetchT(FB_DB+'/family/'+t.id+'/state.json?nc='+Date.now(),6000);if(r.ok){const s=await r.json();if(s&&s.days&&s.days.length)return s;}}catch(e){}return null;},
+    async()=>{try{const s=JSON.parse(localStorage.getItem('tripState_'+t.id)||'null');if(s&&s.days&&s.days.length)return s;}catch(e){}return null;},
+    async()=>{try{const r=await fetch('trips/'+t.id+'.json');if(r.ok){const s=await r.json();if(s&&s.days)return s;}}catch(e){}return null;}
+  ];
+  for(const fn of fns){const s=await fn();if(s)return s;}
+  return null;
+}
+async function saveTripOffline(id,ev){
+  if(ev){ev.preventDefault();ev.stopPropagation();}
+  const t=(_allTripsCache||[]).find(x=>x.id===id); if(!t)return;
+  const btn=document.getElementById('off-'+id);
+  if(btn){btn.disabled=true;btn.textContent='…';}
+  try{
+    const state=await _resolveTripState(t);
+    if(!state)throw new Error('no state');
+    localStorage.setItem('tripState_'+id,JSON.stringify(state));
+    const cache=await caches.open('seasons-offline');
+    const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest','leaf-logo.png','icon-192.png','icon-512.png',
+      'trip.html?id='+encodeURIComponent(id)+(t.shared?'&fam=1':'')];
+    await Promise.all(shell.map(u=>_cachePut(cache,u,{cache:'reload'})));
+    if(!t.local)await _cachePut(cache,'trips/'+id+'.json',{cache:'reload'});
+    const stops=(state.days||[]).flatMap(d=>d.stops||[]);
+    const imgs=[];
+    for(const s of stops){const u=s.customImage||await _fetchStopImage(s.name);if(u&&/^https?:/.test(u))imgs.push(u);}
+    const jobs=[...imgs,..._tripTileUrls(state,500)];
+    let done=0,i=0;const POOL=6;
+    async function worker(){while(i<jobs.length){const url=jobs[i++];await _cachePut(cache,url,{mode:'no-cors'});done++;if(btn)btn.textContent=Math.round(done/Math.max(1,jobs.length)*100)+'%';}}
+    await Promise.all(Array.from({length:POOL},worker));
+    localStorage.setItem('offline_'+id,'1');
+    loadTrips();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.innerHTML='&#11015;';}
+    alert('Could not save this trip offline. Open it once, or try again on a stronger connection.');
+  }
+}
+
 async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   grid.innerHTML='';
@@ -1108,9 +1195,11 @@ function renderTripsGrid(rawAll,hidden){
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
     else               ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#9998; Yours</span>';
     const safeTitle=t.title.replace(/'/g,"\\'");
+    const isOffline=localStorage.getItem('offline_'+t.id)==='1';
     const deleteBtn=isServer
       ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
       :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}','${safeTitle}',true)" title="Delete trip">&#128465;</button>`;
+    const offlineBtn=`<button id="off-${t.id}" class="card-delete" onclick="saveTripOffline('${t.id}',event)" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:13px;color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
     return`<a class="trip-card" href="trip.html?id=${t.id}${t.shared?'&fam=1':''}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
@@ -1119,11 +1208,13 @@ function renderTripsGrid(rawAll,hidden){
           ${t.dates?`<span class="trip-meta-pill">${t.dates}</span>`:''}
           <span class="trip-meta-pill">${t.days} Day${t.days!==1?'s':''}</span>
           ${ownerBadge}
+          ${isOffline?'<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#11015; Offline</span>':''}
         </div>
         <div class="trip-destinations">${(t.destinations||[]).map(d=>`<span class="dest-tag">${d}</span>`).join('')}</div>
       </div>
       <div class="trip-card-footer">
         <span class="view-btn" style="flex:1">View Itinerary &rarr;</span>
+        ${offlineBtn}
         ${deleteBtn}
       </div>
     </a>`;

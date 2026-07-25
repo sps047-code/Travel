@@ -405,9 +405,20 @@ async function renderDayMap(idx,fit=true){
   }
   let routeStops=startHotel?[startHotel,...day.stops]:day.stops.slice();
   if(endHotel)routeStops=[...routeStops,endHotel];   // draw the final leg to tonight's hotel
+  // GUARANTEED return leg: draw an explicit straight line from the last real
+  // stop to the end hotel, independent of the routing service, so the leg to the
+  // hotel is always visible even if OSRM omits it or fails.
+  if(endHotel){
+    for(let i=day.stops.length-1;i>=0;i--){ const s=day.stops[i]; if(_validLL(s)){ L.polyline([[s.lat,s.lng],[endHotel.lat,endHotel.lng]],{color:'#C1512D',weight:3,opacity:0.7,dashArray:'3,7'}).addTo(routeLayer); break; } }
+  }
   try{
     const rc=await fetchRoute(routeStops);
-    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
+    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
+      // Brief route summary = ground-truth of what was drawn (start/end hotel).
+      const _tail=endHotel?(' → '+(endHotel.name||'hotel').replace(/\s*[—–].*/,'').trim()):' (no return hotel)';
+      st.textContent='Route: '+(startHotel?((startHotel.name||'hotel').replace(/\s*[—–].*/,'').trim()+' → '):'')+day.stops.filter(s=>_validLL(s)).length+' stops'+_tail;
+      setTimeout(()=>{st.style.display='none'},6000);
+    }
     else{
       const ml=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
       if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);

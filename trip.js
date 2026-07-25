@@ -265,12 +265,20 @@ function _minsToStr(mins){
   return mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
 }
 function legLabel(a,b,mode){
-  if(!a.lat||!a.lng||!b.lat||!b.lng)return'';
+  if(!_validLL(a)||!_validLL(b))return'';
   const dist=haversine(a.lat,a.lng,b.lat,b.lng);
   if(dist<0.05)return'';
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
   const mins=_travelMins(dist,mode);
   return mi+' mi · '+_minsToStr(mins);
+}
+// Valid usable coordinates. Treats 0,0 (a real point off West Africa that stops
+// default to when a location is unknown) as missing, matching the old !lat check.
+function _validLL(s){return !!(s&&s.lat&&s.lng&&Math.abs(s.lat)<=90&&Math.abs(s.lng)<=180);}
+// Nearest stop (searching in `dir`) that has usable coordinates, starting at idx.
+function _legEndpoint(stops,idx,dir){
+  for(let i=idx;i>=0&&i<stops.length;i+=dir){ if(_validLL(stops[i]))return stops[i]; }
+  return null;
 }
 
 function makeIcon(num,color,isAlt){
@@ -675,7 +683,14 @@ function renderPanel(idx){
       const next=day.stops[si+1];
       const rawMode=s.transitMode||_defaultTransitMode(s,next);
       const tmode=rawMode==='subway'?'train':rawMode;
-      const leg=legLabel(s,next,tmode);
+      // Show the distance on the leg that ARRIVES at a real (coordinate-having)
+      // place, bridging back over coordinate-less waypoints (drives/fuel stops)
+      // so the drive distance appears once instead of some legs blank, some not.
+      let leg='';
+      if(_validLL(next)){
+        const from=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
+        if(from&&from!==next)leg=legLabel(from,next,tmode);
+      }
       const tzc=tzChangeLabel(s,next);
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
       if(leg||tzc){

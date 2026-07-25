@@ -1026,15 +1026,26 @@ function restoreHiddenTrips(){
 function lsGet(key,fallback){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}}
 
 const FB_DB='https://seasons-trips-default-rtdb.firebaseio.com';
+// fetch that rejects if it takes too long, so a slow/unreachable cloud can never
+// hang the home page.
+function _fetchT(url,ms){
+  return new Promise((resolve,reject)=>{
+    const ctrl=('AbortController' in window)?new AbortController():null;
+    const timer=setTimeout(()=>{ if(ctrl)ctrl.abort(); reject(new Error('timeout')); },ms);
+    fetch(url,{cache:'no-store',signal:ctrl?ctrl.signal:undefined})
+      .then(r=>{clearTimeout(timer);resolve(r);})
+      .catch(e=>{clearTimeout(timer);reject(e);});
+  });
+}
 // Fetch a lightweight card for every shared trip stored in the cloud.
 async function loadSharedTrips(){
-  const r=await fetch(FB_DB+'/family.json?shallow=true&nc='+Date.now(),{cache:'no-store'});
+  const r=await _fetchT(FB_DB+'/family.json?shallow=true&nc='+Date.now(),6000);
   if(!r.ok)return [];
   const ids=await r.json();
   if(!ids)return [];
   const cards=await Promise.all(Object.keys(ids).map(async id=>{
     try{
-      const sr=await fetch(FB_DB+'/family/'+id+'/state.json?nc='+Date.now(),{cache:'no-store'});
+      const sr=await _fetchT(FB_DB+'/family/'+id+'/state.json?nc='+Date.now(),6000);
       if(!sr.ok)return null;
       const st=await sr.json();
       if(!st||!st.title)return null;
@@ -1055,13 +1066,21 @@ async function loadTrips(){
   clearTimeout(loadTimeout);
   const local=lsGet('localTrips',[]);
   const hidden=lsGet('hiddenTrips',[]);
-  // Discover every SHARED trip from the cloud so all shared trips appear here,
-  // not just the ones built into the app or created on this device.
+  // Render the built-in + on-device trips IMMEDIATELY so a slow or unreachable
+  // cloud can never leave the home page blank.
+  renderTripsGrid([...serverTrips,...local],hidden);
+  // Then discover SHARED trips from the cloud and merge them in when they arrive.
   let sharedTrips=[];
   try{sharedTrips=await loadSharedTrips()}catch(e){}
   const knownIds=new Set([...serverTrips,...local].map(t=>t.id));
   const sharedExtra=sharedTrips.filter(t=>!knownIds.has(t.id));
-  const all=[...serverTrips,...local,...sharedExtra].filter(t=>!hidden.includes(t.id));
+  renderTripsGrid([...serverTrips,...local,...sharedExtra],hidden);
+}
+
+function renderTripsGrid(rawAll,hidden){
+  const grid=document.getElementById('trips-grid');
+  if(!grid)return;
+  const all=rawAll.filter(t=>!hidden.includes(t.id));
   _allTripsCache=all;
 
   if(all.length===0){

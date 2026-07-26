@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v120';
+window.APP_CODE_VERSION='v121';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -409,21 +409,10 @@ async function renderDayMap(idx,fit=true){
     }
   }
   let routeStops=startHotel?[startHotel,...day.stops]:day.stops.slice();
-  if(endHotel)routeStops=[...routeStops,endHotel];   // draw the final leg to tonight's hotel
-  // GUARANTEED return leg: draw an explicit straight line from the last real
-  // stop to the end hotel, independent of the routing service, so the leg to the
-  // hotel is always visible even if OSRM omits it or fails.
-  if(endHotel){
-    for(let i=day.stops.length-1;i>=0;i--){ const s=day.stops[i]; if(_validLL(s)){ L.polyline([[s.lat,s.lng],[endHotel.lat,endHotel.lng]],{color:'#C1512D',weight:3,opacity:0.7,dashArray:'3,7'}).addTo(routeLayer); break; } }
-  }
+  if(endHotel)routeStops=[...routeStops,endHotel];   // the road route ends at tonight's hotel
   try{
     const rc=await fetchRoute(routeStops);
-    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
-      // Brief route summary = ground-truth of what was drawn (start/end hotel).
-      const _tail=endHotel?(' → '+(endHotel.name||'hotel').replace(/\s*[—–].*/,'').trim()):' (no return hotel)';
-      st.textContent='Route: '+(startHotel?((startHotel.name||'hotel').replace(/\s*[—–].*/,'').trim()+' → '):'')+day.stops.filter(s=>_validLL(s)).length+' stops'+_tail;
-      setTimeout(()=>{st.style.display='none'},6000);
-    }
+    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
     else{
       const ml=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
       if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
@@ -1265,22 +1254,24 @@ function _durationToMins(str){
   if(!found){const n=s.match(/^(\d+)$/);if(n){mins=parseInt(n[1]);found=true;}}
   return found?Math.round(mins):null;
 }
+// Format a minute count as a duration chip string, e.g. 45→"45min", 60→"1hr",
+// 90→"1h 30min", 120→"2hrs".
+function _fmtDur(mins){
+  mins=Math.max(0,Math.round(mins));
+  const h=Math.floor(mins/60),m=mins%60;
+  if(h===0)return m+'min';
+  if(m===0)return h+(h===1?'hr':'hrs');
+  return h+'h '+m+'min';
+}
+// How long a stop occupies. The start→end SPAN is the source of truth; the
+// duration string is a calculated mirror of it. Fall back to a stored duration
+// only when there is no usable end time yet, then to a per-type default.
 function _stopVisitMins(s){
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
   const span=(st!=null&&et!=null&&et>st)?et-st:null;
+  if(span!=null)return span;
   const d=_durationToMins(s.duration);
-  const isTransit=['flight','train','bus'].includes(s.type);
-  // Transit (flights/trains/buses): the explicit start→arrival span is the truth.
-  // Normal activities: the DURATION chip the user sees and edits is the single
-  // source of truth — the end-time arrow is derived from it, so "45min" and the
-  // "12:08 → 12:53" arrow can never disagree.
-  if(isTransit){
-    if(span!=null)return span;
-    if(d!=null)return d;
-  }else{
-    if(d!=null)return d;
-    if(span!=null)return span;
-  }
+  if(d!=null)return d;
   return _VISIT_MINS[s.type]??60;
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.
@@ -1333,15 +1324,20 @@ function _healBadEndTimes(){
   const TR=['flight','train','bus'];
   state.days.forEach(day=>{
     (day.stops||[]).forEach(s=>{
-      if(!s.endTime||TR.includes(s.type))return;
-      const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
-      if(st==null||et==null)return;
-      // End before/equal to start, or absurdly long → rebuild from the visit length.
-      if(et<=st||et-st>1080){s.endTime=_formatTimeMins(st+_stopVisitMins(s));return;}
-      // An activity's end-time arrow must equal its duration chip. If the user set
-      // a duration (e.g. "45min") the arrow can't silently say 25min — reconcile it.
-      const d=_durationToMins(s.duration);
-      if(d!=null&&Math.abs((et-st)-d)>1)s.endTime=_formatTimeMins(st+d);
+      if(TR.includes(s.type))return;   // transit keeps its own arrival/duration
+      const st=_parseTimeMins(s.time);
+      if(st==null)return;              // untimed stop: nothing to compute from
+      let et=_parseTimeMins(s.endTime);
+      // Make sure a sane end time exists and is after the start. If it's missing
+      // or corrupt, seed it from any stored duration, else a per-type default.
+      if(et==null||et<=st||et-st>1080){
+        const d=_durationToMins(s.duration);
+        const span=(d!=null&&d>0&&d<=1080)?d:(_VISIT_MINS[s.type]??60);
+        et=st+span;
+        s.endTime=_formatTimeMins(et);
+      }
+      // duration is a CALCULATED field: always the start→end span.
+      s.duration=_fmtDur(et-st);
     });
   });
 }
@@ -1437,19 +1433,22 @@ function _recalcDayTimes(dayIdx,anchorMins){
     }
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
     s.time=_formatTimeMins(cur);
-    if(oldEt!=null){
-      const isTransit=['flight','train','bus'].includes(s.type);
+    const isTransit=['flight','train','bus'].includes(s.type);
+    if(isTransit){
       // Transit keeps its explicit start→arrival span (arrival time matters).
-      // A normal activity's end is ALWAYS start + its duration-driven visit length,
-      // so the end-time arrow can never disagree with the duration chip.
-      let span;
-      if(isTransit){
-        span=(oldSt!=null)?(oldEt-oldSt):null;
+      if(oldEt!=null){
+        let span=(oldSt!=null)?(oldEt-oldSt):null;
         if(span==null||span<=0||span>1080)span=_stopVisitMins(s);
-      }else{
-        span=_stopVisitMins(s);
+        s.endTime=_formatTimeMins(Math.min(cur+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
       }
-      if(span!=null)s.endTime=_formatTimeMins(Math.min(cur+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
+    }else{
+      // Activity: preserve its start→end span; end = new start + span; duration
+      // is the calculated mirror of that span.
+      let span=(oldSt!=null&&oldEt!=null&&oldEt>oldSt)?(oldEt-oldSt):_stopVisitMins(s);
+      span=Math.min(span,_MAX_VISIT_CASCADE);
+      const end=Math.min(cur+span,_DAY_END_CAP);
+      s.endTime=_formatTimeMins(end);
+      s.duration=_fmtDur(end-cur);
     }
   }
 }
@@ -1628,6 +1627,20 @@ function saveStop(){
   const _endTimeVal=(document.getElementById('f-endtime')?.value||'').trim()||undefined;
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  // Duration is a CALCULATED field for a normal activity: always the start→end
+  // span. If the user typed a duration but no end time, derive the end from it;
+  // otherwise the two times define the duration and any typed duration is ignored.
+  if(!['flight','train','bus'].includes(stopType)){
+    const _s=_parseTimeMins(stop.time);
+    let _e=_parseTimeMins(stop.endTime);
+    if(_s!=null){
+      if((_e==null||_e<=_s)){
+        const _d=_durationToMins(stop.duration);
+        if(_d!=null&&_d>0){ _e=_s+_d; stop.endTime=_formatTimeMins(_e); }
+      }
+      if(_e!=null&&_e>_s) stop.duration=_fmtDur(_e-_s);
+    }
+  }
   if(pendingDesc!==null){if(pendingDesc)stop.desc=pendingDesc;}
   else if(existingStop?.desc)stop.desc=existingStop.desc;
   if(existingStop?.openingHours)stop.openingHours=existingStop.openingHours;

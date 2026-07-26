@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v121';
+window.APP_CODE_VERSION='v122';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -410,14 +410,20 @@ async function renderDayMap(idx,fit=true){
   }
   let routeStops=startHotel?[startHotel,...day.stops]:day.stops.slice();
   if(endHotel)routeStops=[...routeStops,endHotel];   // the road route ends at tonight's hotel
+  // Draw a solid straight connector FIRST so a line is always visible even if the
+  // routing service is slow or down. When the road route comes back it's drawn on
+  // top and becomes the line you see. No dashed lines.
+  const straight=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
+  let fallbackLine=null;
+  if(straight.length>1)fallbackLine=L.polyline(straight,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer);
   try{
     const rc=await fetchRoute(routeStops);
-    if(rc){L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);st.style.display='none';}
-    else{
-      const ml=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
-      if(ml.length>1)L.polyline(ml,{color:'#C1512D',weight:2.5,opacity:0.5,dashArray:'6,6'}).addTo(routeLayer);
-      st.textContent='Showing approximate route';setTimeout(()=>{st.style.display='none'},3000);
+    if(rc){
+      // Real road route available — replace the straight connector with it.
+      if(fallbackLine)routeLayer.removeLayer(fallbackLine);
+      L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
     }
+    st.style.display='none';
   }catch(e){st.style.display='none'}
 }
 

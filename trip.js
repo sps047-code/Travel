@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v125';
+window.APP_CODE_VERSION='v126';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -791,7 +791,6 @@ function renderPanel(idx){
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
-    ((tripId==='london-scotland'&&day.stops.some(s=>/glenfinnan|glencoe/i.test(s.name||'')))?'<button class="ai-action-btn" style="background:var(--ruby);color:#fff" onclick="restoreScotlandDay7('+idx+')" title="Replace this day with your correct Stirling → Glenfinnan → Glencoe → Glasgow itinerary">&#8635; Restore Day 7</button>':'')+
     '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
@@ -1354,26 +1353,6 @@ function _errKey(e){return e.rule+'|'+e.msg;}
 function _showLogicError(errs){
   const lines=errs.map(e=>'• '+e.rule+' — '+e.msg).join('\n\n');
   try{alert('⚠️ Change NOT saved — it would create a physically impossible itinerary:\n\n'+lines+'\n\nYour previous itinerary was kept.');}catch(e){}
-}
-// The user's real Day 7, to restore after the auto-heal corruption. Built to be
-// physically feasible (top-speed reachable, in order) so it passes the gate.
-const _SCOTLAND_DAY7=[
-  {name:'Stirling Castle',type:'hike',time:'9:30 AM',endTime:'10:45 AM',lat:56.1237,lng:-3.9480,notes:'Opens ~9:30 AM. Royal Palace, Great Hall, views over the Forth Valley.'},
-  {name:'Lunch — quick bite (Tyndrum)',type:'food',time:'11:45 AM',endTime:'12:05 PM',lat:56.4386,lng:-4.7136,notes:'Quick bite on the A82 heading northwest — keep it short to make the viaduct.'},
-  {name:'Glenfinnan Viaduct',type:'hike',time:'1:20 PM',endTime:'2:20 PM',lat:56.8758,lng:-5.4310,notes:'Westbound Jacobite steam train crosses ~1:20 PM — verify exact 2026 times.'},
-  {name:'Glencoe',type:'hike',time:'3:15 PM',endTime:'4:15 PM',lat:56.6779,lng:-5.0974,notes:'The Three Sisters — dark, brooding, unforgettable.'},
-  {name:'Highland Cattle — Loch Lomond',type:'hike',time:'5:30 PM',endTime:'6:00 PM',lat:56.1006,lng:-4.6389,notes:'Shaggy Highland cattle along Loch Lomond near Luss.'},
-  {name:'Glasgow City Walk',type:'hike',time:'7:00 PM',endTime:'8:00 PM',lat:55.8609,lng:-4.2514,notes:'Stroll the Merchant City / George Square.'},
-  {name:'Dinner — Café Gandolfi',type:'food',time:'8:15 PM',endTime:'9:30 PM',lat:55.8583,lng:-4.2447,notes:'64 Albion St, Merchant City.'},
-  {name:'Hub by Premier Inn Edinburgh',type:'lodge',time:'10:30 PM',endTime:'11:00 PM',lat:55.9525,lng:-3.1986,notes:'Back to Edinburgh for the night.'},
-];
-function restoreScotlandDay7(idx){
-  const day=state.days[idx];if(!day)return;
-  if(!confirm('Replace Day '+(idx+1)+' with your correct itinerary?\n\nStirling Castle → lunch (Tyndrum) → Glenfinnan Viaduct (1:20 PM) → Glencoe → Highland cattle at Loch Lomond → Glasgow city walk → dinner at Café Gandolfi → hotel in Edinburgh.\n\nThis overwrites the current Day '+(idx+1)+'.'))return;
-  day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
-  saveState('Restored Day '+(idx+1));
-  renderAll();
-  if(idx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.
 function _legTravelMins(a,b){

@@ -235,6 +235,31 @@ test('fetchDayWeather never shows 0°F when the API has no reading', async () =>
   assert.equal(wx.wxType, 'climateAvg', 'a missing reading falls back to the climate-avg estimate');
 });
 
+test('moving a stop never sends the first stop past midnight (untimed first stop)', () => {
+  const move = fn('moveStop');
+  const p = fn('_parseTimeMins');
+  ctx.renderAll = () => {}; ctx.renderDayMap = () => {}; ctx.alert = () => {};
+  ctx.state = { tripType: 'solo', days: [{ title: 'D', stops: [
+    { name: 'A', type: 'hike', lat: 56.12, lng: -3.94 },                                  // untimed first stop
+    { name: 'B', type: 'food', time: '12:00 PM', endTime: '12:45 PM', lat: 56.4, lng: -4.7 },
+    { name: 'C', type: 'hike', time: '3:00 PM', endTime: '4:00 PM', lat: 56.8, lng: -5.4 },
+  ] }] };
+  move(0, 2, -1); // move C up
+  const first = p(ctx.state.days[0].stops[0].time);
+  assert.ok(first >= 240, 'first stop must be at/after 4 AM, got ' + ctx.state.days[0].stops[0].time);
+});
+
+test('_recalcDayTimes clamps an absurd sub-4AM anchor to a sane morning', () => {
+  const recalc = fn('_recalcDayTimes');
+  const p = fn('_parseTimeMins');
+  ctx.state = { days: [{ stops: [
+    { name: 'A', type: 'hike', lat: 56.12, lng: -3.94 },
+    { name: 'B', type: 'hike', time: '2:00 PM', lat: 56.8, lng: -5.4 },
+  ] }] };
+  recalc(0, 5); // 5 minutes past midnight — absurd
+  assert.ok(p(ctx.state.days[0].stops[0].time) >= 240, 'first stop clamped to >= 4 AM');
+});
+
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {
   const heal = fn('_healBadEndTimes');
   const state = { days: [{ stops: [{ name: 'Cafe', type: 'food', time: '12:08 PM', endTime: '12:33 PM', duration: '45min' }] }] };

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v129';
+window.APP_CODE_VERSION='v130';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1414,12 +1414,10 @@ function _legTravelMins(a,b){
 function _dayStartAnchor(stops){
   if(!stops||!stops.length)return 540;
   const first=_parseTimeMins(stops[0].time);
-  if(first!=null&&first>=240)return first;          // 4:00 AM+ = a genuine start
-  if(first==null){
-    const sane=stops.map(s=>_parseTimeMins(s.time)).filter(t=>t!=null&&t>=240);
-    if(sane.length)return Math.min(...sane);
-  }
-  return 540;                                       // absurdly early / untimed → 9:00 AM
+  if(first!=null&&first>=240)return first;          // first stop has a genuine (>=4 AM) start
+  return 540;                                       // untimed/unparseable/absurd first stop → 9:00 AM.
+  // NOTE: never inherit a LATER stop's time as the anchor — that jumped the first
+  // stop to noon (and, in older code, wrapped past midnight). 9:00 AM is the sane default.
 }
 // Heal any day whose (non-transit) first stop is absurdly early — a corruption
 // signature — by recomputing its timeline from a sane 9:00 AM start.
@@ -1551,6 +1549,8 @@ function _recalcDayTimes(dayIdx,anchorMins){
   const stops=day.stops;
   let cur=(anchorMins!=null&&anchorMins>=0)?anchorMins:_dayStartAnchor(stops);
   if(cur>_DAY_END_CAP)cur=_DAY_END_CAP;
+  if(cur<240)cur=540;   // HARD CLAMP: the day can never start before 4 AM. This makes
+                        // "move a stop → first stop jumps to right after midnight" impossible.
   for(let i=0;i<stops.length;i++){
     const s=stops[i];
     if(i>0){

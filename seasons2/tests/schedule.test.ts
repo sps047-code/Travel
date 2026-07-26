@@ -10,11 +10,11 @@ let n = 0;
 function stop(p: Partial<Stop> & { type?: StopType }): Stop {
   return {
     id: `s${n++}`,
-    name: p.name ?? 'Stop',
-    type: p.type ?? 'sight',
-    location: p.location ?? null,
-    startTime: p.startTime ?? null,
-    endTime: p.endTime ?? null,
+    name: 'Stop',
+    type: 'sight',
+    location: null,
+    startTime: null,
+    endTime: null,
     ...p,
   };
 }

@@ -1,0 +1,21 @@
+:root {
+  --ink: #1a2332;
+  --ink-soft: #3a4656;
+  --muted: #8a8577;
+  --paper: #fdfcfa;
+  --mist: #f2efe9;
+  --border: #e4ded3;
+  --ruby: #c23b3b;
+  --amber: #c47b20;
+  --pine: #2e7d52;
+  --river: #2b6cb0;
+  --radius: 12px;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--mist); color: var(--ink); font-family: var(--font-ui); }
+body { -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+button { font-family: inherit; cursor: pointer; }
+a { color: var(--river); }

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v130';
+window.APP_CODE_VERSION='v131';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -937,6 +937,18 @@ async function downloadTripOffline(){
 const NARR_LS='day_narr_v1';
 let narrData={};
 try{narrData=JSON.parse(localStorage.getItem(NARR_LS)||'{}')}catch(e){}
+// Purge any briefing cached with the old "0°F" weather artifact (the forecast-null
+// bug baked "High 0°F / Low 0°F" into the cached text). Deleting it forces a fresh
+// briefing with the corrected weather on next view. Runs once at load.
+function _purgeStaleWeatherNarratives(){
+  try{
+    let changed=false;
+    for(const k in narrData){ if(/0°F/.test(narrData[k]||'')){ delete narrData[k]; changed=true; } }
+    if(changed)localStorage.setItem(NARR_LS,JSON.stringify(narrData));
+    return changed;
+  }catch(e){ return false; }
+}
+_purgeStaleWeatherNarratives();
 
 const WX_ICONS={0:'☀️',1:'🌤️',2:'🌤️',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌦️',63:'🌧️',65:'🌧️',71:'🌨️',73:'❄️',75:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',85:'🌨️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
 const WX_LABELS={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Freezing fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',80:'Rain showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};

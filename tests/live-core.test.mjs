@@ -207,6 +207,20 @@ test('_fixScotlandDay7Once replaces the corrupted Day 7 once, feasibly', () => {
   assert.equal(fixOnce(), false, 'must never run a second time');
 });
 
+test('fetchDayWeather never shows 0°F when the API has no reading', async () => {
+  const fdw = fn('fetchDayWeather');
+  // Simulate the forecast API returning a row with NO temperature (the 0°F bug).
+  ctx.fetch = async () => ({ ok: true, json: async () => ({ daily: {
+    temperature_2m_max: [null], temperature_2m_min: [null], weathercode: [null],
+    precipitation_probability_max: [null], precipitation_sum: [null],
+  } }) });
+  const day = { subtitle: 'Mon, Aug 10, 2026 · Glenfinnan', stops: [{ name: 'Glenfinnan', lat: 56.8758, lng: -5.431 }] };
+  const wx = await fdw(day);
+  assert.ok(wx, 'should return a weather object');
+  assert.notEqual(wx.hi, 0, 'must never display 0°F');
+  assert.equal(wx.wxType, 'climateAvg', 'a missing reading falls back to the climate-avg estimate');
+});
+
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {
   const heal = fn('_healBadEndTimes');
   const state = { days: [{ stops: [{ name: 'Cafe', type: 'food', time: '12:08 PM', endTime: '12:33 PM', duration: '45min' }] }] };

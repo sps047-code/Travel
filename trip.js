@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v127';
+window.APP_CODE_VERSION='v128';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -990,25 +990,32 @@ async function fetchDayWeather(day){
   if(!coords)return null;
   const today=new Date();today.setHours(0,0,0,0);
   const diffDays=Math.round((date-today)/86400000);
-  if(diffDays>16)return{tooFarOut:true,wxType:'climateAvg',month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng};
+  // Climate-average estimate fallback — used when a date is beyond the forecast
+  // horizon OR the API returns a row with no real temperature (which used to be
+  // rounded to a nonsensical 0°F).
+  const climateAvg=()=>({tooFarOut:true,wxType:'climateAvg',month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng});
+  if(diffDays>16)return climateAvg();
   const ds=date.toISOString().slice(0,10);
   if(diffDays<0){
     try{
       const r=await fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
-      if(!r.ok)return null;
+      if(!r.ok)return climateAvg();
       const d=await r.json();
-      if(!d.daily?.temperature_2m_max?.length)return null;
-      const precip=d.daily.precipitation_sum[0];
-      return{hi:Math.round(d.daily.temperature_2m_max[0]),lo:Math.round(d.daily.temperature_2m_min[0]),precip:precip!=null?Math.round(precip*10)/10:null,precipUnit:'mm',code:d.daily.weathercode[0],wxType:'historical',tooFarOut:false};
-    }catch(e){return null;}
+      const hi=d.daily?.temperature_2m_max?.[0], lo=d.daily?.temperature_2m_min?.[0];
+      if(hi==null||lo==null)return climateAvg();   // no real reading → estimate, NEVER 0°F
+      const precip=d.daily.precipitation_sum?.[0];
+      return{hi:Math.round(hi),lo:Math.round(lo),precip:precip!=null?Math.round(precip*10)/10:null,precipUnit:'mm',code:d.daily.weathercode?.[0],wxType:'historical',tooFarOut:false};
+    }catch(e){return climateAvg();}
   }
   try{
-    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
-    if(!r.ok)return null;
+    // forecast_days=16 so dates up to ~2 weeks out actually return data.
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&temperature_unit=fahrenheit&forecast_days=16&start_date='+ds+'&end_date='+ds);
+    if(!r.ok)return climateAvg();
     const d=await r.json();
-    if(!d.daily?.temperature_2m_max?.length)return null;
-    return{hi:Math.round(d.daily.temperature_2m_max[0]),lo:Math.round(d.daily.temperature_2m_min[0]),precip:d.daily.precipitation_probability_max[0],code:d.daily.weathercode[0],wxType:'forecast',tooFarOut:false};
-  }catch(e){return null;}
+    const hi=d.daily?.temperature_2m_max?.[0], lo=d.daily?.temperature_2m_min?.[0];
+    if(hi==null||lo==null)return climateAvg();   // forecast has no reading for this date → estimate, NEVER 0°F
+    return{hi:Math.round(hi),lo:Math.round(lo),precip:d.daily.precipitation_probability_max?.[0],code:d.daily.weathercode?.[0],wxType:'forecast',tooFarOut:false};
+  }catch(e){return climateAvg();}
 }
 
 const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Climate Avg". End the weather line with the label "Climate Avg". Estimate typical weather for this location and time of year. (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';

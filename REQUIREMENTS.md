@@ -3,6 +3,19 @@
 > **Status:** Draft v1 for your review. This is the contract for the from-scratch rebuild.
 > Nothing gets built until you've read this and told me what's wrong or missing.
 > Derived from a complete catalog of the existing app so no feature is lost.
+>
+> **Amendments — reflecting live app v121:**
+> - **Duration is derived, not stored.** The (startTime, endTime) pair is canonical; the
+>   duration chip is always computed = endTime − startTime (§1 P1, §3 Stop, §7).
+> - **Day-map route ends at tonight's hotel, drawn on the road.** The route runs from the
+>   start hotel, through the stops, to the end hotel using the routing service — no straight
+>   dashed leg (§4.5).
+> - **Opening hours load by default.** Auto-filled on day view without asking the AI; real
+>   OpenStreetMap hours are kept even when the AI estimate is unavailable (§4.7).
+> - **Version badge reports the running code version**, stamped inside the JS — not the
+>   service-worker cache name — so a stale build shows its true (old) number (§1 P9, §8).
+> - **No feature hidden by screen size without cause** — e.g. the "Near Me" button now
+>   shows on tablet as well as phone (§8).
 
 ---
 
@@ -26,6 +39,9 @@ No fact may be stored in two fields that can disagree. The current app stores vi
 length as *both* `duration` and `endTime`; a coordinate as *both* `lat/lng` and
 `destLat/destLng`; a day's date only inside a free-text `subtitle`. All of these drifted.
 The rebuild stores each fact once and *derives* everything else on read.
+For visit length specifically, the chosen canonical is the **(startTime, endTime) pair**;
+**duration is a derived value = endTime − startTime** (v121). A duration a user types is
+only a convenience for setting endTime, never a stored competitor.
 
 **P2 — Validate on write, never heal on read.**
 Bad data must be rejected at the moment it is written, not saved and patched later.
@@ -56,7 +72,9 @@ Supporting principles:
 - **P8 — No silent external failures made visible.** Every third-party call (geocoding,
   routing, AI, weather) degrades gracefully and, when it matters, tells the user.
 - **P9 — Honest versioning.** One version string, shown in the header, that always
-  reflects the running build.
+  reflects the **running code** — stamped inside the JavaScript, not read from the
+  service-worker cache name. A stale build must show its true (old) number, never
+  masquerade as current (v121).
 
 ---
 
@@ -129,10 +147,19 @@ type          [canonical]  one of: sight, food, lodging, hike, beach, shop, tour
 location      [canonical]  { lat, lng, geocodedFrom, verified } — ONE coordinate per stop.
                            geocodedFrom = the name string that produced it; verified =
                            user confirmed. destLat/destLng ELIMINATED.
-startTime     [canonical]  ISO time-of-day, or null (untimed)
-visitMinutes  [canonical]  integer minutes — THE single visit-length source.
-                           "duration" string and "endTime" ELIMINATED as stored fields.
-endTime       [derived]    startTime + visitMinutes
+startTime     [canonical]  clock time the stop begins, or null (untimed)
+endTime       [canonical]  clock time the stop ends. The (startTime, endTime) PAIR is the
+                           source of truth for how long a stop lasts. (v121 decision:
+                           times are canonical, duration is the derived value — reversed
+                           from the earlier draft that made visitMinutes canonical.)
+duration      [derived]    endTime − startTime, shown as the visit-length chip; recomputed
+                           whenever a time changes or a stop is moved, so the chip can
+                           never disagree with the times. On ENTRY a typed duration is a
+                           convenience that SETS endTime (endTime = startTime + duration)
+                           and is then discarded as an input — never stored as a second
+                           source. Untimed stops fall back to a per-type default length
+                           only for the schedule cascade. "visitMinutes"/stored "duration"
+                           ELIMINATED as canonical fields.
 transitMode   [canonical]  only for transit stops: walk|drive|train|bus|flight
 notes         [canonical]
 reservation   [canonical]  confirmation #
@@ -175,9 +202,10 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
 
 ### 4.3 Stop CRUD
 - Add/edit modal: name (+ live geocode search), type, date (routes to matching day),
-  start time, visit length, stars, notes, reservation, transit from/to + airline/flight,
-  url, audio url, alternate flag, photo upload, ticket upload (+ AI reservation OCR),
-  AI description, transit mode, traveler attendance.
+  start time, **end time (duration shown is derived from the two, not a separate input;
+  a typed duration only sets the end time)**, stars, notes, reservation, transit from/to +
+  airline/flight, url, audio url, alternate flag, photo upload, ticket upload (+ AI
+  reservation OCR), AI description, transit mode, traveler attendance.
 - Move up/down — **recalculates the whole day** (times + travel) keeping order valid (§5).
 - Delete (remembering auto-arrival dismissals). Copy to another day (lodging→next-day origin).
 - Day CRUD: add, remove, move, drag-reorder.
@@ -188,7 +216,10 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
   opening-hours (closed today / before open / near close). Shown as badges + overview dots.
 
 ### 4.5 Map
-- Per-day map: driving route + flight arcs, start-hotel origin, drop coordinate outliers.
+- Per-day map: driving route + flight arcs, drop coordinate outliers.
+- **Route runs start hotel → stops → tonight's hotel**, drawn on the road by the routing
+  service (no straight dashed leg). Both hotels shown as distinct markers; a round-trip
+  (same base hotel start and end) draws one marker and closes the loop back to it. (v121)
 - Overview map: all stops, day-numbered pins.
 - **The map always matches the itinerary** (P/A6) — updates on every add/edit/delete/move.
 
@@ -198,7 +229,10 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
 
 ### 4.7 Opening hours
 - Real hours by name-match (OpenStreetMap) → optional Google Places → AI estimate (labeled
-  "est."). User override. Auto-load on day view. One representation (§3), status derived.
+  "est."). User override. One representation (§3), status derived.
+- **Load by default, no Ask AI needed** (v121): hours auto-fill on day view and keep
+  retrying quietly until every place is covered. Real OpenStreetMap hours are saved and
+  shown **even when the AI estimate is unavailable** — an AI outage never blanks the day.
 
 ### 4.8 Ask AI (feasibility, plain language, protected)
 - **Optimize Day**: feasibility judged on *can it be done* — open hours, mode, traffic,
@@ -244,7 +278,8 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
 - **I5** A stop's coordinate must be consistent with its name's geocode within a tolerance,
   or it is corrected (P3) — never saved wrong.
 - **I6** "Tonight's hotel" is a lodging stop, never a meal/activity, never a future day's.
-- **I7** endTime = startTime + visitMinutes, always (derived, so unbreakable).
+- **I7** The duration chip = endTime − startTime, always (derived from the canonical time
+  pair, so the chip and the times can never disagree).
 - **I8** Leg distance uses the stop's single coordinate (no second source).
 - **I9** A remote/AI write that fails any invariant is rejected, not adopted.
 
@@ -269,7 +304,8 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
 - Distance: haversine (miles).
 - Travel time by mode: flight ≈ miles/8; train, bus, walk factors; drive = miles × 1.25
   road factor, then adaptive mph (65/55/40/20 by distance band).
-- Visit length = `visitMinutes` (single source), default by type when unset.
+- Visit length = endTime − startTime (derived); per-type default only when a stop is
+  untimed. The schedule cascade preserves each stop's span and re-derives its duration.
 - Cascade: day anchor + Σ(visit + travel), each capped, never crossing midnight (I3).
 - Feasibility: earliest arrival = prev departure + travel; flag when a start precedes it.
 - **All of the above are pure functions with unit tests** (P5).
@@ -284,6 +320,10 @@ Each is a testable statement. Grouped by area. (Catalog-complete; ask if anythin
 - **Offline:** service worker caches shell + saved trips + tiles; navigation works offline.
 - **Accessibility:** buttons labeled; keyboard/Escape closes modals; adequate contrast.
 - **Resilience:** every external dependency (geocode, routing, AI, weather, image) fails soft.
+- **Versioning:** the header shows the running code's version (P9), stamped in the JS and
+  bumped with each release; it never reports the cache name.
+- **Responsive parity:** features are not hidden by screen size without a real reason;
+  tablet and phone expose the same controls (e.g. "Near Me" shows on both) (v121).
 
 ---
 
@@ -295,7 +335,7 @@ Mapped from the current app's known corruption classes → the rule that kills e
 |---|---|
 | Moved stop lands at 1:30 / 2:26 AM (midnight wrap) | I3 + cascade caps + tests (P5) |
 | Rosslyn Chapel coordinate drifts ~90 mi (wrong pin, "20 mi" leg) | G1–G3, I5 |
-| `duration` vs `endTime` disagree | P1, I7 (endTime derived) |
+| `duration` vs `endTime` disagree | P1, I7 (duration derived from the time pair) |
 | `lat/lng` vs `destLat/destLng` disagree | P1, I8 (one coordinate) |
 | `dayHours` vs `openingHours` disagree | P1 (one hours field) |
 | Date parsing breaks weather/journal/day-of-week | A4 (structured date) |
@@ -305,7 +345,9 @@ Mapped from the current app's known corruption classes → the rule that kills e
 | Family last-writer clobber | A5 (merge sync) |
 | Malformed remote write wipes itinerary | I9 + validation |
 | Journal notes desync across devices | 4.11 (synced, id-keyed) |
-| "Which version am I on?" ambiguity | P9 (one version string) |
+| "Which version am I on?" ambiguity | P9 (badge = running code version, not cache) |
+| Stale build masquerading as current (iPad showed v118, ran old code) | P9 (JS-stamped version) |
+| Feature missing on one device by screen size (Near Me on iPad) | §8 responsive parity |
 | Heal-on-read masking persisted corruption | P2 (no persisted corruption to heal) |
 
 ---

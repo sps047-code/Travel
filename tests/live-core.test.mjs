@@ -46,7 +46,7 @@ const sandbox = {
   setTimeout: () => 0, clearTimeout: noop, setInterval: () => 0, clearInterval: noop,
   requestAnimationFrame: () => 0, queueMicrotask: noop,
   ResizeObserver: class { observe() {} disconnect() {} unobserve() {} },
-  location: { search: '', pathname: '/Travel/trip.html', href: 'https://x/Travel/trip.html', origin: 'https://x', reload: noop },
+  location: { search: '?id=london-scotland', pathname: '/Travel/trip.html', href: 'https://x/Travel/trip.html', origin: 'https://x', reload: noop },
   navigator: { serviceWorker: { register: async () => ({}), addEventListener: noop }, onLine: true, userAgent: 'node' },
   localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
   fetch: async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' }),
@@ -185,6 +185,26 @@ test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0mi
   // Before the fix, a "77 mi" leg was drawn into the Drive stop while its start
   // sat 0 min after lunch — the "77 mi in 0 min" nonsense. It must be gone.
   assert.ok(!/77\s*mi/.test(html), 'a 77 mi leg is still drawn into the drive stop');
+});
+
+test('_fixScotlandDay7Once replaces the corrupted Day 7 once, feasibly', () => {
+  const fixOnce = fn('_fixScotlandDay7Once');
+  const le = fn('_logicErrors');
+  ctx.localStorage = { _m: new Map(), getItem(k) { return this._m.has(k) ? this._m.get(k) : null; }, setItem(k, v) { this._m.set(k, String(v)); }, removeItem(k) { this._m.delete(k); } };
+  ctx.state = { tripType: 'family', days: [
+    { title: 'Day 6', stops: [{ name: 'Somewhere', type: 'hike', time: '9:00 AM', lat: 55.9, lng: -3.2 }] },
+    { title: 'Day 7', stops: [
+      { name: 'Rosslyn Chapel', type: 'food', time: '9:30 AM', lat: 56.6779, lng: -5.0974 },
+      { name: 'Glenfinnan Viaduct', type: 'hike', time: '11:00 AM', lat: 56.8758, lng: -5.431 },
+    ] },
+  ] };
+  assert.equal(fixOnce(), true, 'should replace the corrupted Day 7');
+  const d7 = ctx.state.days[1];
+  assert.equal(d7.stops[0].name, 'Stirling Castle');
+  assert.equal(d7.stops.length, 8);
+  assert.equal(le(ctx.state).length, 0, 'corrected trip must be feasible: ' + JSON.stringify(le(ctx.state)));
+  ctx.localStorage.setItem('day7_corrected_v1', '1');
+  assert.equal(fixOnce(), false, 'must never run a second time');
 });
 
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {

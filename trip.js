@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v126';
+window.APP_CODE_VERSION='v127';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1354,6 +1354,33 @@ function _showLogicError(errs){
   const lines=errs.map(e=>'• '+e.rule+' — '+e.msg).join('\n\n');
   try{alert('⚠️ Change NOT saved — it would create a physically impossible itinerary:\n\n'+lines+'\n\nYour previous itinerary was kept.');}catch(e){}
 }
+// ONE-TIME correction of the Scotland Day 7 that the earlier auto-heal corrupted.
+// Runs at most once per device (guarded by a flag), replaces the day with the
+// user's real itinerary, then never touches it again. NOT a standing feature —
+// a single repair. Feasible by construction, so the logic gate accepts it.
+const _SCOTLAND_DAY7=[
+  {name:'Stirling Castle',type:'hike',time:'9:30 AM',endTime:'10:45 AM',lat:56.1237,lng:-3.9480,notes:'Opens ~9:30 AM. Royal Palace, Great Hall, views over the Forth Valley.'},
+  {name:'Lunch — quick bite (Tyndrum)',type:'food',time:'11:45 AM',endTime:'12:05 PM',lat:56.4386,lng:-4.7136,notes:'Quick bite on the A82 heading northwest — keep it short to make the viaduct.'},
+  {name:'Glenfinnan Viaduct',type:'hike',time:'1:20 PM',endTime:'2:20 PM',lat:56.8758,lng:-5.4310,notes:'Westbound Jacobite steam train crosses ~1:20 PM — verify exact 2026 times.'},
+  {name:'Glencoe',type:'hike',time:'3:15 PM',endTime:'4:15 PM',lat:56.6779,lng:-5.0974,notes:'The Three Sisters — dark, brooding, unforgettable.'},
+  {name:'Highland Cattle — Loch Lomond',type:'hike',time:'5:30 PM',endTime:'6:00 PM',lat:56.1006,lng:-4.6389,notes:'Shaggy Highland cattle along Loch Lomond near Luss.'},
+  {name:'Glasgow City Walk',type:'hike',time:'7:00 PM',endTime:'8:00 PM',lat:55.8609,lng:-4.2514,notes:'Stroll the Merchant City / George Square.'},
+  {name:'Dinner — Café Gandolfi',type:'food',time:'8:15 PM',endTime:'9:30 PM',lat:55.8583,lng:-4.2447,notes:'64 Albion St, Merchant City.'},
+  {name:'Hub by Premier Inn Edinburgh',type:'lodge',time:'10:30 PM',endTime:'11:00 PM',lat:55.9525,lng:-3.1986,notes:'Back to Edinburgh for the night.'},
+];
+function _fixScotlandDay7Once(){
+  try{
+    if(tripId!=='london-scotland')return false;
+    if(localStorage.getItem('day7_corrected_v1')==='1')return false;
+    const di=(state.days||[]).findIndex(d=>(d.stops||[]).some(s=>/glenfinnan|glencoe/i.test(s.name||'')));
+    if(di<0)return false;
+    const day=state.days[di];
+    const already=day.stops[0]&&/stirling castle/i.test(day.stops[0].name||'')&&day.stops.some(s=>/gandolfi/i.test(s.name||''));
+    if(already){ try{localStorage.setItem('day7_corrected_v1','1');}catch(e){} return false; }
+    day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
+    return true; // caller persists and sets the flag
+  }catch(e){ return false; }
+}
 // Travel time between two consecutive stops, matching the leg-connector logic.
 function _legTravelMins(a,b){
   if(!a||!b)return 15;
@@ -2515,6 +2542,7 @@ function _watchFamily(){
         state=data.state;
         try{ _sortAllDaysByTime(); }catch(e){}
         try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
+        try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // re-apply after adopting a still-corrupt cloud copy
         try{ if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
@@ -4217,6 +4245,7 @@ async function init(){
               state=data.state; if(!state.tripType)state.tripType='family';
               try{ _sortAllDaysByTime(); }catch(e){}
               try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
+              try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // re-apply after adopting a still-corrupt cloud copy
               try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
               renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
@@ -4257,6 +4286,7 @@ async function init(){
 
   try{ _sortAllDaysByTime(); }catch(e){}
   try{ _seedLogicBaseline(); }catch(e){}   // baseline = the itinerary as loaded (gate blocks only NEW impossibilities)
+  try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // one-time Day 7 repair (locks once confirmed correct)
   try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
   try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;

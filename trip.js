@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v128';
+window.APP_CODE_VERSION='v129';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1348,10 +1348,12 @@ function _logicErrors(st){
       }
       prev=s;
       const e=_parseTimeMins(s.endTime);
-      // Objective only: you can't leave before you arrive, and if you stated an
-      // end time you're there until then. NEVER assume a visit length (that's a
-      // "should", not physics) — so with no end time, allow leaving immediately.
-      prevDepart=(e!=null&&e>t)?e:t;
+      const dur=_durationToMins(s.duration);
+      // Departure = the DECLARED end of the visit: an explicit end time, else
+      // start + the stop's stated duration. Both are the plan, not a guess. Only
+      // when neither is given do we permit leaving immediately (no assumption).
+      // (This is the fix for "45-min stop ends 5:15, yet next stop at 5:30".)
+      prevDepart=(e!=null&&e>t)?e:(dur!=null&&dur>0?t+dur:t);
     }
   });
   return errs;
@@ -1378,14 +1380,19 @@ const _SCOTLAND_DAY7=[
 function _fixScotlandDay7Once(){
   try{
     if(tripId!=='london-scotland')return false;
-    if(localStorage.getItem('day7_corrected_v1')==='1')return false;
     const di=(state.days||[]).findIndex(d=>(d.stops||[]).some(s=>/glenfinnan|glencoe/i.test(s.name||'')));
     if(di<0)return false;
     const day=state.days[di];
-    const already=day.stops[0]&&/stirling castle/i.test(day.stops[0].name||'')&&day.stops.some(s=>/gandolfi/i.test(s.name||''));
-    if(already){ try{localStorage.setItem('day7_corrected_v1','1');}catch(e){} return false; }
+    // Only correct an INFEASIBLE Day 7. The logic gate refuses to save an
+    // infeasible day, so the only one that can exist is this leftover corruption
+    // — a feasible day (whatever the user has arranged) is never touched. This
+    // self-limits: once replaced with the feasible itinerary it has no errors, so
+    // it is never replaced again.
+    let errs=[];
+    try{ errs=_logicErrors({days:[day]}); }catch(e){}
+    if(errs.length===0)return false;
     day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
-    return true; // caller persists and sets the flag
+    return true;
   }catch(e){ return false; }
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.

@@ -141,6 +141,19 @@ test('_logicErrors: 77 mi with only 15 min → blocked as Impossible travel', ()
   assert.equal(errs[0].rule, 'Impossible travel');
 });
 
+test('_logicErrors: a 45-min stop ending 5:15 cannot reach Glasgow by 5:30', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [{ stops: [
+    // ~28 mi apart, matching the real stops; a 45-min visit from 4:30 departs 5:15,
+    // and 28 mi cannot be covered in the 15 min before a 5:30 arrival even at top speed.
+    { name: 'Highland Cattle & Loch Lomond', type: 'hike', time: '4:30 PM', duration: '45min', lat: 56.20, lng: -4.65 },
+    { name: 'Glasgow City Walk', type: 'hike', time: '5:30 PM', lat: 55.8609, lng: -4.2514 },
+  ] }] };
+  const errs = le(st);
+  assert.ok(errs.some((e) => e.rule === 'Impossible travel'),
+    'must flag 4:30 PM + 45min visit → 5:30 PM arrival: ' + JSON.stringify(errs));
+});
+
 test('_logicErrors: stops out of time order are flagged', () => {
   const le = fn('_logicErrors');
   const st = { days: [{ stops: [
@@ -194,11 +207,12 @@ test('_fixScotlandDay7Once replaces the corrupted Day 7 once, feasibly', () => {
   ctx.state = { tripType: 'family', days: [
     { title: 'Day 6', stops: [{ name: 'Somewhere', type: 'hike', time: '9:00 AM', lat: 55.9, lng: -3.2 }] },
     { title: 'Day 7', stops: [
-      { name: 'Rosslyn Chapel', type: 'food', time: '9:30 AM', lat: 56.6779, lng: -5.0974 },
-      { name: 'Glenfinnan Viaduct', type: 'hike', time: '11:00 AM', lat: 56.8758, lng: -5.431 },
+      // Infeasible: ~112 mi apart (Edinburgh to the NW Highlands) with only 15 min between them.
+      { name: 'Rosslyn Chapel', type: 'food', time: '9:30 AM', lat: 55.8553, lng: -3.16 },
+      { name: 'Glenfinnan Viaduct', type: 'hike', time: '9:45 AM', lat: 56.8758, lng: -5.431 },
     ] },
   ] };
-  assert.equal(fixOnce(), true, 'should replace the corrupted Day 7');
+  assert.equal(fixOnce(), true, 'should replace the infeasible Day 7');
   const d7 = ctx.state.days[1];
   assert.equal(d7.stops[0].name, 'Stirling Castle');
   assert.equal(d7.stops.length, 8);

@@ -187,6 +187,24 @@ test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0mi
   assert.ok(!/77\s*mi/.test(html), 'a 77 mi leg is still drawn into the drive stop');
 });
 
+test('restoreScotlandDay7 writes a feasible day that the gate accepts', () => {
+  const restore = fn('restoreScotlandDay7');
+  const seed = fn('_seedLogicBaseline');
+  const le = fn('_logicErrors');
+  ctx.renderAll = () => {}; ctx.renderDayMap = () => {}; // isolate from DOM
+  ctx.confirm = () => true; ctx.alert = () => {};
+  ctx.state = { tripType: 'solo', days: [{ title: 'Day 7', stops: [
+    { name: 'Glenfinnan Viaduct', type: 'hike', time: '11:45 AM', lat: 56.8758, lng: -5.431 },
+  ] }] };
+  seed();
+  let persisted = null; ctx.localStorage.setItem = (k, v) => { persisted = v; };
+  restore(0);
+  assert.equal(ctx.state.days[0].stops.length, 8, 'restored 8 stops');
+  assert.equal(ctx.state.days[0].stops[0].name, 'Stirling Castle');
+  assert.equal(le(ctx.state).length, 0, 'restored day must be feasible: ' + JSON.stringify(le(ctx.state)));
+  assert.ok(persisted, 'restore must persist (the gate must NOT block a valid restore)');
+});
+
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {
   const heal = fn('_healBadEndTimes');
   const state = { days: [{ stops: [{ name: 'Cafe', type: 'food', time: '12:08 PM', endTime: '12:33 PM', duration: '45min' }] }] };

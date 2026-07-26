@@ -577,13 +577,19 @@ body.offline #audio-discover-btn{display:none!important}
 (function(){
   function setVer(){
     var el=document.getElementById('app-version');
-    if(el&&!el.textContent)el.textContent='v118'; // fallback until the SW cache reports the live version
+    if(!el)return;
+    // TRUTH: the version stamped inside the running trip.js. If the JS is stale
+    // (old code running behind a newer cache), this shows the OLD number — so the
+    // badge can never claim a version the executing code isn't actually running.
+    if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
+    if(!el.textContent)el.textContent='v119'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
-      if(el&&vs.length)el.textContent='v'+Math.max.apply(null,vs);
+      if(el&&!window.APP_CODE_VERSION&&vs.length)el.textContent='v'+Math.max.apply(null,vs);
     });
   }
+  window.addEventListener('load',function(){setTimeout(setVer,300);});
   setVer();
   if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('controllerchange',setVer);setTimeout(setVer,1500);}
 })();

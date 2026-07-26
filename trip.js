@@ -1,3 +1,8 @@
+// The version of the CODE actually running. The header badge reads this (not the
+// service-worker cache name), so a stale build can never masquerade as a new one.
+// Bump this together with the CACHE in sw.js on every deploy.
+window.APP_CODE_VERSION='v119';
+try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
 const PACK_KEY='seasons_packing_'+tripId;

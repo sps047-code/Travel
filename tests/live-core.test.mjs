@@ -117,6 +117,76 @@ test('_recalcDayTimes never lands a stop in the small hours (2:26 AM bug)', () =
   }
 });
 
+test('_logicErrors: the REAL Day 7 is feasible → no errors (must not false-positive)', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [{ stops: [
+    { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 56.1237, lng: -3.948 },
+    { name: 'Lunch — Settle Inn', type: 'food', time: '11:15 AM', endTime: '11:45 AM', lat: 56.12, lng: -3.94 },
+    { name: 'Drive — Stirling to Glenfinnan', type: 'drive', time: '11:45 AM', lat: 56.8758, lng: -5.431 },
+    { name: 'Glenfinnan Viaduct', type: 'hike', time: '1:20 PM', lat: 56.8758, lng: -5.431 },
+    { name: 'Glencoe', type: 'hike', time: '3:30 PM', lat: 56.6779, lng: -5.0974 },
+    { name: 'Café Gandolfi', type: 'food', time: '8:00 PM', lat: 55.8578, lng: -4.2445 },
+  ] }] };
+  assert.equal(le(st).length, 0, 'feasible Day 7 wrongly flagged: ' + JSON.stringify(le(st)));
+});
+
+test('_logicErrors: 77 mi with only 15 min → blocked as Impossible travel', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [{ stops: [
+    { name: 'Lunch', type: 'food', time: '12:00 PM', endTime: '12:45 PM', lat: 56.12, lng: -3.94 },
+    { name: 'Glenfinnan', type: 'hike', time: '1:00 PM', lat: 56.8758, lng: -5.431 },
+  ] }] };
+  const errs = le(st);
+  assert.equal(errs.length, 1);
+  assert.equal(errs[0].rule, 'Impossible travel');
+});
+
+test('_logicErrors: stops out of time order are flagged', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [{ stops: [
+    { name: 'A', type: 'sight', time: '2:00 PM', lat: 56.1, lng: -3.9 },
+    { name: 'B', type: 'sight', time: '10:00 AM', lat: 56.1, lng: -3.9 },
+  ] }] };
+  assert.ok(le(st).some((e) => e.rule === 'Out of order'));
+});
+
+test('saveState GATE: refuses to persist a change that adds an impossibility', () => {
+  const save = fn('saveState');
+  const seed = fn('_seedLogicBaseline');
+  // Start from a clean, feasible day and seed the baseline.
+  ctx.state = { tripType: 'solo', days: [{ stops: [
+    { name: 'Lunch', type: 'food', time: '12:00 PM', endTime: '12:45 PM', lat: 56.12, lng: -3.94 },
+    { name: 'Glenfinnan', type: 'hike', time: '3:00 PM', lat: 56.8758, lng: -5.431 },
+  ] }] };
+  seed();
+  // Capture what gets persisted.
+  let persisted = null;
+  ctx.localStorage.setItem = (k, v) => { persisted = v; };
+  // Now make an impossible edit: pull Glenfinnan to 1:00 PM (77 mi in 15 min).
+  ctx.state.days[0].stops[1].time = '1:00 PM';
+  let alerted = '';
+  ctx.alert = (m) => { alerted = m; };
+  save();
+  assert.equal(persisted, null, 'impossible itinerary must NOT be written');
+  assert.match(alerted, /Impossible travel/, 'user must be told which rule tripped');
+});
+
+test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0min)', () => {
+  const renderPanel = fn('renderPanel');
+  ctx.currentDayIdx = 0;
+  ctx.state = { title: 'Scotland', days: [{ title: 'Day 7', subtitle: 'Mon Aug 10 2026', stops: [
+    { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 56.1237, lng: -3.948 },
+    { name: 'Lunch — Settle Inn', type: 'food', time: '11:15 AM', endTime: '11:45 AM', lat: 56.12, lng: -3.94 },
+    { name: 'Drive — Stirling to Glenfinnan', type: 'drive', time: '11:45 AM', duration: '1h 45min', lat: 56.8758, lng: -5.431 },
+    { name: 'Glenfinnan Viaduct', type: 'hike', time: '1:20 PM', lat: 56.8758, lng: -5.431 },
+    { name: 'Glencoe', type: 'hike', time: '3:30 PM', lat: 56.6779, lng: -5.0974 },
+  ] }] };
+  const html = renderPanel(0);
+  // Before the fix, a "77 mi" leg was drawn into the Drive stop while its start
+  // sat 0 min after lunch — the "77 mi in 0 min" nonsense. It must be gone.
+  assert.ok(!/77\s*mi/.test(html), 'a 77 mi leg is still drawn into the drive stop');
+});
+
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {
   const heal = fn('_healBadEndTimes');
   const state = { days: [{ stops: [{ name: 'Cafe', type: 'food', time: '12:08 PM', endTime: '12:33 PM', duration: '45min' }] }] };

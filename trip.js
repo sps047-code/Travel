@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v123';
+window.APP_CODE_VERSION='v124';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -31,8 +31,24 @@ let _dragDayFrom=-1;
 // sync, one-time migrations) so they can never out-race and clobber a real human
 // edit from another device/tab under last-writer-wins. Those values are derived
 // and each device recomputes them anyway.
+// Baseline of physical-logic errors already present in the last persisted state.
+// A save is blocked only if it ADDS a NEW impossibility — so a pre-existing issue
+// can never trap you, but no NEW garbage is ever written. Seeded on load.
+let _baselineErrKeys=null;
+function _seedLogicBaseline(){ try{ _baselineErrKeys=new Set(_logicErrors(state).map(_errKey)); }catch(e){ _baselineErrKeys=new Set(); } }
 function saveState(changeDesc='',localOnly=false){
   if(IS_READONLY)return; // a read-only viewer must never persist or push changes
+  // ---- PHYSICAL-LOGIC GATE: never write an itinerary that adds an impossibility.
+  try{
+    if(_baselineErrKeys===null)_seedLogicBaseline();
+    const errs=_logicErrors(state);
+    const added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
+    if(added.length){
+      _showLogicError(added);        // tell the user exactly which rule tripped
+      return;                        // refuse to persist (local AND cloud); keep last good
+    }
+    _baselineErrKeys=new Set(errs.map(_errKey)); // clean save becomes the new baseline
+  }catch(e){ /* the gate must never itself break saving */ }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
 }
@@ -737,8 +753,11 @@ function renderPanel(idx){
       // Show the distance on the leg that ARRIVES at a real (coordinate-having)
       // place, bridging back over coordinate-less waypoints (drives/fuel stops)
       // so the drive distance appears once instead of some legs blank, some not.
+      // Do NOT draw a travel-distance leg INTO a drive stop: a "Drive — A to B"
+      // stop already IS that travel (with its own duration), so a leg to it
+      // double-counts and makes an impossible-looking "77 mi in 0 min" connector.
       let leg='';
-      if(_validLL(next)){
+      if(_validLL(next)&&next.type!=='drive'){
         const from=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
         if(from&&from!==next)leg=legLabel(from,next,tmode);
       }
@@ -746,7 +765,7 @@ function renderPanel(idx){
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
       // Red warning right on the connector when the schedule can't fit this leg.
       let infeasWarn='';
-      if(_validLL(next)){
+      if(_validLL(next)&&next.type!=='drive'){
         const from2=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
         const tv=(from2&&from2!==next)?_legTravelMins(from2,next):0;
         const ps2=_parseTimeMins(s.time),pe2=_parseTimeMins(s.endTime),tn2=_parseTimeMins(next.time);
@@ -1279,6 +1298,61 @@ function _stopVisitMins(s){
   const d=_durationToMins(s.duration);
   if(d!=null)return d;
   return _VISIT_MINS[s.type]??60;
+}
+// ============================================================================
+// PHYSICAL-LOGIC GATE. Objective checks only — "can this be done in the physical
+// world?" — never taste/pace ("too rushed", "should you"). Returns a list of
+// {rule,msg}. saveState() refuses to persist an itinerary that ADDS any of these.
+// ============================================================================
+// Fastest even-theoretically-possible sustained speeds (mph) per mode. Anything
+// requiring more than this is physically impossible, full stop.
+const _MAX_MPH={walk:8,drive:90,train:170,bus:90,flight:650};
+const _TRAVEL_STOP_TYPES=['drive','flight','train','bus'];
+function _logicErrors(st){
+  const errs=[];
+  if(!st||!Array.isArray(st.days))return errs;
+  st.days.forEach((day,di)=>{
+    const stops=day.stops||[];
+    const D='Day '+(di+1)+': ';
+    // (1) Chronological order — a stop can't be scheduled before one listed earlier.
+    let lastT=-1,lastName='';
+    for(const s of stops){
+      const t=_parseTimeMins(s.time);if(t==null)continue;
+      if(lastT>=0&&t<lastT)errs.push({rule:'Out of order',msg:D+'"'+s.name+'" ('+s.time+') is scheduled before the earlier stop "'+lastName+'" — the day runs backwards in time.'});
+      else{lastT=t;lastName=s.name;}
+    }
+    // (2) Physical reachability between consecutive LOCATED, timed places. Travel
+    //     stops (a drive/flight IS the travel, not a destination) are skipped as
+    //     anchors, so we measure real place -> real place and the travel stop's
+    //     own time counts toward the gap automatically.
+    let prev=null,prevDepart=null;
+    for(const s of stops){
+      if(_TRAVEL_STOP_TYPES.includes(s.type)||!_validLL(s))continue;
+      const t=_parseTimeMins(s.time);if(t==null)continue;
+      if(prev&&prevDepart!=null){
+        const dist=haversine(prev.lat,prev.lng,s.lat,s.lng);
+        if(dist>=1){
+          const mode=s.transitMode||_defaultTransitMode(prev,s);
+          const mph=_MAX_MPH[mode]||_MAX_MPH.drive;
+          const minTravel=Math.round(dist/mph*60);         // fastest possible, ignoring stops/traffic
+          const allotted=t-prevDepart;
+          if(allotted<minTravel)errs.push({rule:'Impossible travel',msg:D+'"'+s.name+'" ('+s.time+') can’t be reached in time — it is '+Math.round(dist)+' mi from "'+prev.name+'", which takes at least '+minTravel+' min even at top speed, but only '+Math.max(0,allotted)+' min is allowed.'});
+        }
+      }
+      prev=s;
+      const e=_parseTimeMins(s.endTime);
+      // Objective only: you can't leave before you arrive, and if you stated an
+      // end time you're there until then. NEVER assume a visit length (that's a
+      // "should", not physics) — so with no end time, allow leaving immediately.
+      prevDepart=(e!=null&&e>t)?e:t;
+    }
+  });
+  return errs;
+}
+function _errKey(e){return e.rule+'|'+e.msg;}
+function _showLogicError(errs){
+  const lines=errs.map(e=>'• '+e.rule+' — '+e.msg).join('\n\n');
+  try{alert('⚠️ Change NOT saved — it would create a physically impossible itinerary:\n\n'+lines+'\n\nYour previous itinerary was kept.');}catch(e){}
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.
 function _legTravelMins(a,b){
@@ -2440,8 +2514,7 @@ function _watchFamily(){
         _lastFamilyAt=lc.at;
         state=data.state;
         try{ _sortAllDaysByTime(); }catch(e){}
-        // Heal on every adopted cloud change too, so a corrupt push from another
-        // device can't repaint the corruption onto this screen.
+        try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
         try{ if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
@@ -4143,8 +4216,7 @@ async function init(){
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
               try{ _sortAllDaysByTime(); }catch(e){}
-              // Heal the freshly-adopted cloud copy BEFORE rendering, else this
-              // background refresh silently reintroduces the corruption we just fixed.
+              try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
               try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
               renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
@@ -4184,6 +4256,7 @@ async function init(){
   }
 
   try{ _sortAllDaysByTime(); }catch(e){}
+  try{ _seedLogicBaseline(); }catch(e){}   // baseline = the itinerary as loaded (gate blocks only NEW impossibilities)
   try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
   try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;

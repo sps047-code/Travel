@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v122';
+window.APP_CODE_VERSION='v123';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1396,6 +1396,12 @@ function _canonFor(name){
   return null;
 }
 function _applyCoordHeal(){
+  // DISABLED: this auto-heal matched stops against the built-in trip and wrote
+  // its "corrections" back to the cloud, which overwrote real edits and lost a
+  // day of work. It must never touch or push user data automatically. Left as a
+  // no-op; location fixes are manual ("Fix pin") only.
+  return 0;
+  /* eslint-disable no-unreachable */
   if(!_canonCoords||!state||!Array.isArray(state.days))return 0;
   let healed=0;
   state.days.forEach(d=>(d.stops||[]).forEach(s=>{

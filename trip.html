@@ -319,6 +319,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 .transit-mode-btn:hover:not(.active){background:var(--mist)}
 .leg-mode-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-family:var(--font-ui);font-size:10px;font-weight:600;margin-left:6px}
 .leg-mode-walk{background:rgba(46,125,82,0.12);color:var(--pine)}
+.leg-mode-bike{background:rgba(196,123,32,0.14);color:var(--amber)}
 .leg-mode-drive{background:var(--river-tint);color:var(--river)}
 .leg-mode-train{background:rgba(82,54,128,0.12);color:#523680}
 .leg-mode-flight{background:rgba(14,99,181,0.12);color:#0E63B5}
@@ -582,7 +583,7 @@ body.offline #audio-discover-btn{display:none!important}
     // (old code running behind a newer cache), this shows the OLD number — so the
     // badge can never claim a version the executing code isn't actually running.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v132'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v133'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -631,9 +632,9 @@ body.offline #audio-discover-btn{display:none!important}
     <div class="form-grid">
       <div class="form-group full"><label class="form-label">Name</label><input type="text" class="form-input" id="f-name" placeholder="Stop name"/></div>
       <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-input" id="f-date"/></div>
-      <div class="form-group"><label class="form-label">Time</label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM"/></div>
-      <div class="form-group"><label class="form-label">End Time</label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM"/></div>
-      <div class="form-group"><label class="form-label">Duration</label><input type="text" class="form-input" id="f-duration" placeholder="e.g. 2h, 45 min"/></div>
+      <div class="form-group"><label class="form-label">Start Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM" oninput="_updateDurationField()"/></div>
+      <div class="form-group"><label class="form-label">End Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM" oninput="_updateDurationField()"/></div>
+      <div class="form-group"><label class="form-label">Duration (calculated)</label><input type="text" class="form-input" id="f-duration" placeholder="from start & end time" readonly tabindex="-1" style="background:var(--mist);color:var(--muted);cursor:not-allowed"/></div>
       <div class="form-group"><label class="form-label">Type</label>
         <select class="form-select" id="f-type" onchange="toggleTransitFields()">
           <option value="hike">Hike / Park</option>
@@ -652,6 +653,7 @@ body.offline #audio-discover-btn{display:none!important}
         <label class="form-label">Transit to Next Stop</label>
         <div class="transit-mode-row">
           <button type="button" class="transit-mode-btn" data-mode="walk" onclick="setTransitMode('walk')">&#128694; Walk</button>
+          <button type="button" class="transit-mode-btn" data-mode="bike" onclick="setTransitMode('bike')">&#128692; Bike</button>
           <button type="button" class="transit-mode-btn" data-mode="drive" onclick="setTransitMode('drive')">&#128663; Drive</button>
           <button type="button" class="transit-mode-btn" data-mode="train" onclick="setTransitMode('train')">&#128646; Train</button>
           <button type="button" class="transit-mode-btn" data-mode="bus" onclick="setTransitMode('bus')">&#128652; Bus</button>

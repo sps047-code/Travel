@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v132';
+window.APP_CODE_VERSION='v133';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -300,6 +300,7 @@ function _travelMins(straightLineMiles,mode){
   if(mode==='flight')return Math.round(straightLineMiles/8);
   if(mode==='train')return Math.round(straightLineMiles/0.85);
   if(mode==='bus')return Math.round(straightLineMiles/0.5);
+  if(mode==='bike')return Math.round(straightLineMiles/0.2);   // ~12 mph
   if(mode==='walk')return Math.round(straightLineMiles/0.05);
   // drive: apply 1.25 road-overhead factor then adaptive mph
   const road=straightLineMiles*1.25;
@@ -1336,7 +1337,7 @@ function _stopVisitMins(s){
 // ============================================================================
 // Fastest even-theoretically-possible sustained speeds (mph) per mode. Anything
 // requiring more than this is physically impossible, full stop.
-const _MAX_MPH={walk:8,drive:90,train:170,bus:90,flight:650};
+const _MAX_MPH={walk:8,bike:40,drive:90,train:170,bus:90,flight:650};
 const _TRAVEL_STOP_TYPES=['drive','flight','train','bus'];
 function _logicErrors(st){
   const errs=[];
@@ -1706,7 +1707,8 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-flightnum').value=s.flightNumber||'';
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
-  const _fd=document.getElementById('f-duration');if(_fd)_fd.value=s.duration||'';
+  const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
+  _updateDurationField();   // duration is calculated from start & end
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -1793,6 +1795,13 @@ function saveStop(){
   let lat=parseFloat(document.getElementById('f-lat').value);
   let lng=parseFloat(document.getElementById('f-lng').value);
   if(!name){alert('Please enter a stop name.');return}
+  // Start Time and End Time are REQUIRED, and the end must be after the start.
+  const _startVal=(document.getElementById('f-time')?.value||'').trim();
+  const _endVal=(document.getElementById('f-endtime')?.value||'').trim();
+  const _sMin=_parseTimeMins(_startVal),_eMin=_parseTimeMins(_endVal);
+  if(_sMin==null){alert('Please enter a valid Start Time (e.g. 9:00 AM).');return}
+  if(_eMin==null){alert('Please enter a valid End Time (e.g. 11:00 AM).');return}
+  if(_eMin<=_sMin){alert('End Time must be after Start Time.');return}
   // Coordinates are OPTIONAL — a stop can be a reservation/note with no location
   // (consistent with AI/imported stops). Only validate them if both were given.
   const hasCoord=!isNaN(lat)&&!isNaN(lng);
@@ -2731,6 +2740,14 @@ function setTransitMode(mode){
   _pendingTransitMode=mode;
   document.querySelectorAll('.transit-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
 }
+// Duration is a CALCULATED, read-only field = end − start. Recomputed live as the
+// user types the start/end times in the modal.
+function _updateDurationField(){
+  const t=document.getElementById('f-time'),e=document.getElementById('f-endtime'),d=document.getElementById('f-duration');
+  if(!d)return;
+  const s=_parseTimeMins(t?t.value.trim():''),en=_parseTimeMins(e?e.value.trim():'');
+  d.value=(s!=null&&en!=null&&en>s)?_fmtDur(en-s):'';
+}
 function _defaultTransitMode(a,b){
   if(!a||!b)return'drive';
   if(a.type==='flight'||b.type==='flight')return'flight';
@@ -2739,9 +2756,9 @@ function _defaultTransitMode(a,b){
   if(!a.lat||!a.lng||!b.lat||!b.lng)return'drive';
   return haversine(a.lat,a.lng,b.lat,b.lng)<1?'walk':'drive';
 }
-const TM_ICON={walk:'🚶',drive:'🚗',train:'🚆',bus:'🚌',flight:'✈️'};
-const TM_LABEL={walk:'Walk',drive:'Drive',train:'Train',bus:'Bus',flight:'Flight'};
-const TM_CLS={walk:'leg-mode-walk',drive:'leg-mode-drive',train:'leg-mode-train',bus:'leg-mode-bus',flight:'leg-mode-flight'};
+const TM_ICON={walk:'🚶',bike:'🚴',drive:'🚗',train:'🚆',bus:'🚌',flight:'✈️'};
+const TM_LABEL={walk:'Walk',bike:'Bike',drive:'Drive',train:'Train',bus:'Bus',flight:'Flight'};
+const TM_CLS={walk:'leg-mode-walk',bike:'leg-mode-bike',drive:'leg-mode-drive',train:'leg-mode-train',bus:'leg-mode-bus',flight:'leg-mode-flight'};
 
 /* --- Journal Mode --- */
 const JNL_LS='seasons_jnl_'+tripId;

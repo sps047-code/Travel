@@ -278,6 +278,12 @@ test('_recalcDayTimes clamps an absurd sub-4AM anchor to a sane morning', () => 
   assert.ok(p(ctx.state.days[0].stops[0].time) >= 240, 'first stop clamped to >= 4 AM');
 });
 
+test('bike is a supported travel mode (~12 mph)', () => {
+  const tm = fn('_travelMins');
+  const t = tm(6, 'bike');
+  assert.ok(t >= 25 && t <= 35, 'bike 6 mi should be ~30 min, got ' + t);
+});
+
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {
   const heal = fn('_healBadEndTimes');
   const state = { days: [{ stops: [{ name: 'Cafe', type: 'food', time: '12:08 PM', endTime: '12:33 PM', duration: '45min' }] }] };

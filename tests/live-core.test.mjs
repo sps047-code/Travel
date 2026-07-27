@@ -163,25 +163,43 @@ test('_logicErrors: stops out of time order are flagged', () => {
   assert.ok(le(st).some((e) => e.rule === 'Out of order'));
 });
 
-test('saveState GATE: refuses to persist a change that adds an impossibility', () => {
+test('saveState GATE: auto-fits by shrinking a visit, then persists (with a warning)', () => {
   const save = fn('saveState');
   const seed = fn('_seedLogicBaseline');
-  // Start from a clean, feasible day and seed the baseline.
+  const p = fn('_parseTimeMins');
   ctx.state = { tripType: 'solo', days: [{ stops: [
     { name: 'Lunch', type: 'food', time: '12:00 PM', endTime: '12:45 PM', lat: 56.12, lng: -3.94 },
     { name: 'Glenfinnan', type: 'hike', time: '3:00 PM', lat: 56.8758, lng: -5.431 },
   ] }] };
   seed();
-  // Capture what gets persisted.
   let persisted = null;
   ctx.localStorage.setItem = (k, v) => { persisted = v; };
-  // Now make an impossible edit: pull Glenfinnan to 1:00 PM (77 mi in 15 min).
+  // Pull Glenfinnan to 1:00 PM — 77 mi needs ~51 min, so Lunch must shrink to ~9 min.
   ctx.state.days[0].stops[1].time = '1:00 PM';
+  save();
+  assert.ok(persisted, 'a fixable change should be SAVED (not refused)');
+  const lunch = ctx.state.days[0].stops[0];
+  const visit = p(lunch.endTime) - p(lunch.time);
+  assert.ok(visit >= 0 && visit < 45, 'Lunch visit was shortened to fit, got ' + visit + ' min');
+});
+
+test('saveState GATE: refuses ONLY when travel alone cannot fit (visit would be < 0)', () => {
+  const save = fn('saveState');
+  const seed = fn('_seedLogicBaseline');
+  ctx.state = { tripType: 'solo', days: [{ stops: [
+    { name: 'Lunch', type: 'food', time: '12:00 PM', endTime: '12:45 PM', lat: 56.12, lng: -3.94 },
+    { name: 'Glenfinnan', type: 'hike', time: '3:00 PM', lat: 56.8758, lng: -5.431 },
+  ] }] };
+  seed();
+  let persisted = null;
+  ctx.localStorage.setItem = (k, v) => { persisted = v; };
   let alerted = '';
   ctx.alert = (m) => { alerted = m; };
+  // Glenfinnan at 12:15 — 77 mi needs ~51 min even with a zero-length lunch. Impossible.
+  ctx.state.days[0].stops[1].time = '12:15 PM';
   save();
-  assert.equal(persisted, null, 'impossible itinerary must NOT be written');
-  assert.match(alerted, /Impossible travel/, 'user must be told which rule tripped');
+  assert.equal(persisted, null, 'a truly impossible itinerary must NOT be written');
+  assert.match(alerted, /physical world|Impossible/, 'user is told it cannot be done');
 });
 
 test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0min)', () => {

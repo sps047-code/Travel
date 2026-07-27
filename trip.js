@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v131';
+window.APP_CODE_VERSION='v132';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -41,13 +41,24 @@ function saveState(changeDesc='',localOnly=false){
   // ---- PHYSICAL-LOGIC GATE: never write an itinerary that adds an impossibility.
   try{
     if(_baselineErrKeys===null)_seedLogicBaseline();
-    const errs=_logicErrors(state);
-    const added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
+    let errs=_logicErrors(state);
+    let added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
     if(added.length){
-      _showLogicError(added);        // tell the user exactly which rule tripped
-      return;                        // refuse to persist (local AND cloud); keep last good
+      // First TRY to make it fit by shrinking visit durations (not refusing).
+      const snap=JSON.stringify(state);
+      const changed=_relaxDurationsToFit(state);
+      errs=_logicErrors(state);
+      added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
+      if(added.length){
+        // Still impossible even after shrinking visits to zero → refuse; roll back
+        // the shrink so we don't leave half-adjusted durations.
+        try{state=JSON.parse(snap);}catch(e){}
+        _showLogicError(added);
+        return;
+      }
+      if(changed.length)_showDurationAdjustWarning(changed); // fit by trimming — warn only
     }
-    _baselineErrKeys=new Set(errs.map(_errKey)); // clean save becomes the new baseline
+    _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
@@ -1373,7 +1384,48 @@ function _logicErrors(st){
 function _errKey(e){return e.rule+'|'+e.msg;}
 function _showLogicError(errs){
   const lines=errs.map(e=>'• '+e.rule+' — '+e.msg).join('\n\n');
-  try{alert('⚠️ Change NOT saved — it would create a physically impossible itinerary:\n\n'+lines+'\n\nYour previous itinerary was kept.');}catch(e){}
+  try{alert('⚠️ Change NOT saved — even with zero-length stops it can’t be done in the physical world:\n\n'+lines+'\n\nYour previous itinerary was kept.');}catch(e){}
+}
+// Try to make a day fit by SHRINKING visit durations (never moving the user's
+// stop start times) so each stop is reachable from the previous one. Returns the
+// list of stops that were shortened. A leg where even a zero-length visit can't
+// make it (travel time alone exceeds the gap) is left for the gate to refuse.
+function _relaxDurationsToFit(st){
+  const changed=[];
+  if(!st||!Array.isArray(st.days))return changed;
+  st.days.forEach((day,di)=>{
+    const stops=day.stops||[];
+    let prev=null;
+    for(const s of stops){
+      if(_TRAVEL_STOP_TYPES.includes(s.type)||!_validLL(s)){continue;}
+      const t=_parseTimeMins(s.time);if(t==null)continue;
+      if(prev){
+        const pt=_parseTimeMins(prev.time);
+        const dist=haversine(prev.lat,prev.lng,s.lat,s.lng);
+        if(pt!=null&&dist>=1){
+          const mode=s.transitMode||_defaultTransitMode(prev,s);
+          const mph=_MAX_MPH[mode]||_MAX_MPH.drive;
+          const minTravel=Math.round(dist/mph*60);
+          const maxDepart=t-minTravel;            // latest prev can leave and still reach s in time
+          const pe=_parseTimeMins(prev.endTime);
+          const curDepart=(pe!=null&&pe>pt)?pe:(pt+(_durationToMins(prev.duration)||0));
+          if(curDepart>maxDepart&&maxDepart>=pt){ // shrinkable: a shorter visit makes it fit
+            prev.endTime=_formatTimeMins(maxDepart);
+            prev.duration=_fmtDur(maxDepart-pt);
+            changed.push({day:di,stop:prev.name,mins:maxDepart-pt});
+          }
+          // if maxDepart < pt, even a 0-length visit can't fit → leave it for the gate.
+        }
+      }
+      prev=s;
+    }
+  });
+  return changed;
+}
+function _showDurationAdjustWarning(changed){
+  const names=[...new Set(changed.map(c=>c.stop))];
+  const msg='Shortened '+names.slice(0,3).join(', ')+(names.length>3?' and others':'')+' to fit the travel times.';
+  try{ if(typeof showToast==='function')showToast('⏱️ '+msg); else alert('⏱️ '+msg); }catch(e){}
 }
 // ONE-TIME correction of the Scotland Day 7 that the earlier auto-heal corrupted.
 // Runs at most once per device (guarded by a flag), replaces the day with the

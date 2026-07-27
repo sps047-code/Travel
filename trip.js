@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v133';
+window.APP_CODE_VERSION='v134';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1708,7 +1708,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-flightnum').value=s.flightNumber||'';
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
-  _updateDurationField();   // duration is calculated from start & end
+  _fSyncDurFromTimes();   // show the derived duration for the loaded start/end
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
   document.getElementById('search-results').classList.remove('open');
@@ -2740,13 +2740,20 @@ function setTransitMode(mode){
   _pendingTransitMode=mode;
   document.querySelectorAll('.transit-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
 }
-// Duration is a CALCULATED, read-only field = end − start. Recomputed live as the
-// user types the start/end times in the modal.
-function _updateDurationField(){
-  const t=document.getElementById('f-time'),e=document.getElementById('f-endtime'),d=document.getElementById('f-duration');
-  if(!d)return;
-  const s=_parseTimeMins(t?t.value.trim():''),en=_parseTimeMins(e?e.value.trim():'');
-  d.value=(s!=null&&en!=null&&en>s)?_fmtDur(en-s):'';
+// End Time and Duration are INTERACTIVE: editing one recomputes the other, using
+// Start Time as the anchor.
+function _fVal(id){const e=document.getElementById(id);return e?e.value.trim():'';}
+function _fSyncDurFromTimes(){ // Start/End changed → Duration = End − Start
+  const s=_parseTimeMins(_fVal('f-time')),en=_parseTimeMins(_fVal('f-endtime')),d=document.getElementById('f-duration');
+  if(d&&s!=null&&en!=null&&en>s)d.value=_fmtDur(en-s);
+}
+function _fSyncEndFromDur(){ // Duration changed → End = Start + Duration
+  const s=_parseTimeMins(_fVal('f-time')),dur=_durationToMins(_fVal('f-duration')),e=document.getElementById('f-endtime');
+  if(e&&s!=null&&dur!=null&&dur>0)e.value=_formatTimeMins(s+dur);
+}
+function _fSyncFromStart(){ // Start changed → keep the Duration if present (move End), else recompute Duration
+  const dur=_durationToMins(_fVal('f-duration'));
+  if(dur!=null&&dur>0)_fSyncEndFromDur(); else _fSyncDurFromTimes();
 }
 function _defaultTransitMode(a,b){
   if(!a||!b)return'drive';

@@ -218,28 +218,31 @@ test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0mi
   assert.ok(!/77\s*mi/.test(html), 'a 77 mi leg is still drawn into the drive stop');
 });
 
-test('_fixScotlandDay7Once replaces the corrupted Day 7 once, feasibly', () => {
+// REGRESSION GUARD (second data-loss incident): _fixScotlandDay7Once used to
+// REPLACE the user's entire, hand-tuned Day 7 with a hardcoded array whenever
+// that day was infeasible — destroying weeks of work on load and pushing the
+// stale copy to the shared cloud. It is now a permanent no-op. These tests lock
+// in that it can NEVER mutate a user's stops, however infeasible the day is.
+test('_fixScotlandDay7Once never replaces an infeasible Day 7 (no destructive auto-heal)', () => {
   const fixOnce = fn('_fixScotlandDay7Once');
-  const le = fn('_logicErrors');
   ctx.localStorage = { _m: new Map(), getItem(k) { return this._m.has(k) ? this._m.get(k) : null; }, setItem(k, v) { this._m.set(k, String(v)); }, removeItem(k) { this._m.delete(k); } };
+  const infeasible = [
+    // Infeasible: ~112 mi apart (Edinburgh to the NW Highlands) with only 15 min between them.
+    { name: 'Rosslyn Chapel', type: 'food', time: '9:30 AM', lat: 55.8553, lng: -3.16 },
+    { name: 'Glenfinnan Viaduct', type: 'hike', time: '9:45 AM', lat: 56.8758, lng: -5.431 },
+  ];
   ctx.state = { tripType: 'family', days: [
     { title: 'Day 6', stops: [{ name: 'Somewhere', type: 'hike', time: '9:00 AM', lat: 55.9, lng: -3.2 }] },
-    { title: 'Day 7', stops: [
-      // Infeasible: ~112 mi apart (Edinburgh to the NW Highlands) with only 15 min between them.
-      { name: 'Rosslyn Chapel', type: 'food', time: '9:30 AM', lat: 55.8553, lng: -3.16 },
-      { name: 'Glenfinnan Viaduct', type: 'hike', time: '9:45 AM', lat: 56.8758, lng: -5.431 },
-    ] },
+    { title: 'Day 7', stops: infeasible },
   ] };
-  assert.equal(fixOnce(), true, 'should replace the infeasible Day 7');
-  const d7 = ctx.state.days[1];
-  assert.equal(d7.stops[0].name, 'Stirling Castle');
-  assert.equal(d7.stops.length, 8);
-  assert.equal(le(ctx.state).length, 0, 'corrected trip must be feasible: ' + JSON.stringify(le(ctx.state)));
-  ctx.localStorage.setItem('day7_corrected_v1', '1');
-  assert.equal(fixOnce(), false, 'must never run a second time');
+  const before = JSON.stringify(ctx.state.days[1].stops);
+  assert.equal(fixOnce(), false, 'must report no change — it must never mutate');
+  assert.equal(JSON.stringify(ctx.state.days[1].stops), before, 'user stops must be left EXACTLY as-is, never replaced');
+  assert.equal(ctx.state.days[1].stops.length, 2, 'the two user stops must survive');
+  assert.equal(ctx.state.days[1].stops[0].name, 'Rosslyn Chapel', 'user stop name must not be overwritten');
 });
 
-test('_fixScotlandDay7Once cleans a stale "Rosslyn" title when stops are already feasible', () => {
+test('_fixScotlandDay7Once never touches title/subtitle (no auto-mutation on load)', () => {
   const fixOnce = fn('_fixScotlandDay7Once');
   ctx.state = { tripType: 'family', days: [{
     title: 'Rosslyn, Glenfinnan & Glencoe',
@@ -249,9 +252,9 @@ test('_fixScotlandDay7Once cleans a stale "Rosslyn" title when stops are already
       { name: 'Glenfinnan Viaduct', type: 'hike', time: '1:20 PM', endTime: '2:20 PM', lat: 56.8758, lng: -5.431 },
     ],
   }] };
-  assert.equal(fixOnce(), true, 'should clean the stale title');
-  assert.ok(!/rosslyn/i.test(ctx.state.days[0].title), 'title still names Rosslyn: ' + ctx.state.days[0].title);
-  assert.ok(!/rosslyn/i.test(ctx.state.days[0].subtitle), 'subtitle still names Rosslyn: ' + ctx.state.days[0].subtitle);
+  const before = JSON.stringify(ctx.state.days[0]);
+  assert.equal(fixOnce(), false, 'must report no change');
+  assert.equal(JSON.stringify(ctx.state.days[0]), before, 'nothing on the day may be mutated — heading heal is _syncDayHeadings\' job');
 });
 
 test('_syncDayHeadings rebuilds a stale day heading from the live stops', () => {

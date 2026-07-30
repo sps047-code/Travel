@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v138';
+window.APP_CODE_VERSION='v139';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1503,30 +1503,14 @@ const _SCOTLAND_DAY7=[
   {name:'Dinner — Café Gandolfi',type:'food',time:'8:15 PM',endTime:'9:30 PM',lat:55.8583,lng:-4.2447,notes:'64 Albion St, Merchant City.'},
   {name:'Hub by Premier Inn Edinburgh',type:'lodge',time:'10:30 PM',endTime:'11:00 PM',lat:55.9525,lng:-3.1986,notes:'Back to Edinburgh for the night.'},
 ];
-function _fixScotlandDay7Once(){
-  try{
-    if(tripId!=='london-scotland')return false;
-    const di=(state.days||[]).findIndex(d=>(d.stops||[]).some(s=>/glenfinnan|glencoe/i.test(s.name||'')));
-    if(di<0)return false;
-    const day=state.days[di];
-    let changed=false;
-    // 1. Replace only an INFEASIBLE Day 7 (leftover corruption). A feasible day the
-    //    user arranged is never touched; once replaced it has no errors, so it is
-    //    never replaced again — self-limiting.
-    let errs=[];
-    try{ errs=_logicErrors({days:[day]}); }catch(e){}
-    if(errs.length>0){ day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7)); changed=true; }
-    // 2. Clean a STALE title/subtitle that still names Rosslyn when no Rosslyn stop
-    //    remains — the AI grader/optimizer read the title, so a removed stop must
-    //    not linger there. Self-limiting: once cleaned it no longer matches.
-    const hasRosslynStop=(day.stops||[]).some(s=>/rosslyn/i.test(s.name||''));
-    if(!hasRosslynStop){
-      if(/rosslyn/i.test(day.title||'')){ day.title=day.title.replace(/Rosslyn Chapel/gi,'Stirling Castle').replace(/Rosslyn/gi,'Stirling'); changed=true; }
-      if(/rosslyn/i.test(day.subtitle||'')){ day.subtitle=day.subtitle.replace(/Rosslyn Chapel/gi,'Stirling Castle').replace(/Rosslyn/gi,'Stirling'); changed=true; }
-    }
-    return changed;
-  }catch(e){ return false; }
-}
+// PERMANENTLY DISABLED. This function used to REPLACE the entire Day 7 with a
+// hardcoded `_SCOTLAND_DAY7` array whenever that day was infeasible. That is
+// destructive: it overwrote the user's real, hand-tuned itinerary (weeks of
+// work) on load and pushed the stale copy to the shared cloud. NO auto-heal is
+// ever allowed to rewrite a user's stops. It is now a hard no-op that never
+// mutates state. Stale-heading cleanup is handled non-destructively by
+// _syncDayHeadings() at render time.
+function _fixScotlandDay7Once(){ return false; }
 // Travel time between two consecutive stops, matching the leg-connector logic.
 function _legTravelMins(a,b){
   if(!a||!b)return 15;

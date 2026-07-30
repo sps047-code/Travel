@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v135';
+window.APP_CODE_VERSION='v136';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -3196,7 +3196,8 @@ async function gradeItinerary(){
   modal.classList.add('open');
   content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Analyzing your itinerary…</div></div>';
   try{
-    let prompt='Trip: '+(state.title||'Unknown')+'\nDays: '+state.days.length+'\n\n';
+    let prompt='CRITICAL: The itinerary is ONLY the numbered stops listed under each day. A day heading or a stop note may still mention a place that has ALREADY BEEN REMOVED from the plan — treat headings and notes as labels/context only. NEVER recommend removing, replacing, or swapping anything that is not present as a numbered stop, and never state a place is in the plan unless it appears as a numbered stop.\n\n';
+    prompt+='Trip: '+(state.title||'Unknown')+'\nDays: '+state.days.length+'\n\n';
     state.days.forEach((d,di)=>{
       const dp=(d.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
       prompt+='Day '+(di+1)+' — '+d.title+(dp?' ('+dp+')':'')+'\n';
@@ -3273,7 +3274,8 @@ async function optimizeDay(idx){
     const dp=(day.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
     const dd=dp?(_parseTripDate(dp)||new Date(dp+' 12:00')):null;
     const dow=dd&&!isNaN(dd)?['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dd.getDay()]:'';
-    let prompt='Day: '+day.title+(dow?'\nDay of week: '+dow:'')+'\nStops:\n';
+    let prompt='CRITICAL: the day is ONLY the numbered stops below. The day title or a note may still mention a place already REMOVED — treat titles/notes as labels only and never recommend removing/replacing anything that is not a numbered stop.\n\n';
+    prompt+='Day: '+day.title+(dow?'\nDay of week: '+dow:'')+'\nStops:\n';
     day.stops.forEach((s,si)=>{
       prompt+=(si+1)+'. '+s.name+' ['+s.type+']'+(s.time?' @'+s.time:'');
       if(s.lat&&s.lng)prompt+=' ('+Number(s.lat).toFixed(4)+','+Number(s.lng).toFixed(4)+')';

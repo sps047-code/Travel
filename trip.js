@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v136';
+window.APP_CODE_VERSION='v137';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1171,6 +1171,7 @@ function renderAll(){
   // never display starting at 1:30 AM or ending before it began.
   try{ _healEarlyDays(); }catch(e){}
   try{ _healBadEndTimes(); }catch(e){}
+  try{ _syncDayHeadings(); }catch(e){}   // headings always reflect the live stops
   try{ _ensureJnlIds(); }catch(e){}
   try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
@@ -1428,6 +1429,66 @@ function _showDurationAdjustWarning(changed){
   const msg='Shortened '+names.slice(0,3).join(', ')+(names.length>3?' and others':'')+' to fit the travel times.';
   try{ if(typeof showToast==='function')showToast('⏱️ '+msg); else alert('⏱️ '+msg); }catch(e){}
 }
+// ── Keep day headings & notes in sync with the LIVE stops ───────────────────
+function _escRe(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+// A stop's short display name: strip meal/drive prefixes and trailing "— …".
+function _shortName(n){
+  const s=String(n||'');
+  return s.replace(/^\s*(lunch|dinner|breakfast|brunch|drive|check.?in|depart|arrive|fuel stop)\s*[—–:-]\s*/i,'').split(/\s*[—–]\s*/)[0].trim()||s.trim();
+}
+const _HIGHLIGHT_TYPES=['sight','hike','food','tour','show','beach','shop','museum'];
+function _dayHighlights(day,max=3){
+  return (day.stops||[]).filter(s=>_HIGHLIGHT_TYPES.includes(s.type)).map(s=>_shortName(s.name)).filter(Boolean).slice(0,max);
+}
+function _joinTitle(a){ if(!a.length)return''; if(a.length===1)return a[0]; if(a.length===2)return a[0]+' & '+a[1]; return a.slice(0,-1).join(', ')+' & '+a[a.length-1]; }
+function _isDateSegment(seg){ return /\b(20\d\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun)\b/i.test(seg||''); }
+// Rebuild each day's title/subtitle from the stops actually present, so a heading
+// can never keep naming a stop that was removed (which leaked to the AI grader).
+// Deterministic, no AI. Runs on render.
+function _syncDayHeadings(){
+  if(!state||!Array.isArray(state.days))return;
+  state.days.forEach(day=>{
+    const stops=day.stops||[];if(!stops.length)return;
+    const highlights=_dayHighlights(day);
+    if(!highlights.length)return;
+    const nameHas=(seg)=>stops.some(s=>String(s.name||'').toLowerCase().includes(seg.toLowerCase()));
+    // A heading segment is a STALE STOP name if it reads like a place (capitalised,
+    // no digits/arrows/# so flight numbers & routes are left alone) and matches no
+    // current stop. Only then do we rebuild — editorial text is preserved.
+    const staleStop=(seg)=>seg.length>=4&&/^[A-Za-z]/.test(seg)&&!/[\d→#\/]/.test(seg)&&!nameHas(seg);
+    if(day.subtitle){
+      const segs=day.subtitle.split(/\s*[·•]\s*/).map(x=>x.trim()).filter(Boolean);
+      const datePart=(segs[0]&&_isDateSegment(segs[0]))?segs[0]:'';
+      const rest=datePart?segs.slice(1):segs;
+      if(rest.some(staleStop))day.subtitle=[datePart,...highlights].filter(Boolean).join(' · ');
+    }
+    const tsegs=(day.title||'').split(/\s*[·•,]\s*|\s+&\s+/).map(x=>x.trim()).filter(Boolean);
+    if(tsegs.length>=2&&tsegs.some(staleStop))day.title=_joinTitle(highlights);
+  });
+}
+// When a stop is deleted, remove its name from the day heading and from any
+// sentence in OTHER stops' notes that mentions it — so nothing stale lingers.
+function _scrubRemovedStop(dayIdx,removedName){
+  const day=state.days[dayIdx];if(!day)return;
+  const short=_shortName(removedName);
+  const tokens=[...new Set([removedName,short,short.split(/\s+/)[0]])].filter(t=>t&&t.length>=4);
+  const strip=(text)=>{
+    if(!text)return text;let out=text;
+    for(const t of tokens){const e=_escRe(t);
+      out=out.replace(new RegExp('\\s*[·•,]\\s*'+e+'\\b','gi'),'').replace(new RegExp('\\b'+e+'\\s*(&|and)\\s*','gi'),'').replace(new RegExp('\\s*&\\s*'+e+'\\b','gi'),'').replace(new RegExp('\\b'+e+'\\b','gi'),'');
+    }
+    return out.replace(/\s{2,}/g,' ').replace(/^[\s·•,&\-—]+/,'').replace(/[\s·•,&\-—]+$/,'').trim();
+  };
+  if(day.title)day.title=strip(day.title)||day.title;
+  if(day.subtitle)day.subtitle=strip(day.subtitle)||day.subtitle;
+  (day.stops||[]).forEach(s=>{
+    if(!s.notes)return;
+    const sentences=s.notes.split(/(?<=[.!?])\s+/);
+    const kept=sentences.filter(sen=>!tokens.some(t=>new RegExp('\\b'+_escRe(t)+'\\b','i').test(sen)));
+    const cleaned=kept.join(' ').trim();
+    if(cleaned&&cleaned!==s.notes)s.notes=cleaned;
+  });
+}
 // ONE-TIME correction of the Scotland Day 7 that the earlier auto-heal corrupted.
 // Runs at most once per device (guarded by a flag), replaces the day with the
 // user's real itinerary, then never touches it again. NOT a standing feature —
@@ -1667,7 +1728,9 @@ function deleteStop(dayIdx,stopIdx){
   // If it's an auto-generated overnight arrival, remember the dismissal so it is
   // not immediately regenerated by the sync.
   if(_st&&_st._autoArrival&&typeof _dismissArrival==='function')_dismissArrival(_st.name,_st.time);
+  const _removedName=_st?_st.name:'';
   state.days[dayIdx].stops.splice(stopIdx,1);
+  try{ _scrubRemovedStop(dayIdx,_removedName); }catch(e){}   // strip the removed stop from heading + other notes
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
 }
 

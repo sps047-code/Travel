@@ -254,6 +254,42 @@ test('_fixScotlandDay7Once cleans a stale "Rosslyn" title when stops are already
   assert.ok(!/rosslyn/i.test(ctx.state.days[0].subtitle), 'subtitle still names Rosslyn: ' + ctx.state.days[0].subtitle);
 });
 
+test('_syncDayHeadings rebuilds a stale day heading from the live stops', () => {
+  const sync = fn('_syncDayHeadings');
+  ctx.state = { days: [{
+    title: 'Rosslyn, Glenfinnan & Glencoe',
+    subtitle: 'Mon, Aug 10, 2026 · Rosslyn Chapel · Glenfinnan Viaduct · Glencoe',
+    stops: [
+      { name: 'Stirling Castle', type: 'sight', time: '9:30 AM' },
+      { name: 'Glenfinnan Viaduct', type: 'hike', time: '1:20 PM' },
+      { name: 'Glencoe', type: 'hike', time: '3:15 PM' },
+    ],
+  }] };
+  sync();
+  const d = ctx.state.days[0];
+  assert.ok(!/rosslyn/i.test(d.title), 'stale title: ' + d.title);
+  assert.ok(!/rosslyn/i.test(d.subtitle), 'stale subtitle: ' + d.subtitle);
+  assert.ok(/stirling/i.test(d.title), 'title reflects live stops: ' + d.title);
+  assert.ok(/aug 10, 2026/i.test(d.subtitle), 'subtitle keeps the date: ' + d.subtitle);
+});
+
+test('_scrubRemovedStop strips the removed stop from heading and other notes', () => {
+  const scrub = fn('_scrubRemovedStop');
+  ctx.state = { days: [{
+    title: 'Bourton-on-the-Water & Blenheim',
+    subtitle: 'Fri, Aug 5, 2026 · Bourton-on-the-Water · Blenheim Palace',
+    stops: [
+      { name: 'Blenheim Palace', type: 'sight', notes: 'Grand palace. Then drive to Bourton-on-the-Water for lunch. Beautiful gardens.' },
+    ],
+  }] };
+  scrub(0, 'Bourton-on-the-Water');
+  const d = ctx.state.days[0];
+  assert.ok(!/bourton/i.test(d.title), 'title: ' + d.title);
+  assert.ok(!/bourton/i.test(d.subtitle), 'subtitle: ' + d.subtitle);
+  assert.ok(!/bourton/i.test(d.stops[0].notes), 'notes: ' + d.stops[0].notes);
+  assert.ok(/blenheim/i.test(d.title), 'kept Blenheim: ' + d.title);
+});
+
 test('fetchDayWeather never shows 0°F when the API has no reading', async () => {
   const fdw = fn('fetchDayWeather');
   // Simulate the forecast API returning a row with NO temperature (the 0°F bug).

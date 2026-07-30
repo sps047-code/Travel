@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v148';
+window.APP_CODE_VERSION='v149';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -356,6 +356,34 @@ function _travelMins(straightLineMiles,mode){
 }
 function _minsToStr(mins){
   return mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
+}
+// ---- Airport arrival: be there 3 hrs early for international, 2 hrs domestic ---
+// Format minutes-since-midnight as a clock time (wraps within a day).
+function _minsToClock(mins){
+  mins=((Math.round(mins)%1440)+1440)%1440;
+  const h=Math.floor(mins/60), mn=mins%60, ap=h<12?'AM':'PM'; let h12=h%12; if(h12===0)h12=12;
+  return h12+':'+(mn<10?'0':'')+mn+' '+ap;
+}
+// Is a flight international? An explicit choice (stop.international) always wins;
+// otherwise guess from distance — long-haul (> 1500 mi) reads as international.
+function _isIntlFlight(s){
+  if(s&&typeof s.international==='boolean')return s.international;
+  if(s&&_validLL(s)&&s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng})){
+    try{ return haversine(s.lat,s.lng,s.destLat,s.destLng)>1500; }catch(e){}
+  }
+  return false;
+}
+// Minutes you should be at the airport before departure: 180 intl, 120 domestic.
+function _airportBufferMin(s){ return _isIntlFlight(s)?180:120; }
+// The "be at the airport by" line shown on a flight card.
+function _airportArrivalHtml(s){
+  if(!s||s.type!=='flight')return '';
+  const dep=_parseTimeMins(s.time);
+  if(dep==null)return '';
+  const intl=_isIntlFlight(s), buf=intl?180:120;
+  let at=dep-buf, note='';
+  if(at<0){ at+=1440; note=' the night before'; }
+  return '<div class="card-notes" style="margin-top:4px;font-size:12px;font-weight:600;color:var(--pine)">&#128747; Be at the airport by <b>'+_escHtml(_minsToClock(at))+'</b>'+note+' &mdash; '+(intl?'3 hrs before an international flight':'2 hrs before a domestic flight')+'</div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';
@@ -783,6 +811,7 @@ function renderPanel(idx){
       '<div class="card-top">'+(s.time?'<span class="card-time">'+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
+      _airportArrivalHtml(s)+
       (s.duration?'<span class="card-duration">&#9201; '+_escHtml(s.duration)+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
@@ -1773,6 +1802,7 @@ function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
   ['place-search','f-name','f-date','f-time','f-endtime','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
+  const _fi=document.getElementById('f-intl');if(_fi)_fi.value='auto';
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
   document.getElementById('search-results').innerHTML='';
@@ -1806,6 +1836,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-to').value=s.to||'';
   document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-flightnum').value=s.flightNumber||'';
+  const _fi=document.getElementById('f-intl');if(_fi)_fi.value=(s.international===true?'1':s.international===false?'0':'auto');
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
   _fSyncDurFromTimes();   // show the derived duration for the loaded start/end
@@ -1832,6 +1863,7 @@ function toggleTransitFields(){
   const isFlight=t==='flight';
   document.getElementById('f-transit-row').style.display=isTransit?'':'none';
   document.getElementById('f-airline-row').style.display=isFlight?'':'none';
+  const _intlRow=document.getElementById('f-intl-row');if(_intlRow)_intlRow.style.display=isFlight?'':'none';
   const descSec=document.getElementById('f-desc-section');
   if(descSec)descSec.style.display=isTransit?'none':'';
 }
@@ -1926,7 +1958,9 @@ function saveStop(){
   // them by index after the sort, landing them on the wrong stop).
   const _endTimeVal=(document.getElementById('f-endtime')?.value||'').trim()||undefined;
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
+  const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.

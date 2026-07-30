@@ -386,3 +386,34 @@ test('cloud version history exists, keeps 5, and is weekly', () => {
   assert.equal(due(now - WEEK - 1, now), true, 'due once the newest is a week old');
   assert.equal(due(now - (WEEK - 1000), now), false, 'not due if the newest is under a week old');
 });
+
+// ---------------------------------------------------------------------------
+// Airport arrival: 3 hrs early for international, 2 hrs for domestic.
+test('_minsToClock formats minutes-since-midnight as a clock time', () => {
+  const c = fn('_minsToClock');
+  assert.equal(c(17 * 60 + 30), '5:30 PM');
+  assert.equal(c(0), '12:00 AM');
+  assert.equal(c(9 * 60 + 5), '9:05 AM');
+});
+
+test('_airportBufferMin is 3 hrs international, 2 hrs domestic', () => {
+  const buf = fn('_airportBufferMin');
+  const intl = fn('_isIntlFlight');
+  assert.equal(buf({ international: true }), 180, 'international = 3 hours');
+  assert.equal(buf({ international: false }), 120, 'domestic = 2 hours');
+  // Explicit choice always wins over the distance guess.
+  assert.equal(intl({ international: false, lat: 28.4, lng: -81.3, destLat: 51.1, destLng: -0.19 }), false);
+  // Long-haul with no explicit choice is guessed international; short-haul domestic.
+  assert.equal(intl({ lat: 28.4, lng: -81.3, destLat: 51.1, destLng: -0.19 }), true, 'MCO->LGW is international');
+  assert.equal(intl({ lat: 28.4, lng: -81.3, destLat: 40.6, destLng: -73.8 }), false, 'MCO->JFK is domestic');
+});
+
+test('_airportArrivalHtml shows the be-at-airport time before departure', () => {
+  const h = fn('_airportArrivalHtml');
+  const intl = h({ type: 'flight', time: '8:30 PM', international: true });
+  assert.match(intl, /5:30 PM/, 'international 8:30 PM departure -> at airport 5:30 PM');
+  assert.match(intl, /international/);
+  const dom = h({ type: 'flight', time: '8:30 PM', international: false });
+  assert.match(dom, /6:30 PM/, 'domestic 8:30 PM departure -> at airport 6:30 PM');
+  assert.equal(h({ type: 'hike', time: '9:00 AM' }), '', 'non-flights get no airport line');
+});

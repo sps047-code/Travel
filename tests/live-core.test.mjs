@@ -406,6 +406,9 @@ test('_airportBufferMin is 3 hrs international, 2 hrs domestic', () => {
   // Long-haul with no explicit choice is guessed international; short-haul domestic.
   assert.equal(intl({ lat: 28.4, lng: -81.3, destLat: 51.1, destLng: -0.19 }), true, 'MCO->LGW is international');
   assert.equal(intl({ lat: 28.4, lng: -81.3, destLat: 40.6, destLng: -73.8 }), false, 'MCO->JFK is domestic');
+  // No destination coords: detect international from the flight text.
+  assert.equal(intl({ type: 'flight', notes: 'Overnight transatlantic flight.' }), true, 'transatlantic text = international');
+  assert.equal(intl({ type: 'flight', name: 'Flight to Chicago', notes: 'quick hop' }), false, 'no signal = domestic');
 });
 
 test('_airportArrivalHtml shows the be-at-airport time before departure', () => {

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v149';
+window.APP_CODE_VERSION='v150';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -364,26 +364,30 @@ function _minsToClock(mins){
   const h=Math.floor(mins/60), mn=mins%60, ap=h<12?'AM':'PM'; let h12=h%12; if(h12===0)h12=12;
   return h12+':'+(mn<10?'0':'')+mn+' '+ap;
 }
-// Is a flight international? An explicit choice (stop.international) always wins;
-// otherwise guess from distance — long-haul (> 1500 mi) reads as international.
+// Is a flight international? An explicit choice (stop.international) always wins.
+// Otherwise guess: long-haul by distance (if destination coords are known), or an
+// international signal in the flight's text (transatlantic, international, etc.) —
+// needed because many flights store no destination coordinates.
 function _isIntlFlight(s){
   if(s&&typeof s.international==='boolean')return s.international;
   if(s&&_validLL(s)&&s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng})){
-    try{ return haversine(s.lat,s.lng,s.destLat,s.destLng)>1500; }catch(e){}
+    try{ if(haversine(s.lat,s.lng,s.destLat,s.destLng)>1500)return true; }catch(e){}
   }
+  const txt=(((s&&s.name)||'')+' '+((s&&s.from)||'')+' '+((s&&s.to)||'')+' '+((s&&s.notes)||'')).toLowerCase();
+  if(/transatlantic|transpacific|international|\bintl\b|overseas|long.?haul/.test(txt))return true;
   return false;
 }
 // Minutes you should be at the airport before departure: 180 intl, 120 domestic.
 function _airportBufferMin(s){ return _isIntlFlight(s)?180:120; }
-// The "be at the airport by" line shown on a flight card.
+// The "be at the airport by" chip shown on a flight card (styled to stand out).
 function _airportArrivalHtml(s){
   if(!s||s.type!=='flight')return '';
   const dep=_parseTimeMins(s.time);
   if(dep==null)return '';
   const intl=_isIntlFlight(s), buf=intl?180:120;
   let at=dep-buf, note='';
-  if(at<0){ at+=1440; note=' the night before'; }
-  return '<div class="card-notes" style="margin-top:4px;font-size:12px;font-weight:600;color:var(--pine)">&#128747; Be at the airport by <b>'+_escHtml(_minsToClock(at))+'</b>'+note+' &mdash; '+(intl?'3 hrs before an international flight':'2 hrs before a domestic flight')+'</div>';
+  if(at<0){ at+=1440; note=' (the night before)'; }
+  return '<div style="margin-top:7px;display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;line-height:1.35">&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span></div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';

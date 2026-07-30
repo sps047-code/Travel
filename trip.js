@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v147';
+window.APP_CODE_VERSION='v148';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -78,23 +78,36 @@ function _wouldLoseData(prev,next){
   if(ps>=6 && ns < ps*0.5)return true;                  // loses more than half the stops
   return false;
 }
-// How many versions to always keep in the cloud. A version is snapshotted before
-// every overwrite, and the oldest are dropped so exactly this many remain.
+// How many versions to always keep in the cloud, and how often a new one is
+// taken. Backups are WEEKLY: a new version is banked only if the newest existing
+// one is at least a week old, and the oldest are dropped so BACKUP_KEEP remain
+// (so ~5 weeks of history).
 const BACKUP_KEEP=5;
-// CLOUD version history: snapshot the copy we are about to overwrite into
+const BACKUP_INTERVAL_MS=7*24*60*60*1000; // weekly
+// Is a new backup due? True if there is none yet, or the newest is >= a week old.
+function _isBackupDue(newestAt,now){
+  if(!newestAt)return true;
+  return (now-newestAt)>=BACKUP_INTERVAL_MS;
+}
+// CLOUD version history: once a week, snapshot the current shared copy into
 // /history, then trim so only the newest BACKUP_KEEP versions are kept. Stored in
-// the shared cloud (NOT on the device), so the 5 versions are available from any
+// the shared cloud (NOT on the device), so the versions are available from any
 // device and survive losing a phone.
 async function _dbBackupBeforeOverwrite(priorState,ts,desc){
   if(!priorState||!_validTripState(priorState))return;
-  try{ await _dbFamilyPut('/history/'+ts,{at:ts,by:_sessionId(),desc:desc||'',state:priorState}); }catch(e){}
   try{
     const r=await fetch(_familyBase()+'/history.json?nc='+Date.now(),{cache:'no-store'});
     const hist=await r.json();
-    if(hist&&typeof hist==='object'){
-      const keys=Object.keys(hist).sort((a,b)=>Number(a)-Number(b)); // oldest first
-      for(let i=0;i<keys.length-BACKUP_KEEP;i++){ try{ await _dbFamilyDelete('/history/'+keys[i]); }catch(e){} }
+    let keys=(hist&&typeof hist==='object')?Object.keys(hist).sort((a,b)=>Number(a)-Number(b)):[]; // oldest first
+    // Weekly cadence: skip if we already banked a version within the last week.
+    if(keys.length){
+      const nk=keys[keys.length-1];
+      const newestAt=(hist[nk]&&hist[nk].at)||Number(nk);
+      if(!_isBackupDue(newestAt,ts))return;
     }
+    await _dbFamilyPut('/history/'+ts,{at:ts,by:_sessionId(),desc:desc||'',state:priorState});
+    keys.push(String(ts));
+    for(let i=0;i<keys.length-BACKUP_KEEP;i++){ try{ await _dbFamilyDelete('/history/'+keys[i]); }catch(e){} }
   }catch(e){}
 }
 // Accept an incoming (cloud) state only if it is structurally a trip and would
@@ -2852,7 +2865,7 @@ async function _recGather(){
         const h=hist[k];
         if(h&&h.state&&Array.isArray(h.state.days)){
           let when=''; try{ when=new Date(h.at||Number(k)).toLocaleString(); }catch(e){}
-          add('Cloud backup'+(when?' — '+when:''), JSON.stringify(h.state));
+          add('Weekly cloud backup'+(when?' — '+when:''), JSON.stringify(h.state));
         }
       });
     }

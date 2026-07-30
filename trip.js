@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v140';
+window.APP_CODE_VERSION='v141';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2739,6 +2739,89 @@ function _stopFamily(){
   _stopPresence();
 }
 
+// ===========================================================================
+// RECOVERY SCREEN (?recover=1). A self-contained rescue UI that NEVER touches
+// the cloud on its own. It short-circuits init() BEFORE any cloud fetch or the
+// family watcher starts, so opening it can never overwrite this device's saved
+// copy. Section 1 shows/exports this device's saved itinerary (localStorage);
+// Section 2 pastes a good copy and pushes it to every device. This is how a
+// device that still holds the real itinerary rescues everyone.
+// ===========================================================================
+async function _recoveryScreen(){
+  document.title='Seasons — Recovery';
+  let raw=null;
+  try{ raw=localStorage.getItem(LS_KEY); }catch(e){}
+  if(!raw && 'caches' in window){
+    try{ const r=await caches.match('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json'); if(r) raw=await r.text(); }catch(e){}
+  }
+  let stats='';
+  if(raw){
+    try{ const st=JSON.parse(raw); const days=(st.days||[]).length; const stops=(st.days||[]).reduce((n,d)=>n+((d.stops||[]).length),0); stats=days+' days · '+stops+' stops · '+raw.length+' chars'; }
+    catch(e){ stats='(the saved copy on this device is not valid JSON)'; }
+  }
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const box='border:1px solid #ddd;border-radius:10px;padding:14px;margin:14px 0;background:#fff';
+  const btn='padding:11px 15px;border:0;border-radius:8px;color:#fff;font-size:14px;cursor:pointer';
+  document.body.innerHTML=
+    '<div style="max-width:680px;margin:0 auto;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
+      '<h2 style="margin:8px 0">Itinerary recovery</h2>'+
+      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. This screen never changes anything until you tap a button.</p>'+
+      '<div style="'+box+'">'+
+        '<h3 style="margin:0 0 6px">1 · This device’s saved copy</h3>'+
+        (raw?
+          '<p style="color:#555;font-size:13px;margin:0 0 8px">Found on this device: <b>'+esc(stats)+'</b>. If that looks like your real itinerary, <b>Copy</b> it or <b>Download</b> it to keep it safe, then use it in step 2.</p>'+
+          '<textarea id="rec-out" readonly style="width:100%;height:120px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box">'+esc(raw)+'</textarea>'+
+          '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+            '<button onclick="_recCopy()" style="'+btn+';background:#2563eb">Copy</button>'+
+            '<button onclick="_recDownload()" style="'+btn+';background:#059669">Download backup file</button>'+
+          '</div>'
+        :'<p style="color:#a00;font-size:13px;margin:0">No saved copy was found on this device.</p>')+
+      '</div>'+
+      '<div style="'+box+'">'+
+        '<h3 style="margin:0 0 6px">2 · Push a good copy to every device</h3>'+
+        '<p style="color:#555;font-size:13px;margin:0 0 8px">Paste a good itinerary copy below (from step 1, or a backup file) and push it to the shared cloud. Every device syncs to it within a few seconds.</p>'+
+        '<textarea id="rec-in" placeholder="Paste itinerary JSON here" style="width:100%;height:120px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"></textarea>'+
+        '<div style="margin-top:8px"><button onclick="_recImport()" style="'+btn+';background:#dc2626">Restore this copy to all devices</button></div>'+
+        '<p id="rec-msg" style="font-size:13px;margin-top:8px;font-weight:600"></p>'+
+      '</div>'+
+      '<p style="color:#888;font-size:12px">Version '+(window.APP_CODE_VERSION||'')+'</p>'+
+    '</div>';
+}
+function _recCopy(){
+  const t=document.getElementById('rec-out'); if(!t)return;
+  t.focus(); t.select();
+  const done=()=>alert('Copied. Paste it somewhere safe now — email it to yourself is ideal.');
+  try{ navigator.clipboard.writeText(t.value).then(done,()=>{try{document.execCommand('copy');}catch(e){} done();}); }
+  catch(e){ try{document.execCommand('copy');}catch(e2){} done(); }
+}
+function _recDownload(){
+  const t=document.getElementById('rec-out'); if(!t)return;
+  try{
+    const blob=new Blob([t.value],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=tripId+'-backup.json'; document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ alert('Download failed: '+(e&&e.message||e)); }
+}
+async function _recImport(){
+  const msg=document.getElementById('rec-msg'), t=document.getElementById('rec-in');
+  const setMsg=(s,c)=>{ if(msg){ msg.textContent=s; msg.style.color=c||'#111'; } };
+  let st;
+  try{ st=JSON.parse(((t&&t.value)||'').trim()); }
+  catch(e){ setMsg('That is not valid JSON — paste the entire copy, including the { and }.','#dc2626'); return; }
+  if(!st||!Array.isArray(st.days)||!st.days.length){ setMsg('That copy has no days in it — refusing to restore an empty itinerary.','#dc2626'); return; }
+  const days=st.days.length, stops=st.days.reduce((n,d)=>n+((d.stops||[]).length),0);
+  if(!confirm('Restore this copy — '+days+' days, '+stops+' stops — to EVERY device sharing this trip?\n\nThis overwrites the current shared itinerary. Do this only if the copy above is the correct one.')) return;
+  if(!st.tripType) st.tripType='family';
+  try{ localStorage.setItem(LS_KEY,JSON.stringify(st)); }catch(e){}
+  try{
+    const ts=Date.now(); _lastFamilyAt=ts;
+    await _dbFamilyPut('/state',JSON.parse(JSON.stringify(st)));
+    await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:'Restored from a saved copy'});
+    setMsg('Restored ('+days+' days, '+stops+' stops) and pushed to the cloud. Other devices update within a few seconds. Reloading…','#059669');
+    setTimeout(()=>{ location.href=location.pathname+'?id='+encodeURIComponent(tripId)+'&fam=1'; },1600);
+  }catch(e){ setMsg('Saved on THIS device, but pushing to the cloud failed: '+(e&&e.message||e)+'. Try the button again.','#dc2626'); }
+}
+
 function _updateTypeBadge(){
   const el=document.getElementById('trip-type-badge');
   if(!el)return;
@@ -4419,6 +4502,14 @@ async function _readSavedState(){
   return null;
 }
 async function init(){
+  // RECOVERY (?recover=1): rescue UI that reads this device's saved copy and can
+  // push a good copy to everyone. MUST be the very first thing — before any cloud
+  // read or the family watcher — so it can never overwrite this device's copy.
+  if(new URLSearchParams(location.search).get('recover')==='1'){
+    try{ await _recoveryScreen(); }
+    catch(e){ document.body.innerHTML='<pre style="padding:16px;white-space:pre-wrap">Recovery screen error: '+((e&&e.message)||e)+'</pre>'; }
+    return;
+  }
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');
   const isLocal=localTrips.some(t=>t.id===tripId);
   const _famParam=new URLSearchParams(location.search).get('fam')==='1';

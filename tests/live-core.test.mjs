@@ -345,3 +345,42 @@ test('_healBadEndTimes makes duration equal end - start for an activity', () => 
   heal();
   assert.equal(state.days[0].stops[0].duration, '25min');
 });
+
+// ---------------------------------------------------------------------------
+// DATA-LOSS SAFEGUARDS (added after the June-14 overwrite incident).
+// These lock in that a stale/empty/default copy can never clobber real work.
+test('_wouldLoseData blocks overwriting a full trip with an empty one', () => {
+  const g = fn('_wouldLoseData');
+  const full = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
+  assert.equal(g(full, { days: [] }), true, 'empty next must be blocked');
+  assert.equal(g(full, { days: null }), true, 'non-trip next must be blocked');
+  assert.equal(g(full, {}), true, 'missing days must be blocked');
+});
+
+test('_wouldLoseData blocks a push that drops whole days or most stops', () => {
+  const g = fn('_wouldLoseData');
+  const full = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
+  const fewerDays = { days: Array.from({ length: 10 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
+  assert.equal(g(full, fewerDays), true, 'losing a whole day must be blocked');
+  const halfStops = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }] })) };
+  assert.equal(g(full, halfStops), true, 'losing more than half the stops must be blocked');
+});
+
+test('_wouldLoseData allows a normal edit (same size or minor change)', () => {
+  const g = fn('_wouldLoseData');
+  const full = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
+  const edited = JSON.parse(JSON.stringify(full));
+  edited.days[0].stops.pop(); // remove one stop out of 33 — normal
+  assert.equal(g(full, edited), false, 'a normal one-stop edit must be allowed');
+  assert.equal(g(null, full), false, 'no previous trip means nothing to lose');
+});
+
+test('_pushLocalBackup keeps an on-device version history (newest first, capped)', () => {
+  const bak = fn('_pushLocalBackup');
+  ctx.localStorage = { _m: new Map(), getItem(k){return this._m.has(k)?this._m.get(k):null;}, setItem(k,v){this._m.set(k,String(v));}, removeItem(k){this._m.delete(k);}, key(){return null;}, get length(){return this._m.size;} };
+  for (let i = 0; i < 20; i++) bak({ days: [{ stops: [{ name: 'stop' + i }] }] });
+  const key = Object.keys(Object.fromEntries(ctx.localStorage._m)).find(k => k.startsWith('seasons_backups_'));
+  const arr = JSON.parse(ctx.localStorage.getItem(key));
+  assert.ok(arr.length <= 15, 'history is capped at 15, got ' + arr.length);
+  assert.ok(arr[0].s.includes('stop19'), 'newest backup is first');
+});

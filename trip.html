@@ -583,7 +583,7 @@ body.offline #audio-discover-btn{display:none!important}
     // (old code running behind a newer cache), this shows the OLD number — so the
     // badge can never claim a version the executing code isn't actually running.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v143'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v144'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -788,7 +788,7 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=143"></script>
+<script src="trip.js?v=144"></script>
 <script>
 (function(){
   var MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v143';
+window.APP_CODE_VERSION='v144';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -61,7 +61,36 @@ function saveState(changeDesc='',localOnly=false){
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+  try{_pushLocalBackup(state);}catch(e){}   // automatic on-device version history
   if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
+}
+
+// ---- DATA-LOSS SAFEGUARDS (added after the June-14 overwrite incident) ------
+// Count every stop across all days in a trip state.
+function _countStops(st){ try{ return (st.days||[]).reduce((n,d)=>n+((d.stops||[]).length),0); }catch(e){ return 0; } }
+// Would writing `next` over `prev` destroy a lot of real work? Used as a brake so
+// a stale, empty, or default copy can never silently clobber a full itinerary.
+// A deliberate restore passes force and bypasses this.
+function _wouldLoseData(prev,next){
+  if(!prev||!Array.isArray(prev.days)||!prev.days.length)return false; // nothing to lose
+  if(!next||!Array.isArray(next.days)||!next.days.length)return true;  // next isn't a real trip
+  const ps=_countStops(prev), ns=_countStops(next);
+  if(next.days.length < prev.days.length)return true;   // loses whole days
+  if(ps>=6 && ns < ps*0.5)return true;                  // loses more than half the stops
+  return false;
+}
+// On-device rolling backups: keep the last several versions in localStorage so a
+// bad change can always be undone, independent of the cloud.
+const BAK_KEY='seasons_backups_'+tripId;
+function _pushLocalBackup(st){
+  if(!st||!Array.isArray(st.days)||!st.days.length)return;
+  const s=JSON.stringify(st);
+  let arr=[]; try{ arr=JSON.parse(localStorage.getItem(BAK_KEY)||'[]'); }catch(e){ arr=[]; }
+  if(arr.length&&arr[0]&&arr[0].s===s)return;           // unchanged since last backup
+  arr.unshift({at:Date.now(),days:st.days.length,stops:_countStops(st),s:s});
+  arr=arr.slice(0,15);
+  try{ localStorage.setItem(BAK_KEY,JSON.stringify(arr)); }
+  catch(e){ while(arr.length>3){ arr.pop(); try{ localStorage.setItem(BAK_KEY,JSON.stringify(arr)); break; }catch(e2){} } }
 }
 // Accept an incoming (cloud) state only if it is structurally a trip and would
 // not wipe a non-empty local itinerary with an empty one.
@@ -2645,8 +2674,23 @@ async function _dbFamilyDelete(subpath){
 function _syncFamily(changeDesc){
   clearTimeout(_familySyncTimer);
   _familySyncTimer=setTimeout(async()=>{
+    const next=JSON.parse(JSON.stringify(state));
+    // Read what's currently in the cloud so we can (a) keep a history snapshot of
+    // it before overwriting and (b) refuse a push that would wipe a fuller copy.
+    let cloud=null;
+    try{ const all=await _dbFamilyGetAll(); if(all&&_validTripState(all.state))cloud=all.state; }catch(e){}
+    if(cloud&&_wouldLoseData(cloud,next)){
+      // Safety brake: the shared copy is much fuller than what we're about to push.
+      // Never silently overwrite it — keep our change local and warn instead.
+      try{console.warn('[family] push blocked — would lose data vs the shared copy');}catch(e){}
+      try{showToast('⚠ Not synced: this change would erase a fuller shared itinerary. Nothing was overwritten.');}catch(e){}
+      return;
+    }
     const ts=Date.now();_lastFamilyAt=ts;
-    await _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
+    // Append-only history: snapshot the copy we are about to replace, so any
+    // overwrite (even a same-size one) is always recoverable.
+    if(cloud){ try{ await _dbFamilyPut('/history/'+ts,{at:ts,by:_sessionId(),desc:changeDesc||'',state:cloud}); }catch(e){} }
+    await _dbFamilyPut('/state',next).catch(()=>{});
     await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:changeDesc||''}).catch(()=>{});
   },600);
 }
@@ -2682,8 +2726,7 @@ function _watchFamily(){
         state=data.state;
         try{ _sortAllDaysByTime(); }catch(e){}
         try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
-        try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // re-apply after adopting a still-corrupt cloud copy
-        try{ if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
+        // NO auto-mutation on adoption — never rewrite a cloud copy and push it back.
         try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         renderAll();
         showToast('✎ Change: '+_escHtml(lc.desc||'itinerary updated'));
@@ -2795,6 +2838,16 @@ async function _recGather(){
       }
     }catch(e){}
   }
+  // The automatic on-device backups (newest first, each timestamped).
+  try{
+    const baks=JSON.parse(localStorage.getItem('seasons_backups_'+tripId)||'[]');
+    baks.forEach(b=>{
+      if(b&&b.s){
+        let when=''; try{ when=new Date(b.at).toLocaleString(); }catch(e){}
+        add('Automatic backup'+(when?' — '+when:'')+' ('+(b.days||'?')+' days · '+(b.stops||'?')+' stops)', b.s);
+      }
+    });
+  }catch(e){}
   // Sweep every localStorage key for anything that parses as an itinerary.
   try{
     for(let i=0;i<localStorage.length;i++){
@@ -4628,8 +4681,8 @@ async function init(){
               state=data.state; if(!state.tripType)state.tripType='family';
               try{ _sortAllDaysByTime(); }catch(e){}
               try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
-              try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // re-apply after adopting a still-corrupt cloud copy
-              try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
+              // NO auto-mutation here. Adopting a cloud copy must never rewrite it and
+              // push back — that auto-heal-on-load pattern is what corrupted the trip.
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
               renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
             }
@@ -4646,9 +4699,14 @@ async function init(){
           _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
           try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         }else{
+          // The cloud looked empty or unreadable. This may just be a momentary bad
+          // read — so we show the built-in trip as a starting point but NEVER write
+          // it to the shared cloud. (Writing the default here is exactly what wiped
+          // a month of edits.) If the cloud really has data, the 3-second watcher
+          // will pick it up on the next poll; if it's genuinely new, the first real
+          // edit seeds the cloud safely through the guarded sync.
           const r=await fetch('trips/'+tripId+'.json');state=await r.json();
           state.tripType='family';
-          _dbFamilyPut('/state',JSON.parse(JSON.stringify(state))).catch(()=>{});
         }
       }catch(e){
         try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
@@ -4669,8 +4727,8 @@ async function init(){
 
   try{ _sortAllDaysByTime(); }catch(e){}
   try{ _seedLogicBaseline(); }catch(e){}   // baseline = the itinerary as loaded (gate blocks only NEW impossibilities)
-  try{ if(_fixScotlandDay7Once())saveState('Corrected Day 7'); }catch(e){}   // one-time Day 7 repair (locks once confirmed correct)
-  try{ await _loadCanonCoords(); if(_applyCoordHeal())saveState('Restored corrupted location'); }catch(e){}
+  // NO auto-mutation of the itinerary on load. Nothing here may rewrite stops/days
+  // and save — that on-load auto-heal pattern is what overwrote real data.
   try{ if(_ensureJnlIds())saveState('',true); _migrateJnlKeys(); }catch(e){}
   if(state.title)document.title='Seasons — '+state.title;
   if(state.mapCenter)map.setView(state.mapCenter,state.mapZoom||8);

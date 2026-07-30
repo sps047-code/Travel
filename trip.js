@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v141';
+window.APP_CODE_VERSION='v142';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2747,6 +2747,28 @@ function _stopFamily(){
 // Section 2 pastes a good copy and pushes it to every device. This is how a
 // device that still holds the real itinerary rescues everyone.
 // ===========================================================================
+// Build a human-readable preview (day titles + every stop name) and a keyword
+// check from a raw JSON string. Lets the user CONFIRM a copy is the right one
+// (e.g. it contains "Lincoln") before trusting or pushing it.
+function _recPreview(raw,keyword){
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let st;
+  try{ st=JSON.parse(raw); }catch(e){ return {ok:false,html:'<span style="color:#a00">Not valid JSON.</span>',days:0,stops:0,has:false}; }
+  if(!st||!Array.isArray(st.days)){ return {ok:false,html:'<span style="color:#a00">No itinerary days found in this copy.</span>',days:0,stops:0,has:false}; }
+  const kw=(keyword||'').trim().toLowerCase();
+  const has=kw?raw.toLowerCase().indexOf(kw)>=0:false;
+  let stops=0, rows='';
+  st.days.forEach((d,i)=>{
+    const names=(d.stops||[]).map(s=>s.name||'').filter(Boolean);
+    stops+=names.length;
+    const hl=names.map(n=>{
+      const hit=kw&&n.toLowerCase().indexOf(kw)>=0;
+      return hit?'<b style="background:#fde68a">'+esc(n)+'</b>':esc(n);
+    }).join(', ');
+    rows+='<div style="padding:4px 0;border-top:1px solid #eee;font-size:12px"><b>Day '+(i+1)+'</b> '+esc(d.title||'')+'<br><span style="color:#555">'+(hl||'<i>no stops</i>')+'</span></div>';
+  });
+  return {ok:true,days:st.days.length,stops:stops,has:has,html:rows};
+}
 async function _recoveryScreen(){
   document.title='Seasons — Recovery';
   let raw=null;
@@ -2754,38 +2776,74 @@ async function _recoveryScreen(){
   if(!raw && 'caches' in window){
     try{ const r=await caches.match('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json'); if(r) raw=await r.text(); }catch(e){}
   }
-  let stats='';
-  if(raw){
-    try{ const st=JSON.parse(raw); const days=(st.days||[]).length; const stops=(st.days||[]).reduce((n,d)=>n+((d.stops||[]).length),0); stats=days+' days · '+stops+' stops · '+raw.length+' chars'; }
-    catch(e){ stats='(the saved copy on this device is not valid JSON)'; }
-  }
+  window._recRaw=raw||'';
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const box='border:1px solid #ddd;border-radius:10px;padding:14px;margin:14px 0;background:#fff';
   const btn='padding:11px 15px;border:0;border-radius:8px;color:#fff;font-size:14px;cursor:pointer';
+  const kw='Lincoln';
+  const pv=raw?_recPreview(raw,kw):null;
+  const badge=pv&&pv.ok?(
+      '<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;'+
+      (pv.has?'background:#dcfce7;color:#166534">✓ This copy CONTAINS “'+esc(kw)+'” — '+pv.days+' days · '+pv.stops+' stops. This looks like the right one.'
+             :'background:#fee2e2;color:#991b1b">✗ This copy does NOT contain “'+esc(kw)+'” ('+pv.days+' days · '+pv.stops+' stops). It may be the wrong/corrupted copy.')+
+      '</div>'):'';
   document.body.innerHTML=
     '<div style="max-width:680px;margin:0 auto;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
       '<h2 style="margin:8px 0">Itinerary recovery</h2>'+
-      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. This screen never changes anything until you tap a button.</p>'+
+      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button.</p>'+
       '<div style="'+box+'">'+
         '<h3 style="margin:0 0 6px">1 · This device’s saved copy</h3>'+
         (raw?
-          '<p style="color:#555;font-size:13px;margin:0 0 8px">Found on this device: <b>'+esc(stats)+'</b>. If that looks like your real itinerary, <b>Copy</b> it or <b>Download</b> it to keep it safe, then use it in step 2.</p>'+
-          '<textarea id="rec-out" readonly style="width:100%;height:120px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box">'+esc(raw)+'</textarea>'+
-          '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+          badge+
+          '<div style="margin:6px 0 8px"><input id="rec-kw" value="'+esc(kw)+'" placeholder="stop name to check" style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:150px"> '+
+            '<button onclick="_recCheck()" style="'+btn+';background:#6b7280">Check for this stop</button></div>'+
+          '<details style="margin:6px 0"><summary style="cursor:pointer;font-size:13px;color:#2563eb">Show every day &amp; stop</summary>'+
+            '<div id="rec-preview" style="margin-top:6px;max-height:320px;overflow:auto">'+(pv?pv.html:'')+'</div></details>'+
+          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+            '<button onclick="_recUseThis()" style="'+btn+';background:#dc2626">Push THIS copy to all devices</button>'+
             '<button onclick="_recCopy()" style="'+btn+';background:#2563eb">Copy</button>'+
-            '<button onclick="_recDownload()" style="'+btn+';background:#059669">Download backup file</button>'+
-          '</div>'
+            '<button onclick="_recDownload()" style="'+btn+';background:#059669">Download backup</button>'+
+          '</div>'+
+          '<textarea id="rec-out" readonly style="display:none">'+esc(raw)+'</textarea>'
         :'<p style="color:#a00;font-size:13px;margin:0">No saved copy was found on this device.</p>')+
       '</div>'+
       '<div style="'+box+'">'+
-        '<h3 style="margin:0 0 6px">2 · Push a good copy to every device</h3>'+
-        '<p style="color:#555;font-size:13px;margin:0 0 8px">Paste a good itinerary copy below (from step 1, or a backup file) and push it to the shared cloud. Every device syncs to it within a few seconds.</p>'+
-        '<textarea id="rec-in" placeholder="Paste itinerary JSON here" style="width:100%;height:120px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"></textarea>'+
-        '<div style="margin-top:8px"><button onclick="_recImport()" style="'+btn+';background:#dc2626">Restore this copy to all devices</button></div>'+
+        '<h3 style="margin:0 0 6px">2 · Restore from a copy or backup file</h3>'+
+        '<p style="color:#555;font-size:13px;margin:0 0 8px">Load your downloaded backup file, or paste a copy, then push it to every device.</p>'+
+        '<div style="margin:0 0 8px"><input type="file" id="rec-file" accept=".json,application/json" onchange="_recLoadFile(event)"></div>'+
+        '<textarea id="rec-in" placeholder="…or paste itinerary JSON here" style="width:100%;height:110px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"></textarea>'+
+        '<div id="rec-in-badge" style="font-size:13px;margin:8px 0;font-weight:600"></div>'+
+        '<div><button onclick="_recImport()" style="'+btn+';background:#dc2626">Restore this copy to all devices</button></div>'+
         '<p id="rec-msg" style="font-size:13px;margin-top:8px;font-weight:600"></p>'+
       '</div>'+
       '<p style="color:#888;font-size:12px">Version '+(window.APP_CODE_VERSION||'')+'</p>'+
     '</div>';
+}
+// Re-run the keyword check on this device's saved copy and refresh the preview.
+function _recCheck(){
+  const kwEl=document.getElementById('rec-kw'); const kw=kwEl?kwEl.value:'';
+  const pv=_recPreview(window._recRaw||'',kw);
+  const pe=document.getElementById('rec-preview'); if(pe)pe.innerHTML=pv.html;
+  alert(pv.has?('✓ Found “'+kw+'” in this copy.'):('✗ “'+kw+'” is NOT in this copy.'));
+}
+// One-tap: push THIS device's saved copy straight to all devices.
+function _recUseThis(){
+  const ta=document.getElementById('rec-in'); if(ta){ ta.value=window._recRaw||''; }
+  _recImport();
+}
+// Load a downloaded backup .json file into the paste box and show a check.
+function _recLoadFile(ev){
+  const f=ev&&ev.target&&ev.target.files&&ev.target.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const ta=document.getElementById('rec-in'); if(ta)ta.value=String(rd.result||'');
+    const kwEl=document.getElementById('rec-kw'); const kw=kwEl?kwEl.value:'Lincoln';
+    const pv=_recPreview(String(rd.result||''),kw);
+    const b=document.getElementById('rec-in-badge');
+    if(b)b.innerHTML=pv.ok?((pv.has?'<span style="color:#166534">✓ Loaded — contains “'+kw+'”':'<span style="color:#991b1b">⚠ Loaded — does NOT contain “'+kw+'”')+'</span> ('+pv.days+' days · '+pv.stops+' stops).'):'<span style="color:#991b1b">That file is not a valid itinerary.</span>';
+  };
+  rd.onerror=()=>{ const b=document.getElementById('rec-in-badge'); if(b)b.textContent='Could not read that file.'; };
+  rd.readAsText(f);
 }
 function _recCopy(){
   const t=document.getElementById('rec-out'); if(!t)return;

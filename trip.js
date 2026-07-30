@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v142';
+window.APP_CODE_VERSION='v143';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2769,47 +2769,82 @@ function _recPreview(raw,keyword){
   });
   return {ok:true,days:st.days.length,stops:stops,has:has,html:rows};
 }
+// Gather EVERY copy of the itinerary stored on this device, from all storage
+// layers — because the live copy and the offline-download copy are DIFFERENT
+// and the sync/reset only overwrites the live one. An offline copy saved while
+// the trip was still good can survive a corruption of the live copy.
+async function _recGather(){
+  const out=[];
+  const seen={};
+  const add=(label,raw)=>{ if(!raw||seen[raw])return; seen[raw]=1; out.push({label:label,raw:raw}); };
+  try{ add('Live copy on this device', localStorage.getItem(LS_KEY)); }catch(e){}
+  if('caches' in window){
+    // The offline-download copy — untouched by the 3-second sync and the reset.
+    try{ const r=await caches.match('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json'); if(r){ add('Offline-download copy on this device', await r.text()); } }catch(e){}
+    // Also sweep every cache entry that looks like a saved state for this trip.
+    try{
+      const keys=await caches.keys();
+      for(const ck of keys){
+        const c=await caches.open(ck);
+        const reqs=await c.keys();
+        for(const rq of reqs){
+          if(/offline-state/.test(rq.url)&&rq.url.indexOf(encodeURIComponent(tripId))>=0){
+            try{ const rr=await c.match(rq); if(rr){ add('Cache '+ck, await rr.text()); } }catch(e){}
+          }
+        }
+      }
+    }catch(e){}
+  }
+  // Sweep every localStorage key for anything that parses as an itinerary.
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k===LS_KEY)continue;
+      const v=localStorage.getItem(k);
+      if(v&&v.length>200&&v.indexOf('"days"')>=0){
+        try{ const o=JSON.parse(v); if(o&&Array.isArray(o.days)&&o.days.length){ add('Saved data under key “'+k+'”', v); } }catch(e){}
+      }
+    }
+  }catch(e){}
+  return out;
+}
 async function _recoveryScreen(){
   document.title='Seasons — Recovery';
-  let raw=null;
-  try{ raw=localStorage.getItem(LS_KEY); }catch(e){}
-  if(!raw && 'caches' in window){
-    try{ const r=await caches.match('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json'); if(r) raw=await r.text(); }catch(e){}
-  }
-  window._recRaw=raw||'';
+  const kw='Lincoln';
+  const sources=await _recGather();
+  window._recSources=sources;
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const box='border:1px solid #ddd;border-radius:10px;padding:14px;margin:14px 0;background:#fff';
   const btn='padding:11px 15px;border:0;border-radius:8px;color:#fff;font-size:14px;cursor:pointer';
-  const kw='Lincoln';
-  const pv=raw?_recPreview(raw,kw):null;
-  const badge=pv&&pv.ok?(
-      '<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;'+
-      (pv.has?'background:#dcfce7;color:#166534">✓ This copy CONTAINS “'+esc(kw)+'” — '+pv.days+' days · '+pv.stops+' stops. This looks like the right one.'
-             :'background:#fee2e2;color:#991b1b">✗ This copy does NOT contain “'+esc(kw)+'” ('+pv.days+' days · '+pv.stops+' stops). It may be the wrong/corrupted copy.')+
-      '</div>'):'';
+  // Render one card per copy found, best (contains keyword) first.
+  const cards=sources.map((s,i)=>({s,i,pv:_recPreview(s.raw,kw)}))
+    .sort((a,b)=>(b.pv.has?1:0)-(a.pv.has?1:0))
+    .map(({s,i,pv})=>{
+      const banner=pv.ok?
+        (pv.has?'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;background:#dcfce7;color:#166534">✓ CONTAINS “'+esc(kw)+'” — '+pv.days+' days · '+pv.stops+' stops. This looks like the RIGHT copy.</div>'
+                :'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;background:#fee2e2;color:#991b1b">✗ Does NOT contain “'+esc(kw)+'” ('+pv.days+' days · '+pv.stops+' stops).</div>')
+        :'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;background:#fef9c3;color:#713f12">Could not read this copy as an itinerary.</div>';
+      return '<div style="'+box+'">'+
+        '<h3 style="margin:0 0 6px">'+esc(s.label)+'</h3>'+
+        banner+
+        (pv.ok?'<details style="margin:6px 0"><summary style="cursor:pointer;font-size:13px;color:#2563eb">Show every day &amp; stop</summary>'+
+          '<div style="margin-top:6px;max-height:300px;overflow:auto">'+pv.html+'</div></details>'+
+          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+            '<button onclick="_recPush('+i+')" style="'+btn+';background:#dc2626">Push THIS copy to all devices</button>'+
+            '<button onclick="_recCopy('+i+')" style="'+btn+';background:#2563eb">Copy</button>'+
+            '<button onclick="_recDownload('+i+')" style="'+btn+';background:#059669">Download</button>'+
+          '</div>':'')+
+      '</div>';
+    }).join('');
   document.body.innerHTML=
     '<div style="max-width:680px;margin:0 auto;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
       '<h2 style="margin:8px 0">Itinerary recovery</h2>'+
-      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button.</p>'+
+      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button. Checking for a copy that contains “'+esc(kw)+'”.</p>'+
+      '<p style="color:#555;font-size:13px;margin:2px 0 0">Found <b>'+sources.length+'</b> stored '+(sources.length===1?'copy':'copies')+' on this device.</p>'+
+      (cards||'<div style="'+box+'"><p style="color:#a00;margin:0">No stored itinerary copies were found on this device.</p></div>')+
       '<div style="'+box+'">'+
-        '<h3 style="margin:0 0 6px">1 · This device’s saved copy</h3>'+
-        (raw?
-          badge+
-          '<div style="margin:6px 0 8px"><input id="rec-kw" value="'+esc(kw)+'" placeholder="stop name to check" style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:150px"> '+
-            '<button onclick="_recCheck()" style="'+btn+';background:#6b7280">Check for this stop</button></div>'+
-          '<details style="margin:6px 0"><summary style="cursor:pointer;font-size:13px;color:#2563eb">Show every day &amp; stop</summary>'+
-            '<div id="rec-preview" style="margin-top:6px;max-height:320px;overflow:auto">'+(pv?pv.html:'')+'</div></details>'+
-          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
-            '<button onclick="_recUseThis()" style="'+btn+';background:#dc2626">Push THIS copy to all devices</button>'+
-            '<button onclick="_recCopy()" style="'+btn+';background:#2563eb">Copy</button>'+
-            '<button onclick="_recDownload()" style="'+btn+';background:#059669">Download backup</button>'+
-          '</div>'+
-          '<textarea id="rec-out" readonly style="display:none">'+esc(raw)+'</textarea>'
-        :'<p style="color:#a00;font-size:13px;margin:0">No saved copy was found on this device.</p>')+
-      '</div>'+
-      '<div style="'+box+'">'+
-        '<h3 style="margin:0 0 6px">2 · Restore from a copy or backup file</h3>'+
-        '<p style="color:#555;font-size:13px;margin:0 0 8px">Load your downloaded backup file, or paste a copy, then push it to every device.</p>'+
+        '<h3 style="margin:0 0 6px">Restore from a backup file or paste</h3>'+
+        '<p style="color:#555;font-size:13px;margin:0 0 8px">Load a downloaded backup file, or paste a copy, then push it to every device.</p>'+
         '<div style="margin:0 0 8px"><input type="file" id="rec-file" accept=".json,application/json" onchange="_recLoadFile(event)"></div>'+
         '<textarea id="rec-in" placeholder="…or paste itinerary JSON here" style="width:100%;height:110px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"></textarea>'+
         '<div id="rec-in-badge" style="font-size:13px;margin:8px 0;font-weight:600"></div>'+
@@ -2819,17 +2854,21 @@ async function _recoveryScreen(){
       '<p style="color:#888;font-size:12px">Version '+(window.APP_CODE_VERSION||'')+'</p>'+
     '</div>';
 }
-// Re-run the keyword check on this device's saved copy and refresh the preview.
-function _recCheck(){
-  const kwEl=document.getElementById('rec-kw'); const kw=kwEl?kwEl.value:'';
-  const pv=_recPreview(window._recRaw||'',kw);
-  const pe=document.getElementById('rec-preview'); if(pe)pe.innerHTML=pv.html;
-  alert(pv.has?('✓ Found “'+kw+'” in this copy.'):('✗ “'+kw+'” is NOT in this copy.'));
+function _recSrcRaw(i){ const s=(window._recSources||[])[i]; return s?s.raw:''; }
+// Push a specific stored copy straight to all devices.
+function _recPush(i){ _recPushRaw(_recSrcRaw(i)); }
+function _recCopy(i){
+  const v=_recSrcRaw(i); if(!v)return;
+  const done=()=>alert('Copied. Paste it somewhere safe now — emailing it to yourself is ideal.');
+  try{ navigator.clipboard.writeText(v).then(done,done); }catch(e){ done(); }
 }
-// One-tap: push THIS device's saved copy straight to all devices.
-function _recUseThis(){
-  const ta=document.getElementById('rec-in'); if(ta){ ta.value=window._recRaw||''; }
-  _recImport();
+function _recDownload(i){
+  const v=_recSrcRaw(i); if(!v)return;
+  try{
+    const blob=new Blob([v],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=tripId+'-backup.json'; document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ alert('Download failed: '+(e&&e.message||e)); }
 }
 // Load a downloaded backup .json file into the paste box and show a check.
 function _recLoadFile(ev){
@@ -2837,38 +2876,26 @@ function _recLoadFile(ev){
   const rd=new FileReader();
   rd.onload=()=>{
     const ta=document.getElementById('rec-in'); if(ta)ta.value=String(rd.result||'');
-    const kwEl=document.getElementById('rec-kw'); const kw=kwEl?kwEl.value:'Lincoln';
-    const pv=_recPreview(String(rd.result||''),kw);
+    const pv=_recPreview(String(rd.result||''),'Lincoln');
     const b=document.getElementById('rec-in-badge');
-    if(b)b.innerHTML=pv.ok?((pv.has?'<span style="color:#166534">✓ Loaded — contains “'+kw+'”':'<span style="color:#991b1b">⚠ Loaded — does NOT contain “'+kw+'”')+'</span> ('+pv.days+' days · '+pv.stops+' stops).'):'<span style="color:#991b1b">That file is not a valid itinerary.</span>';
+    if(b)b.innerHTML=pv.ok?((pv.has?'<span style="color:#166534">✓ Loaded — contains “Lincoln”':'<span style="color:#991b1b">⚠ Loaded — does NOT contain “Lincoln”')+'</span> ('+pv.days+' days · '+pv.stops+' stops).'):'<span style="color:#991b1b">That file is not a valid itinerary.</span>';
   };
   rd.onerror=()=>{ const b=document.getElementById('rec-in-badge'); if(b)b.textContent='Could not read that file.'; };
   rd.readAsText(f);
 }
-function _recCopy(){
-  const t=document.getElementById('rec-out'); if(!t)return;
-  t.focus(); t.select();
-  const done=()=>alert('Copied. Paste it somewhere safe now — email it to yourself is ideal.');
-  try{ navigator.clipboard.writeText(t.value).then(done,()=>{try{document.execCommand('copy');}catch(e){} done();}); }
-  catch(e){ try{document.execCommand('copy');}catch(e2){} done(); }
-}
-function _recDownload(){
-  const t=document.getElementById('rec-out'); if(!t)return;
-  try{
-    const blob=new Blob([t.value],{type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=tripId+'-backup.json'; document.body.appendChild(a); a.click(); a.remove();
-  }catch(e){ alert('Download failed: '+(e&&e.message||e)); }
-}
-async function _recImport(){
-  const msg=document.getElementById('rec-msg'), t=document.getElementById('rec-in');
+// Validate a raw JSON copy, confirm, then write it to this device AND push it to
+// the shared cloud so every device syncs it. Used by both the per-copy buttons
+// and the paste/file box.
+async function _recPushRaw(raw){
+  const msg=document.getElementById('rec-msg');
   const setMsg=(s,c)=>{ if(msg){ msg.textContent=s; msg.style.color=c||'#111'; } };
   let st;
-  try{ st=JSON.parse(((t&&t.value)||'').trim()); }
-  catch(e){ setMsg('That is not valid JSON — paste the entire copy, including the { and }.','#dc2626'); return; }
-  if(!st||!Array.isArray(st.days)||!st.days.length){ setMsg('That copy has no days in it — refusing to restore an empty itinerary.','#dc2626'); return; }
+  try{ st=JSON.parse((raw||'').trim()); }
+  catch(e){ alert('That copy is not valid JSON.'); return; }
+  if(!st||!Array.isArray(st.days)||!st.days.length){ alert('That copy has no days in it — refusing to restore an empty itinerary.'); return; }
   const days=st.days.length, stops=st.days.reduce((n,d)=>n+((d.stops||[]).length),0);
-  if(!confirm('Restore this copy — '+days+' days, '+stops+' stops — to EVERY device sharing this trip?\n\nThis overwrites the current shared itinerary. Do this only if the copy above is the correct one.')) return;
+  const hasKw=(raw||'').toLowerCase().indexOf('lincoln')>=0;
+  if(!confirm('Restore this copy — '+days+' days, '+stops+' stops'+(hasKw?' (contains “Lincoln”)':' — does NOT contain “Lincoln”')+' — to EVERY device sharing this trip?\n\nThis overwrites the current shared itinerary. Do this only if this is the correct copy.')) return;
   if(!st.tripType) st.tripType='family';
   try{ localStorage.setItem(LS_KEY,JSON.stringify(st)); }catch(e){}
   try{
@@ -2876,9 +2903,11 @@ async function _recImport(){
     await _dbFamilyPut('/state',JSON.parse(JSON.stringify(st)));
     await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:'Restored from a saved copy'});
     setMsg('Restored ('+days+' days, '+stops+' stops) and pushed to the cloud. Other devices update within a few seconds. Reloading…','#059669');
-    setTimeout(()=>{ location.href=location.pathname+'?id='+encodeURIComponent(tripId)+'&fam=1'; },1600);
-  }catch(e){ setMsg('Saved on THIS device, but pushing to the cloud failed: '+(e&&e.message||e)+'. Try the button again.','#dc2626'); }
+    alert('Restored '+days+' days, '+stops+' stops and pushed to the cloud. Reloading…');
+    setTimeout(()=>{ location.href=location.pathname+'?id='+encodeURIComponent(tripId)+'&fam=1'; },1400);
+  }catch(e){ alert('Saved on THIS device, but pushing to the cloud failed: '+((e&&e.message)||e)+'. Try again.'); }
 }
+function _recImport(){ const t=document.getElementById('rec-in'); return _recPushRaw((t&&t.value)||''); }
 
 function _updateTypeBadge(){
   const el=document.getElementById('trip-type-badge');

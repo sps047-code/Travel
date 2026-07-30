@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v139';
+window.APP_CODE_VERSION='v140';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2693,6 +2693,47 @@ function _watchFamily(){
 }
 
 function _startFamily(){_watchFamily();_startPresence();}
+
+// EXPLICIT, USER-TRIGGERED restore to the original saved plan. Fires ONLY when
+// the app is opened with ?restore=savedplan AND the user taps OK on the confirm.
+// Never runs automatically. It overwrites the shared cloud copy, so it is the
+// deliberate "roll it all back to the committed plan" escape hatch. For
+// london-scotland it applies the corrected Day 7 the user dictated (the seed
+// file still lists the old Rosslyn stop). Returns true if a restore was pushed.
+async function _restoreSavedPlan(){
+  let plan;
+  try{
+    const r=await fetch('trips/'+tripId+'.json',{cache:'no-store'});
+    plan=await r.json();
+  }catch(e){ alert('Restore failed — could not load the saved plan: '+(e&&e.message||e)); return false; }
+  if(!plan||!Array.isArray(plan.days)||!plan.days.length){ alert('Restore failed — the saved plan looks empty.'); return false; }
+  // london-scotland: replace the seed's old Day 7 (Rosslyn) with the corrected
+  // one the user dictated. _SCOTLAND_DAY7 is used ONLY here, on explicit request.
+  if(tripId==='london-scotland' && typeof _SCOTLAND_DAY7!=='undefined'){
+    const di=plan.days.findIndex(d=>/glenfinnan|glencoe|rosslyn/i.test((d.title||'')+' '+(d.stops||[]).map(s=>s.name||'').join(' ')));
+    if(di>=0) plan.days[di].stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
+  }
+  const fam=getTripType()!=='solo';
+  plan.tripType=fam?'family':'solo';
+  const dayCount=plan.days.length;
+  if(!confirm('Restore the original saved plan ('+dayCount+' days)?\n\n'+
+      'This replaces the CURRENT itinerary'+(fam?' on every device sharing this trip':'')+
+      ' with the committed plan. It cannot be undone, and it will overwrite any changes not already lost.\n\nTap OK only if the itinerary is currently wrong and you want the saved plan back.')){
+    return false;
+  }
+  state=plan;
+  try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+  if(fam){
+    const ts=Date.now();_lastFamilyAt=ts;
+    try{
+      await _dbFamilyPut('/state',JSON.parse(JSON.stringify(state)));
+      await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:'Restored the saved plan'});
+    }catch(e){ alert('Saved locally, but pushing to the shared cloud failed: '+(e&&e.message||e)); }
+  }
+  // Reload clean, without the restore param, so it can never re-fire.
+  location.href=location.pathname+'?id='+encodeURIComponent(tripId)+(fam?'&fam=1':'');
+  return true;
+}
 function _stopFamily(){
   if(_familyPoll){clearInterval(_familyPoll);_familyPoll=null;}
   _stopPresence();
@@ -4382,6 +4423,13 @@ async function init(){
   const isLocal=localTrips.some(t=>t.id===tripId);
   const _famParam=new URLSearchParams(location.search).get('fam')==='1';
   if(_famParam)localStorage.setItem('tripFamily_'+tripId,'1');
+  // Explicit, one-time restore escape hatch (?restore=savedplan). Runs before we
+  // read the (possibly-corrupt) cloud copy so the user can force the saved plan
+  // back. Confirm-gated inside _restoreSavedPlan; on OK it reloads and returns.
+  if(new URLSearchParams(location.search).get('restore')==='savedplan'){
+    try{ await _restoreSavedPlan(); }catch(e){ alert('Restore failed: '+(e&&e.message||e)); }
+    return;
+  }
   const isFamilyOverride=localStorage.getItem('tripFamily_'+tripId)==='1';
   const isFamily=isFamilyOverride||_famParam||(BUILT_IN.includes(tripId)&&!localTrips.some(t=>t.id===tripId&&localStorage.getItem('tripFamily_'+tripId)==='0'));
 

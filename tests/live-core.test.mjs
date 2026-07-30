@@ -239,6 +239,21 @@ test('_fixScotlandDay7Once replaces the corrupted Day 7 once, feasibly', () => {
   assert.equal(fixOnce(), false, 'must never run a second time');
 });
 
+test('_fixScotlandDay7Once cleans a stale "Rosslyn" title when stops are already feasible', () => {
+  const fixOnce = fn('_fixScotlandDay7Once');
+  ctx.state = { tripType: 'family', days: [{
+    title: 'Rosslyn, Glenfinnan & Glencoe',
+    subtitle: 'Mon, Aug 10, 2026 · Rosslyn Chapel · Glenfinnan Viaduct · Glencoe',
+    stops: [
+      { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '10:45 AM', lat: 56.1237, lng: -3.948 },
+      { name: 'Glenfinnan Viaduct', type: 'hike', time: '1:20 PM', endTime: '2:20 PM', lat: 56.8758, lng: -5.431 },
+    ],
+  }] };
+  assert.equal(fixOnce(), true, 'should clean the stale title');
+  assert.ok(!/rosslyn/i.test(ctx.state.days[0].title), 'title still names Rosslyn: ' + ctx.state.days[0].title);
+  assert.ok(!/rosslyn/i.test(ctx.state.days[0].subtitle), 'subtitle still names Rosslyn: ' + ctx.state.days[0].subtitle);
+});
+
 test('fetchDayWeather never shows 0°F when the API has no reading', async () => {
   const fdw = fn('fetchDayWeather');
   // Simulate the forecast API returning a row with NO temperature (the 0°F bug).

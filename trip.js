@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v134';
+window.APP_CODE_VERSION='v135';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1448,16 +1448,22 @@ function _fixScotlandDay7Once(){
     const di=(state.days||[]).findIndex(d=>(d.stops||[]).some(s=>/glenfinnan|glencoe/i.test(s.name||'')));
     if(di<0)return false;
     const day=state.days[di];
-    // Only correct an INFEASIBLE Day 7. The logic gate refuses to save an
-    // infeasible day, so the only one that can exist is this leftover corruption
-    // — a feasible day (whatever the user has arranged) is never touched. This
-    // self-limits: once replaced with the feasible itinerary it has no errors, so
-    // it is never replaced again.
+    let changed=false;
+    // 1. Replace only an INFEASIBLE Day 7 (leftover corruption). A feasible day the
+    //    user arranged is never touched; once replaced it has no errors, so it is
+    //    never replaced again — self-limiting.
     let errs=[];
     try{ errs=_logicErrors({days:[day]}); }catch(e){}
-    if(errs.length===0)return false;
-    day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
-    return true;
+    if(errs.length>0){ day.stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7)); changed=true; }
+    // 2. Clean a STALE title/subtitle that still names Rosslyn when no Rosslyn stop
+    //    remains — the AI grader/optimizer read the title, so a removed stop must
+    //    not linger there. Self-limiting: once cleaned it no longer matches.
+    const hasRosslynStop=(day.stops||[]).some(s=>/rosslyn/i.test(s.name||''));
+    if(!hasRosslynStop){
+      if(/rosslyn/i.test(day.title||'')){ day.title=day.title.replace(/Rosslyn Chapel/gi,'Stirling Castle').replace(/Rosslyn/gi,'Stirling'); changed=true; }
+      if(/rosslyn/i.test(day.subtitle||'')){ day.subtitle=day.subtitle.replace(/Rosslyn Chapel/gi,'Stirling Castle').replace(/Rosslyn/gi,'Stirling'); changed=true; }
+    }
+    return changed;
   }catch(e){ return false; }
 }
 // Travel time between two consecutive stops, matching the leg-connector logic.

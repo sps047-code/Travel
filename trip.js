@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v146';
+window.APP_CODE_VERSION='v147';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -61,7 +61,6 @@ function saveState(changeDesc='',localOnly=false){
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-  try{_pushLocalBackup(state);}catch(e){}   // automatic on-device version history
   if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
 }
 
@@ -79,24 +78,25 @@ function _wouldLoseData(prev,next){
   if(ps>=6 && ns < ps*0.5)return true;                  // loses more than half the stops
   return false;
 }
-// How many versions to always keep (device and cloud). A version is snapshotted
-// before every overwrite, and the oldest are dropped so exactly this many remain.
+// How many versions to always keep in the cloud. A version is snapshotted before
+// every overwrite, and the oldest are dropped so exactly this many remain.
 const BACKUP_KEEP=5;
-// On-device rolling backups: keep the last BACKUP_KEEP versions in localStorage so
-// a bad change can always be undone, independent of the cloud.
-const BAK_KEY='seasons_backups_'+tripId;
-function _pushLocalBackup(st){
-  if(!st||!Array.isArray(st.days)||!st.days.length)return;
-  const s=JSON.stringify(st);
-  let arr=[]; try{ arr=JSON.parse(localStorage.getItem(BAK_KEY)||'[]'); }catch(e){ arr=[]; }
-  if(arr.length&&arr[0]&&arr[0].s===s)return;           // unchanged since last backup
-  arr.unshift({at:Date.now(),days:st.days.length,stops:_countStops(st),s:s});
-  arr=arr.slice(0,BACKUP_KEEP);
-  try{ localStorage.setItem(BAK_KEY,JSON.stringify(arr)); }
-  catch(e){ while(arr.length>2){ arr.pop(); try{ localStorage.setItem(BAK_KEY,JSON.stringify(arr)); break; }catch(e2){} } }
+// CLOUD version history: snapshot the copy we are about to overwrite into
+// /history, then trim so only the newest BACKUP_KEEP versions are kept. Stored in
+// the shared cloud (NOT on the device), so the 5 versions are available from any
+// device and survive losing a phone.
+async function _dbBackupBeforeOverwrite(priorState,ts,desc){
+  if(!priorState||!_validTripState(priorState))return;
+  try{ await _dbFamilyPut('/history/'+ts,{at:ts,by:_sessionId(),desc:desc||'',state:priorState}); }catch(e){}
+  try{
+    const r=await fetch(_familyBase()+'/history.json?nc='+Date.now(),{cache:'no-store'});
+    const hist=await r.json();
+    if(hist&&typeof hist==='object'){
+      const keys=Object.keys(hist).sort((a,b)=>Number(a)-Number(b)); // oldest first
+      for(let i=0;i<keys.length-BACKUP_KEEP;i++){ try{ await _dbFamilyDelete('/history/'+keys[i]); }catch(e){} }
+    }
+  }catch(e){}
 }
-// NOTE: backup VERSIONS are kept on the device (see _pushLocalBackup), not in
-// the cloud, per the user's choice. The cloud holds only the current shared copy.
 // Accept an incoming (cloud) state only if it is structurally a trip and would
 // not wipe a non-empty local itinerary with an empty one.
 function _validTripState(st){
@@ -2680,9 +2680,8 @@ function _syncFamily(changeDesc){
   clearTimeout(_familySyncTimer);
   _familySyncTimer=setTimeout(async()=>{
     const next=JSON.parse(JSON.stringify(state));
-    // Read what's currently in the cloud only to run the safety brake — refuse a
-    // push that would wipe a fuller shared copy. (Backup VERSIONS are kept on the
-    // device, not in the cloud, per the user's choice.)
+    // Read what's currently in the cloud so we can (a) run the safety brake and
+    // (b) snapshot it into the rolling 5-version history before overwriting.
     let cloud=null;
     try{ const all=await _dbFamilyGetAll(); if(all&&_validTripState(all.state))cloud=all.state; }catch(e){}
     if(cloud&&_wouldLoseData(cloud,next)){
@@ -2693,6 +2692,8 @@ function _syncFamily(changeDesc){
       return;
     }
     const ts=Date.now();_lastFamilyAt=ts;
+    // Rolling cloud history: bank the copy we're about to replace, keep newest 5.
+    if(cloud){ await _dbBackupBeforeOverwrite(cloud,ts,changeDesc); }
     await _dbFamilyPut('/state',next).catch(()=>{});
     await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:changeDesc||''}).catch(()=>{});
   },600);
@@ -2841,15 +2842,20 @@ async function _recGather(){
       }
     }catch(e){}
   }
-  // The automatic on-device backups (newest first, each timestamped).
+  // The automatic CLOUD backups — the rolling 5 versions saved before each
+  // overwrite. Newest first, each timestamped. Available from any device.
   try{
-    const baks=JSON.parse(localStorage.getItem('seasons_backups_'+tripId)||'[]');
-    baks.forEach(b=>{
-      if(b&&b.s){
-        let when=''; try{ when=new Date(b.at).toLocaleString(); }catch(e){}
-        add('Automatic backup'+(when?' — '+when:'')+' ('+(b.days||'?')+' days · '+(b.stops||'?')+' stops)', b.s);
-      }
-    });
+    const r=await fetch(_familyBase()+'/history.json?nc='+Date.now(),{cache:'no-store'});
+    const hist=await r.json();
+    if(hist&&typeof hist==='object'){
+      Object.keys(hist).sort((a,b)=>Number(b)-Number(a)).forEach(k=>{
+        const h=hist[k];
+        if(h&&h.state&&Array.isArray(h.state.days)){
+          let when=''; try{ when=new Date(h.at||Number(k)).toLocaleString(); }catch(e){}
+          add('Cloud backup'+(when?' — '+when:''), JSON.stringify(h.state));
+        }
+      });
+    }
   }catch(e){}
   // Sweep every localStorage key for anything that parses as an itinerary.
   try{
@@ -2956,6 +2962,8 @@ async function _recPushRaw(raw){
   try{ localStorage.setItem(LS_KEY,JSON.stringify(st)); }catch(e){}
   try{
     const ts=Date.now(); _lastFamilyAt=ts;
+    // Bank the copy we're about to overwrite into the rolling 5-version history.
+    try{ const all=await _dbFamilyGetAll(); if(all&&_validTripState(all.state))await _dbBackupBeforeOverwrite(all.state,ts,'Before restore'); }catch(e){}
     await _dbFamilyPut('/state',JSON.parse(JSON.stringify(st)));
     await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:'Restored from a saved copy'});
     setMsg('Restored ('+days+' days, '+stops+' stops) and pushed to the cloud. Other devices update within a few seconds. Reloading…','#059669');

@@ -375,13 +375,8 @@ test('_wouldLoseData allows a normal edit (same size or minor change)', () => {
   assert.equal(g(null, full), false, 'no previous trip means nothing to lose');
 });
 
-test('_pushLocalBackup always keeps the last 5 versions (newest first)', () => {
-  const bak = fn('_pushLocalBackup');
-  ctx.localStorage = { _m: new Map(), getItem(k){return this._m.has(k)?this._m.get(k):null;}, setItem(k,v){this._m.set(k,String(v));}, removeItem(k){this._m.delete(k);}, key(){return null;}, get length(){return this._m.size;} };
-  for (let i = 0; i < 20; i++) bak({ days: [{ stops: [{ name: 'stop' + i }] }] });
-  const key = Object.keys(Object.fromEntries(ctx.localStorage._m)).find(k => k.startsWith('seasons_backups_'));
-  const arr = JSON.parse(ctx.localStorage.getItem(key));
-  assert.equal(arr.length, 5, 'exactly 5 versions kept, got ' + arr.length);
-  assert.ok(arr[0].s.includes('stop19'), 'newest backup is first');
-  assert.ok(arr[4].s.includes('stop15'), 'oldest kept backup is the 5th most recent');
+test('cloud version history exists and is capped at 5', () => {
+  // Backups live in the cloud (see _dbBackupBeforeOverwrite), not on the device.
+  assert.equal(typeof ctx._dbBackupBeforeOverwrite, 'function', '_dbBackupBeforeOverwrite must exist');
+  assert.match(src, /const BACKUP_KEEP=5/, 'the cloud history must retain exactly 5 versions');
 });

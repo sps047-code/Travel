@@ -357,13 +357,15 @@ test('_wouldLoseData blocks overwriting a full trip with an empty one', () => {
   assert.equal(g(full, {}), true, 'missing days must be blocked');
 });
 
-test('_wouldLoseData blocks a push that drops whole days or most stops', () => {
+test('_wouldLoseData blocks catastrophic loss but ALLOWS deleting a day', () => {
   const g = fn('_wouldLoseData');
   const full = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
-  const fewerDays = { days: Array.from({ length: 10 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
-  assert.equal(g(full, fewerDays), true, 'losing a whole day must be blocked');
   const halfStops = { days: Array.from({ length: 11 }, () => ({ stops: [{ name: 'x' }] })) };
   assert.equal(g(full, halfStops), true, 'losing more than half the stops must be blocked');
+  // Deleting a day is a legitimate edit. Blocking it froze syncing permanently,
+  // because a blocked push is dropped and never retried.
+  const fewerDays = { days: Array.from({ length: 10 }, () => ({ stops: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] })) };
+  assert.equal(g(full, fewerDays), false, 'deleting one day must still sync');
 });
 
 test('_wouldLoseData allows a normal edit (same size or minor change)', () => {
@@ -427,4 +429,47 @@ test('_flightDepMins tolerates timezone suffixes and reads notes', () => {
   assert.equal(dep({ time: '8:30 PM' }), p('8:30 PM'));
   assert.equal(dep({ time: '8:30 PM EDT' }), p('8:30 PM'), 'a timezone suffix must not break it');
   assert.equal(dep({ time: '', notes: 'Departs Orlando 8:30 PM.' }), p('8:30 PM'), 'falls back to Departs ... in notes');
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION (app-unusable incident): moving ONE stop rewrote the whole day.
+// A dinner set for 6:30 PM was dragged to 2:29 PM and the hotel to 4:04 PM,
+// because _recalcDayTimes discarded every user-set time and re-packed the day
+// back-to-back from the anchor. A time the user set is DATA: it may be pushed
+// LATER when physically unreachable, but never pulled earlier or invented.
+test('moving a stop preserves every user-set time that is still reachable', () => {
+  const move = fn('moveStop');
+  ctx.saveState = () => {}; ctx.renderAll = () => {}; ctx.renderDayMap = () => {};
+  ctx.currentDayIdx = 0;
+  ctx.state = { days: [{ stops: [
+    { name: 'Edinburgh Castle', type: 'hike', time: '9:30 AM', endTime: '11:30 AM', lat: 55.9486, lng: -3.1999 },
+    { name: 'Lunch', type: 'food', time: '12:00 PM', endTime: '1:00 PM', lat: 55.9489, lng: -3.1953 },
+    { name: 'Holyrood Palace', type: 'hike', time: '2:00 PM', endTime: '3:30 PM', lat: 55.9526, lng: -3.1722 },
+    { name: 'Dinner', type: 'food', time: '6:30 PM', endTime: '8:00 PM', lat: 55.95, lng: -3.19 },
+    { name: 'Hotel', type: 'lodge', time: '9:00 PM', endTime: '9:30 PM', lat: 55.952, lng: -3.188 },
+  ] }] };
+  move(0, 2, -1);                     // move Holyrood up one slot
+  const byName = {};
+  for (const s of ctx.state.days[0].stops) byName[s.name] = s.time;
+  const p = fn('_parseTimeMins');
+  assert.equal(p(byName['Dinner']), p('6:30 PM'), 'dinner must stay at 6:30 PM, not slide to the afternoon');
+  assert.equal(p(byName['Hotel']), p('9:00 PM'), 'the hotel must stay at 9:00 PM');
+  assert.equal(p(byName['Edinburgh Castle']), p('9:30 AM'), 'the first stop keeps its time');
+  assert.equal(p(byName['Holyrood Palace']), p('2:00 PM'), 'the moved stop keeps its own reachable time');
+  // Lunch now follows Holyrood (ends 3:30 PM), so it MUST be pushed later — the
+  // one stop that genuinely had to move.
+  assert.ok(p(byName['Lunch']) > p('3:30 PM'), 'a stop that is now unreachable is pushed later');
+});
+
+test('an unreachable stop is pushed later, never earlier', () => {
+  const recalc = fn('_recalcDayTimes');
+  const p = fn('_parseTimeMins');
+  ctx.state = { days: [{ stops: [
+    { name: 'Stirling', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 56.1237, lng: -3.948 },
+    // ~112 mi away but scheduled 15 min later — impossible; must be pushed out.
+    { name: 'Glenfinnan', type: 'hike', time: '11:15 AM', endTime: '12:15 PM', lat: 56.8758, lng: -5.431 },
+  ] }] };
+  recalc(0);
+  assert.equal(p(ctx.state.days[0].stops[0].time), p('9:30 AM'), 'reachable time untouched');
+  assert.ok(p(ctx.state.days[0].stops[1].time) > p('11:15 AM'), 'impossible arrival pushed later');
 });

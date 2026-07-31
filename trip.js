@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v151';
+window.APP_CODE_VERSION='v152';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -74,7 +74,8 @@ function _wouldLoseData(prev,next){
   if(!prev||!Array.isArray(prev.days)||!prev.days.length)return false; // nothing to lose
   if(!next||!Array.isArray(next.days)||!next.days.length)return true;  // next isn't a real trip
   const ps=_countStops(prev), ns=_countStops(next);
-  if(next.days.length < prev.days.length)return true;   // loses whole days
+  // NOTE: deleting a day is a legitimate edit, so day-count alone must NOT block a
+  // push — that rule silently froze syncing for good. Only catastrophic loss blocks.
   if(ps>=6 && ns < ps*0.5)return true;                  // loses more than half the stops
   return false;
 }
@@ -380,18 +381,23 @@ function _isIntlFlight(s){
 // Minutes you should be at the airport before departure: 180 intl, 120 domestic.
 function _airportBufferMin(s){ return _isIntlFlight(s)?180:120; }
 // The "be at the airport by" chip shown on a flight card (styled to stand out).
-// Best departure time for a flight: the stop's time, tolerating extra text like a
-// timezone suffix ("8:30 PM EDT"); else pull "Departs ... 8:30 PM" from the notes.
+// The REAL scheduled departure of a flight. This is NOT the same as s.time,
+// because _recalcDayTimes overwrites a flight's start time with the cumulative
+// arrival-at-airport time. Priority: the preserved departure the user entered
+// (s.flightDepart), then a "Departs ... 8:30 PM" time in the notes, then s.time.
+function _clockIn(str){
+  let d=_parseTimeMins(str);
+  if(d!=null)return d;
+  const m=String(str||'').match(/(\d{1,2}:\d{2})\s*(am|pm)?/i);
+  return m?_parseTimeMins((m[1]+' '+(m[2]||'')).trim()):null;
+}
 function _flightDepMins(s){
   if(!s)return null;
-  let d=_parseTimeMins(s.time);
+  let d=_clockIn(s.flightDepart);
   if(d!=null)return d;
-  const fromTime=String(s.time||'').match(/(\d{1,2}:\d{2})\s*(am|pm)?/i);
-  if(fromTime)d=_parseTimeMins((fromTime[1]+' '+(fromTime[2]||'')).trim());
-  if(d!=null)return d;
-  const fromNotes=String(s.notes||'').match(/depart\w*[^0-9]{0,12}(\d{1,2}:\d{2})\s*(am|pm)?/i);
-  if(fromNotes)d=_parseTimeMins((fromNotes[1]+' '+(fromNotes[2]||'')).trim());
-  return d;
+  const n=String(s.notes||'').match(/depart\w*[^0-9]{0,14}(\d{1,2}:\d{2})\s*(am|pm)?/i);
+  if(n){ d=_parseTimeMins((n[1]+' '+(n[2]||'')).trim()); if(d!=null)return d; }
+  return _clockIn(s.time);
 }
 function _airportArrivalHtml(s){
   if(!s||s.type!=='flight')return '';   // shown on flights only
@@ -408,6 +414,33 @@ function _airportArrivalHtml(s){
     body='&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span>';
   }
   return '<div style="margin-top:7px;display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;line-height:1.35">'+body+'</div>';
+}
+// Will the plan actually get the traveler to the airport early enough? Compares
+// when they'd ARRIVE at the airport (previous stop's departure + travel there)
+// against when they MUST be there (flight departure − 3h intl / 2h domestic).
+// Returns {ok, dep, mustBeBy, arrival, latestLeave, travel, prevName} or null.
+function _airportFeasibility(prev,s){
+  if(!s||s.type!=='flight')return null;
+  const dep=_flightDepMins(s);
+  if(dep==null||!prev)return null;
+  const ps=_parseTimeMins(prev.time),pe=_parseTimeMins(prev.endTime);
+  if(ps==null)return null;
+  const prevDepart=(pe!=null&&pe>ps)?pe:ps+_stopVisitMins(prev);
+  const travel=_legTravelMins(prev,s);
+  if(!(travel>0))return null;
+  const buffer=_airportBufferMin(s);
+  const mustBeBy=dep-buffer;
+  const arrival=prevDepart+travel;
+  return {ok:arrival<=mustBeBy,dep:dep,mustBeBy:mustBeBy,arrival:arrival,latestLeave:mustBeBy-travel,travel:travel,prevName:prev.name||'the previous stop',intl:_isIntlFlight(s)};
+}
+// The red warning chip shown on a flight when the plan won't reach the airport
+// early enough. Returns '' when the flight is fine (or can't be evaluated).
+function _airportWarningHtml(prev,s){
+  const f=_airportFeasibility(prev,s);
+  if(!f||f.ok)return '';
+  const leave=f.latestLeave;
+  const leaveTxt=leave<0?'earlier in the day':('by '+_minsToClock(leave));
+  return '<div style="margin-top:7px;display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:7px 11px;font-size:12.5px;font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';
@@ -836,6 +869,7 @@ function renderPanel(idx){
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
+      _airportWarningHtml(si>0?day.stops[si-1]:prevLastStop,s)+
       (s.duration?'<span class="card-duration">&#9201; '+_escHtml(s.duration)+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
@@ -1266,14 +1300,13 @@ function refreshStopDesc(dayIdx,stopIdx){
 
 function renderAll(){
   _renderGen++; // invalidate any image loads still in flight from the last render
-  // Heal any day whose timeline was corrupted into the small hours or whose stops
-  // have an end-before-start, THEN enforce chronological order — so a day can
-  // never display starting at 1:30 AM or ending before it began.
-  try{ _healEarlyDays(); }catch(e){}
-  try{ _healBadEndTimes(); }catch(e){}
+  // RENDERING MUST NEVER MUTATE THE ITINERARY. _healEarlyDays / _healBadEndTimes /
+  // _sortAllDaysByTime all REWRITE times and REORDER stops; running them on every
+  // render meant simply looking at the app silently re-timed and re-sorted the day
+  // (and the display then disagreed with what was stored). They now run once at
+  // load — see _healLoadedItinerary() in init — not on every paint.
   try{ _syncDayHeadings(); }catch(e){}   // headings always reflect the live stops
   try{ _ensureJnlIds(); }catch(e){}
-  try{ _sortAllDaysByTime(); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
     // Safety net: if the sort somehow left a day out of order, say so loudly
@@ -1637,6 +1670,14 @@ function _dayStartAnchor(stops){
 }
 // Heal any day whose (non-transit) first stop is absurdly early — a corruption
 // signature — by recomputing its timeline from a sane 9:00 AM start.
+// Repair a genuinely corrupt itinerary ONCE, at load — never on every render.
+// Order matters: fix broken end times, then broken timelines, then put the day
+// in chronological order.
+function _healLoadedItinerary(){
+  try{ _healBadEndTimes(); }catch(e){}
+  try{ _healEarlyDays(); }catch(e){}
+  try{ _sortAllDaysByTime(); }catch(e){}
+}
 function _healEarlyDays(){
   if(!state||!state.days)return;
   const TR=['flight','train','bus'];
@@ -1760,38 +1801,54 @@ function _applyCoordHeal(){
 const _MAX_LEG_TRAVEL=240;  // 4h — a single day's stops are never 20h of driving apart
 const _MAX_VISIT_CASCADE=300; // 5h
 const _DAY_END_CAP=1425;    // 23:45 — hard ceiling; the clock never wraps to AM
+// Re-time a day AFTER a reorder. RULE: a time the user set is DATA, not a derived
+// value. This never invents a new time for a stop the user timed, and never pulls
+// a stop EARLIER than they set it — a dinner booked at 6:30 PM stays at 6:30 PM.
+// A stop is moved ONLY when its time is physically unreachable (you cannot arrive
+// before the previous stop's departure plus the travel time); then it is pushed
+// LATER to the earliest time it can actually be reached. Untimed stops carry
+// forward from the previous stop, as before.
 function _recalcDayTimes(dayIdx,anchorMins){
   const day=state.days[dayIdx];if(!day||!day.stops||!day.stops.length)return;
   const stops=day.stops;
-  let cur=(anchorMins!=null&&anchorMins>=0)?anchorMins:_dayStartAnchor(stops);
-  if(cur>_DAY_END_CAP)cur=_DAY_END_CAP;
-  if(cur<240)cur=540;   // HARD CLAMP: the day can never start before 4 AM. This makes
-                        // "move a stop → first stop jumps to right after midnight" impossible.
+  let fallback=(anchorMins!=null&&anchorMins>=0)?anchorMins:_dayStartAnchor(stops);
+  if(fallback>_DAY_END_CAP)fallback=_DAY_END_CAP;
+  if(fallback<240)fallback=540;  // HARD CLAMP: a day can never start before 4 AM.
+  let cur=fallback;
   for(let i=0;i<stops.length;i++){
     const s=stops[i];
-    if(i>0){
-      const visit=Math.min(_stopVisitMins(stops[i-1]),_MAX_VISIT_CASCADE);
-      const travel=Math.min(_legTravelMins(stops[i-1],s),_MAX_LEG_TRAVEL);
-      cur=Math.min(cur+visit+travel,_DAY_END_CAP);
-    }
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
-    s.time=_formatTimeMins(cur);
+    let start;
+    if(i===0){
+      // Keep the first stop's own real time; only fall back if it has none.
+      start=(oldSt!=null&&oldSt>=240)?oldSt:fallback;
+    }else{
+      const prev=stops[i-1];
+      const visit=Math.min(_stopVisitMins(prev),_MAX_VISIT_CASCADE);
+      const travel=Math.min(_legTravelMins(prev,s),_MAX_LEG_TRAVEL);
+      const earliest=Math.min(cur+visit+travel,_DAY_END_CAP);
+      // KEEP the user's time when it is actually reachable; otherwise push later.
+      start=(oldSt!=null&&oldSt>=earliest)?oldSt:earliest;
+    }
+    start=Math.min(Math.max(start,240),_DAY_END_CAP);
+    s.time=_formatTimeMins(start);
+    cur=start;
     const isTransit=['flight','train','bus'].includes(s.type);
     if(isTransit){
       // Transit keeps its explicit start→arrival span (arrival time matters).
       if(oldEt!=null){
         let span=(oldSt!=null)?(oldEt-oldSt):null;
         if(span==null||span<=0||span>1080)span=_stopVisitMins(s);
-        s.endTime=_formatTimeMins(Math.min(cur+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
+        s.endTime=_formatTimeMins(Math.min(start+Math.min(span,_MAX_VISIT_CASCADE),_DAY_END_CAP));
       }
     }else{
       // Activity: preserve its start→end span; end = new start + span; duration
       // is the calculated mirror of that span.
       let span=(oldSt!=null&&oldEt!=null&&oldEt>oldSt)?(oldEt-oldSt):_stopVisitMins(s);
       span=Math.min(span,_MAX_VISIT_CASCADE);
-      const end=Math.min(cur+span,_DAY_END_CAP);
+      const end=Math.min(start+span,_DAY_END_CAP);
       s.endTime=_formatTimeMins(end);
-      s.duration=_fmtDur(end-cur);
+      s.duration=_fmtDur(end-start);
     }
   }
 }
@@ -1984,7 +2041,7 @@ function saveStop(){
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
   const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.
@@ -2734,8 +2791,17 @@ function _familyBase(){return FIREBASE_CONFIG.databaseURL+'/family/'+tripId;}
 
 let _familySyncTimer=null,_familyPoll=null,_lastFamilyAt=0,_presenceTimer=null;
 
+// WHOLE-NODE read. This now also contains /history (5 full itinerary copies), so
+// it is ~6x the itinerary. NEVER call it in a hot path (the 3s poll or a save) —
+// use _dbFamilyGet('/state') / '/lastChange' instead. Kept for the recovery screen.
 async function _dbFamilyGetAll(){
   const r=await fetch(_familyBase()+'.json?nc='+Date.now(),{cache:'no-store'});
+  if(!r.ok)throw new Error('Firebase '+r.status);
+  return r.json();
+}
+// Read ONE subpath (e.g. '/state', '/lastChange'). Keeps the 3-second poll tiny.
+async function _dbFamilyGet(subpath){
+  const r=await fetch(_familyBase()+subpath+'.json?nc='+Date.now(),{cache:'no-store'});
   if(!r.ok)throw new Error('Firebase '+r.status);
   return r.json();
 }
@@ -2754,12 +2820,12 @@ function _syncFamily(changeDesc){
     // Read what's currently in the cloud so we can (a) run the safety brake and
     // (b) snapshot it into the rolling 5-version history before overwriting.
     let cloud=null;
-    try{ const all=await _dbFamilyGetAll(); if(all&&_validTripState(all.state))cloud=all.state; }catch(e){}
+    try{ const st=await _dbFamilyGet('/state'); if(_validTripState(st))cloud=st; }catch(e){}
     if(cloud&&_wouldLoseData(cloud,next)){
-      // Safety brake: the shared copy is much fuller than what we're about to push.
-      // Never silently overwrite it — keep our change local and warn instead.
+      // Safety brake: this push would erase most of the shared itinerary. Never
+      // silently overwrite it — keep the change local and say so out loud.
       try{console.warn('[family] push blocked — would lose data vs the shared copy');}catch(e){}
-      try{showToast('⚠ Not synced: this change would erase a fuller shared itinerary. Nothing was overwritten.');}catch(e){}
+      try{showToast('⚠ NOT SYNCED — this change would erase most of the shared itinerary, so it was kept only on this device.');}catch(e){}
       return;
     }
     const ts=Date.now();_lastFamilyAt=ts;
@@ -2788,24 +2854,23 @@ function _watchFamily(){
   if(_familyPoll)clearInterval(_familyPoll);
   _familyPoll=setInterval(async()=>{
     try{
-      const data=await _dbFamilyGetAll();
-      if(!data)return;
-      const now=Date.now();
-      const presence=data.presence||{};
-      const lc=data.lastChange;
-      if(lc&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
-        // Validate the incoming cloud state before adopting it — a malformed or
-        // empty push must never silently wipe/corrupt everyone's itinerary.
-        if(!_validTripState(data.state)){ _lastFamilyAt=lc.at; return; }
-        _lastFamilyAt=lc.at;
-        state=data.state;
-        try{ _sortAllDaysByTime(); }catch(e){}
-        try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
-        // NO auto-mutation on adoption — never rewrite a cloud copy and push it back.
-        try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-        renderAll();
-        showToast('✎ Change: '+_escHtml(lc.desc||'itinerary updated'));
-      }
+      // Poll ONLY the tiny lastChange marker. Fetching the whole node here pulled
+      // /history (5 full itinerary copies) every 3 seconds — hundreds of MB an
+      // hour — which throttled and broke syncing on phones.
+      const lc=await _dbFamilyGet('/lastChange');
+      if(!lc||!(lc.at>_lastFamilyAt)||lc.by===_sessionId())return;
+      const incoming=await _dbFamilyGet('/state');   // fetched only when it changed
+      // Validate the incoming cloud state before adopting it — a malformed or
+      // empty push must never silently wipe/corrupt everyone's itinerary.
+      if(!_validTripState(incoming)){ _lastFamilyAt=lc.at; return; }
+      _lastFamilyAt=lc.at;
+      state=incoming;
+      // Adopt EXACTLY what the cloud holds. Re-sorting here mutated the adopted
+      // copy without pushing it back, so devices silently drifted out of order.
+      try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
+      try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+      renderAll();
+      showToast('✎ Change: '+_escHtml(lc.desc||'itinerary updated'));
     }catch(e){}
   },3000);
 }
@@ -4807,7 +4872,7 @@ async function init(){
     if(!state.tripType)state.tripType='solo';
   }
 
-  try{ _sortAllDaysByTime(); }catch(e){}
+  try{ _healLoadedItinerary(); }catch(e){}   // ONCE at load, never on every render
   try{ _seedLogicBaseline(); }catch(e){}   // baseline = the itinerary as loaded (gate blocks only NEW impossibilities)
   // NO auto-mutation of the itinerary on load. Nothing here may rewrite stops/days
   // and save — that on-load auto-heal pattern is what overwrote real data.

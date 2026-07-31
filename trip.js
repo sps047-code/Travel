@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v159';
+window.APP_CODE_VERSION='v160';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1507,6 +1507,29 @@ function _startEndDateHtml(s,dayIdx){
     return '<span style="'+style+';color:var(--ruby)">'+_escHtml(sTxt)+' &rarr; '+_escHtml(_fmtShortDate(endISO))+(_endTz(s)?' '+_escHtml(_endTz(s)):'')+'</span>';
   }catch(e){ return ''; }
 }
+// ---- ABSOLUTE INSTANTS (date + time) ---------------------------------------
+// The app historically stored a time as MINUTES SINCE MIDNIGHT with no date, so
+// 10:00 AM was always "less than" 8:00 PM and an overnight stop looked like it
+// ended before it began. These build a real instant — days*1440 + minutes — so a
+// start and end can be compared across dates like a calendar does.
+function _dayNum(iso){
+  if(!iso)return null;
+  try{const d=new Date(iso+'T00:00:00');return isNaN(d)?null:Math.round(d.getTime()/86400000);}catch(e){return null;}
+}
+function _absMins(iso,timeStr){
+  const t=_parseTimeMins(timeStr);
+  if(t==null)return null;
+  const dn=_dayNum(iso);
+  return dn==null?t:(dn*1440+t);
+}
+// A stop's start instant. `dayISO` is the date of the day it sits on.
+function _stopStartAbs(s,dayISO){ return _absMins((s&&s.startDate)||dayISO||'',s&&s.time); }
+// A stop's end instant. Uses an explicit end date, else infers the next day when
+// the end time is earlier on the clock than the start.
+function _stopEndAbs(s,dayISO){
+  const startISO=(s&&s.startDate)||dayISO||'';
+  return _absMins(_endDateOf(s,startISO)||startISO,s&&s.endTime);
+}
 function _startTz(s){
   if(s&&s.tz)return s.tz;
   const t=(typeof stopTz==='function')?stopTz(s):null;
@@ -2198,7 +2221,21 @@ function saveStop(){
   const _sMin=_parseTimeMins(_startVal),_eMin=_parseTimeMins(_endVal);
   if(_sMin==null){alert('Please enter a valid Start Time (e.g. 9:00 AM).');return}
   if(_eMin==null){alert('Please enter a valid End Time (e.g. 11:00 AM).');return}
-  if(_eMin<=_sMin){alert('End Time must be after Start Time.');return}
+  // Compare real INSTANTS (date + time), not bare clock minutes. Aug 4 8:00 PM ->
+  // Aug 5 10:00 AM is a perfectly ordinary overnight stop; only comparing the
+  // clock made it look backwards. If no end date was given, an end time earlier
+  // on the clock than the start is taken to mean the next day, as a calendar would.
+  const _sDate=(document.getElementById('f-date')?.value||'');
+  let _eDate=(document.getElementById('f-enddate')?.value||'');
+  if(!_eDate&&_sDate&&_eMin<=_sMin){
+    try{const d=new Date(_sDate+'T00:00:00');d.setDate(d.getDate()+1);_eDate=d.toISOString().slice(0,10);
+      const _ed=document.getElementById('f-enddate');if(_ed)_ed.value=_eDate;}catch(e){}
+  }
+  const _sAbs=_absMins(_sDate,_startVal),_eAbs=_absMins(_eDate||_sDate,_endVal);
+  if(_sAbs!=null&&_eAbs!=null&&_eAbs<=_sAbs){
+    alert('End must be after the start.\n\nStart: '+(_sDate?_fmtShortDate(_sDate)+' ':'')+_startVal+'\nEnd:   '+((_eDate||_sDate)?_fmtShortDate(_eDate||_sDate)+' ':'')+_endVal+'\n\nIf this stop runs past midnight, set the End Date to the next day.');
+    return;
+  }
   // Coordinates are OPTIONAL — a stop can be a reservation/note with no location
   // (consistent with AI/imported stops). Only validate them if both were given.
   const hasCoord=!isNaN(lat)&&!isNaN(lng);
@@ -3391,7 +3428,23 @@ function setTransitMode(mode){
 // End Time and Duration are INTERACTIVE: editing one recomputes the other, using
 // Start Time as the anchor.
 function _fVal(id){const e=document.getElementById(id);return e?e.value.trim():'';}
+// If the end time is earlier on the clock than the start, this stop runs past
+// midnight — roll the End Date to the next day automatically, the way a calendar
+// does, instead of making the user discover an "end before start" error.
+function _fAutoEndDate(){
+  const s=_parseTimeMins(_fVal('f-time')),en=_parseTimeMins(_fVal('f-endtime'));
+  const sd=_fVal('f-date'),ed=document.getElementById('f-enddate');
+  if(!ed||s==null||en==null||!sd)return;
+  try{
+    const d0=new Date(sd+'T00:00:00');
+    if(en<=s)d0.setDate(d0.getDate()+1);          // wrapped past midnight
+    const want=d0.toISOString().slice(0,10);
+    // Only fill/repair it; never fight a date the user deliberately set further out.
+    if(!ed.value||ed.value<sd||(en<=s&&ed.value===sd)||(en>s&&ed.value>sd&&!ed.dataset.userSet))ed.value=want;
+  }catch(e){}
+}
 function _fSyncDurFromTimes(){ // Start/End changed → Duration = End − Start
+  _fAutoEndDate();
   const s=_parseTimeMins(_fVal('f-time')),en=_parseTimeMins(_fVal('f-endtime')),d=document.getElementById('f-duration');
   if(!d||s==null||en==null)return;
   // An end at/before the start means the stop runs past midnight — show the real
@@ -3417,6 +3470,8 @@ function _wireDurationSync(){
     el._durWired=1;
     ['input','change','blur','keyup','paste'].forEach(ev=>el.addEventListener(ev,()=>setTimeout(fn,0)));
   };
+  const ed=document.getElementById('f-enddate');
+  if(ed&&!ed._durWired){ed._durWired=1;ed.addEventListener('change',()=>{ed.dataset.userSet='1';});}
   bind('f-time',_fSyncFromStart);
   bind('f-endtime',_fSyncDurFromTimes);
   bind('f-duration',_fSyncEndFromDur);

@@ -617,3 +617,28 @@ test('an overnight stop appears as a continuation, not a duplicate stop', () => 
   // Day 2 still owns exactly ONE real stop — the flight was not duplicated into it.
   assert.equal(ctx.state.days[1].stops.length, 1, 'no duplicate arrival stop was added');
 });
+
+// ---------------------------------------------------------------------------
+// ROOT FLAW: times were stored as minutes-since-midnight with NO date, so
+// "Aug 4 8:00 PM -> Aug 5 10:00 AM" was rejected as "end before start".
+test('an overnight stop across two dates is ordered correctly', () => {
+  const sAbs = fn('_stopStartAbs'), eAbs = fn('_stopEndAbs');
+  const stop = { time: '8:00 PM', endTime: '10:00 AM', startDate: '2026-08-04', endDate: '2026-08-05' };
+  assert.ok(eAbs(stop) > sAbs(stop), 'Aug 5 10:00 AM must come AFTER Aug 4 8:00 PM');
+  // Bare clock minutes are what made this look backwards:
+  const p = fn('_parseTimeMins');
+  assert.ok(p('10:00 AM') < p('8:00 PM'), 'clock-only comparison is why it broke');
+});
+
+test('the end date is inferred when a stop wraps past midnight', () => {
+  const eAbs = fn('_stopEndAbs'), sAbs = fn('_stopStartAbs');
+  const stop = { time: '8:00 PM', endTime: '10:00 AM', startDate: '2026-08-04' }; // no endDate
+  assert.ok(eAbs(stop) > sAbs(stop), 'inferred next day, so the end is still after the start');
+  assert.equal(eAbs(stop) - sAbs(stop), 14 * 60, 'exactly 14 hours');
+});
+
+test('a same-day stop is unaffected', () => {
+  const eAbs = fn('_stopEndAbs'), sAbs = fn('_stopStartAbs');
+  const stop = { time: '9:00 AM', endTime: '11:30 AM', startDate: '2026-08-04' };
+  assert.equal(eAbs(stop) - sAbs(stop), 150, '2h 30min, no date rollover');
+});

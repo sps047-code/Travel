@@ -583,7 +583,7 @@ body.offline #audio-discover-btn{display:none!important}
     // (old code running behind a newer cache), this shows the OLD number — so the
     // badge can never claim a version the executing code isn't actually running.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v156'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v157'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -635,6 +635,7 @@ body.offline #audio-discover-btn{display:none!important}
       <div class="form-group"><label class="form-label">Start Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM" oninput="_fSyncFromStart()"/></div>
       <div class="form-group"><label class="form-label">End Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM" oninput="_fSyncDurFromTimes()"/></div>
       <div class="form-group"><label class="form-label">Duration</label><input type="text" class="form-input" id="f-duration" placeholder="e.g. 2h, 45 min" oninput="_fSyncEndFromDur()"/></div>
+      <div class="form-group full"><label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="f-locked" style="width:17px;height:17px;flex-shrink:0"/><span>&#128274; Lock this time (reservation) — keep it fixed when stops are moved</span></label></div>
       <div class="form-group"><label class="form-label">Type</label>
         <select class="form-select" id="f-type" onchange="toggleTransitFields()">
           <option value="hike">Hike / Park</option>

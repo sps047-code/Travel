@@ -520,3 +520,60 @@ test('a rendered card never shows a duration that contradicts its times', () => 
   assert.ok(!/2hrs/.test(html), 'the stale stored 2hrs must not be rendered');
   assert.ok(/4h 9min/.test(html), 'the card must show the real 4h 9min span');
 });
+
+// ---------------------------------------------------------------------------
+// Nothing may be scheduled before you land when travel carries over overnight.
+test('_logicErrors flags a stop scheduled BEFORE the overnight arrival', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [
+    { title: 'Day 1', stops: [
+      // Overnight flight: leaves 8:30 PM, lands 9:35 AM the next morning.
+      { name: 'Flight MCO-LGW', type: 'flight', time: '8:30 PM', endTime: '9:35 AM', lat: 28.43, lng: -81.31 },
+    ] },
+    { title: 'Day 2', stops: [
+      { name: 'British Museum', type: 'hike', time: '8:00 AM', lat: 51.5194, lng: -0.127 },  // before landing!
+      { name: 'Tower of London', type: 'hike', time: '2:00 PM', lat: 51.5081, lng: -0.0759 },
+    ] },
+  ] };
+  const errs = le(st);
+  const before = errs.filter(e => e.rule === 'Before arrival');
+  assert.equal(before.length, 1, 'must flag exactly the pre-arrival stop: ' + JSON.stringify(errs));
+  assert.match(before[0].msg, /British Museum/);
+  assert.match(before[0].msg, /before you land/);
+});
+
+test('_logicErrors accepts a day that starts after the overnight arrival', () => {
+  const le = fn('_logicErrors');
+  const st = { days: [
+    { title: 'Day 1', stops: [{ name: 'Flight', type: 'flight', time: '8:30 PM', endTime: '9:35 AM', lat: 28.43, lng: -81.31 }] },
+    { title: 'Day 2', stops: [{ name: 'British Museum', type: 'hike', time: '11:00 AM', lat: 51.5194, lng: -0.127 }] },
+  ] };
+  assert.equal(le(st).filter(e => e.rule === 'Before arrival').length, 0);
+});
+
+// A locked (reserved) time must survive any automatic re-timing.
+test('a locked stop keeps its reserved time when a neighbour is moved', () => {
+  const move = fn('moveStop');
+  const p = fn('_parseTimeMins');
+  ctx.saveState = () => {}; ctx.renderAll = () => {}; ctx.renderDayMap = () => {};
+  ctx.currentDayIdx = 0;
+  ctx.state = { days: [{ stops: [
+    { name: 'Castle', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 55.9486, lng: -3.1999 },
+    { name: 'Booked Dinner', type: 'food', time: '12:00 PM', endTime: '1:30 PM', locked: true, lat: 55.9489, lng: -3.1953 },
+  ] }] };
+  move(0, 0, 1);   // move the castle down, past the locked reservation
+  const dinner = ctx.state.days[0].stops.find(s => s.name === 'Booked Dinner');
+  assert.equal(p(dinner.time), p('12:00 PM'), 'the reserved time must not move');
+});
+
+test('_recalcDayTimes never moves a locked time', () => {
+  const recalc = fn('_recalcDayTimes');
+  const p = fn('_parseTimeMins');
+  ctx.state = { days: [{ stops: [
+    { name: 'A', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 56.1237, lng: -3.948 },
+    // Locked yet unreachable — the lock still wins; the gate reports the clash.
+    { name: 'Reserved', type: 'food', time: '11:15 AM', endTime: '12:15 PM', locked: true, lat: 56.8758, lng: -5.431 },
+  ] }] };
+  recalc(0);
+  assert.equal(p(ctx.state.days[0].stops[1].time), p('11:15 AM'), 'locked time held');
+});

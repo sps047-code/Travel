@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v156';
+window.APP_CODE_VERSION='v157';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -865,7 +865,7 @@ function renderPanel(idx){
       '<button class="card-btn" aria-label="Move stop later" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top">'+(s.time?'<span class="card-time">'+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
+      '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:3px">&#128274;</span>':'')+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
@@ -1526,8 +1526,44 @@ function _logicErrors(st){
       // (This is the fix for "45-min stop ends 5:15, yet next stop at 5:30".)
       prevDepart=(e!=null&&e>t)?e:(dur!=null&&dur>0?t+dur:t);
     }
+    // (3) You cannot be somewhere before you ARRIVE. When a day begins with travel
+    //     carried over from the night before (an overnight flight/train/bus, or the
+    //     arrival stop derived from one), nothing that day may be scheduled before
+    //     that landing time.
+    const arr=_dayArrivalMins(di,st);
+    if(arr!=null){
+      for(const s of stops){
+        if(s._arrivalAnchor)continue;                       // the arrival itself
+        const t=_parseTimeMins(s.time);if(t==null)continue;
+        if(t<arr)errs.push({rule:'Before arrival',msg:D+'"'+s.name+'" ('+s.time+') is scheduled before you land — you do not arrive until '+_formatTimeMins(arr)+'.'});
+      }
+    }
   });
   return errs;
+}
+// When does this day's traveller actually ARRIVE, if the day opens with travel
+// continuing from the previous day? Returns minutes-since-midnight, or null when
+// the day does not begin with a carried-over arrival.
+function _dayArrivalMins(di,st){
+  try{
+    const days=(st&&st.days)?st.days:((typeof state!=='undefined'&&state&&state.days)||[]);
+    const day=days[di];if(!day||!day.stops||!day.stops.length)return null;
+    // a) An arrival stop sitting at the top of the day (auto-derived or marked).
+    const first=day.stops[0];
+    if(first&&(first._autoArrival||first._arrivalAnchor)){
+      const t=_parseTimeMins(first.time);
+      if(t!=null){first._arrivalAnchor=true;return t;}
+    }
+    // b) The previous day ends with transit that lands the NEXT morning (its end
+    //    time is earlier in the clock than its start — it crossed midnight).
+    const prevDay=di>0?days[di-1]:null;
+    const last=prevDay&&prevDay.stops&&prevDay.stops.length?prevDay.stops[prevDay.stops.length-1]:null;
+    if(last&&['flight','train','bus'].includes(last.type)){
+      const ls=_parseTimeMins(last.time),le=_parseTimeMins(last.endTime);
+      if(ls!=null&&le!=null&&le<ls)return le;               // landed at `le` this morning
+    }
+    return null;
+  }catch(e){ return null; }
 }
 function _errKey(e){return e.rule+'|'+e.msg;}
 function _showLogicError(errs){
@@ -1557,7 +1593,7 @@ function _relaxDurationsToFit(st){
           const maxDepart=t-minTravel;            // latest prev can leave and still reach s in time
           const pe=_parseTimeMins(prev.endTime);
           const curDepart=(pe!=null&&pe>pt)?pe:(pt+(_durationToMins(prev.duration)||0));
-          if(curDepart>maxDepart&&maxDepart>=pt){ // shrinkable: a shorter visit makes it fit
+          if(!prev.locked&&curDepart>maxDepart&&maxDepart>=pt){ // shrinkable: a shorter visit makes it fit
             prev.endTime=_formatTimeMins(maxDepart);
             prev.duration=_fmtDur(maxDepart-pt);
             changed.push({day:di,stop:prev.name,mins:maxDepart-pt});
@@ -1838,7 +1874,10 @@ function _recalcDayTimes(dayIdx,anchorMins){
     const s=stops[i];
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
     let start;
-    if(i===0){
+    if(s.locked&&oldSt!=null){
+      // LOCKED (a reservation): this time is fixed. Nothing automatic may move it.
+      start=oldSt;
+    }else if(i===0){
       // Keep the first stop's own real time; only fall back if it has none.
       start=(oldSt!=null&&oldSt>=240)?oldSt:fallback;
     }else{
@@ -1886,8 +1925,9 @@ function moveStop(dayIdx,stopIdx,dir){
   if(canSwap){
     const aSpan=Math.min(_stopVisitMins(a),_MAX_VISIT_CASCADE);
     const bSpan=Math.min(_stopVisitMins(b),_MAX_VISIT_CASCADE);
-    _setStopSlot(a,bStart,aSpan);   // a takes b's slot, keeping a's own length
-    _setStopSlot(b,aStart,bSpan);   // b takes a's slot, keeping b's own length
+    // A LOCKED stop keeps its reserved time; only the unlocked one takes a new slot.
+    if(!a.locked)_setStopSlot(a,bStart,aSpan);
+    if(!b.locked)_setStopSlot(b,aStart,bSpan);
   }
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
   // Fill in any stop that has no usable time. Safe to run: _recalcDayTimes keeps
@@ -1932,6 +1972,7 @@ function openAddStopModal(dayIdx){
   ['place-search','f-name','f-date','f-time','f-endtime','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   _wireDurationSync();   // End Time <-> Duration stay in step here too
+  const _fl0=document.getElementById('f-locked');if(_fl0)_fl0.checked=false;
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value='auto';
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -1967,6 +2008,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-airline').value=s.airline||'';
   document.getElementById('f-flightnum').value=s.flightNumber||'';
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value=(s.international===true?'1':s.international===false?'0':'auto');
+  const _fl=document.getElementById('f-locked');if(_fl)_fl.checked=!!s.locked;
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
   // Populate Duration from the stop FIRST. It was never set here, so it kept the
@@ -2095,7 +2137,7 @@ function saveStop(){
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
   const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.

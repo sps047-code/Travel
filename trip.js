@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v152';
+window.APP_CODE_VERSION='v153';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1852,15 +1852,44 @@ function _recalcDayTimes(dayIdx,anchorMins){
     }
   }
 }
+// Move a stop up or down one slot. The two stops SWAP TIME SLOTS — nothing else
+// in the day is touched. Re-flowing the whole day from an anchor (the old
+// behaviour) made one move cascade into every later stop, dragging a 6:30 PM
+// dinner around; a move is a swap, so exactly two stops change.
+// Each stop keeps its OWN visit length; only the start slot is exchanged.
 function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops.length)return;
-  // The day keeps the SAME start time; only the sequence re-flows from there.
-  const anchor=_dayStartAnchor(stops);
+  const a=stops[stopIdx],b=stops[newIdx];
+  const aStart=_parseTimeMins(a.time),bStart=_parseTimeMins(b.time);
+  const canSwap=(aStart!=null&&aStart>=240&&bStart!=null&&bStart>=240);
+  if(canSwap){
+    const aSpan=Math.min(_stopVisitMins(a),_MAX_VISIT_CASCADE);
+    const bSpan=Math.min(_stopVisitMins(b),_MAX_VISIT_CASCADE);
+    _setStopSlot(a,bStart,aSpan);   // a takes b's slot, keeping a's own length
+    _setStopSlot(b,aStart,bSpan);   // b takes a's slot, keeping b's own length
+  }
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  _recalcDayTimes(dayIdx,anchor);
+  // Fill in any stop that has no usable time. Safe to run: _recalcDayTimes keeps
+  // every reachable user-set time as-is and only assigns times to untimed stops.
+  if(!canSwap||stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
+    _recalcDayTimes(dayIdx,_dayStartAnchor(stops));
+  }
   saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
+}
+// Place a stop at `start`, preserving its own visit length. Transit keeps its
+// arrival span; an activity's duration mirrors start→end.
+function _setStopSlot(s,start,span){
+  start=Math.min(Math.max(start,240),_DAY_END_CAP);
+  s.time=_formatTimeMins(start);
+  const end=Math.min(start+span,_DAY_END_CAP);
+  if(['flight','train','bus'].includes(s.type)){
+    if(_parseTimeMins(s.endTime)!=null)s.endTime=_formatTimeMins(end);
+  }else{
+    s.endTime=_formatTimeMins(end);
+    s.duration=_fmtDur(end-start);
+  }
 }
 
 function deleteStop(dayIdx,stopIdx){

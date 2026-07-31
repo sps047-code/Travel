@@ -452,13 +452,15 @@ test('moving a stop preserves every user-set time that is still reachable', () =
   const byName = {};
   for (const s of ctx.state.days[0].stops) byName[s.name] = s.time;
   const p = fn('_parseTimeMins');
+  // A move is a SWAP: only the two stops that traded places change.
+  assert.equal(p(byName['Holyrood Palace']), p('12:00 PM'), 'the moved stop takes its neighbour’s slot');
+  assert.equal(p(byName['Lunch']), p('2:00 PM'), 'the neighbour takes the moved stop’s slot');
+  // Everything else in the day is untouched.
   assert.equal(p(byName['Dinner']), p('6:30 PM'), 'dinner must stay at 6:30 PM, not slide to the afternoon');
   assert.equal(p(byName['Hotel']), p('9:00 PM'), 'the hotel must stay at 9:00 PM');
   assert.equal(p(byName['Edinburgh Castle']), p('9:30 AM'), 'the first stop keeps its time');
-  assert.equal(p(byName['Holyrood Palace']), p('2:00 PM'), 'the moved stop keeps its own reachable time');
-  // Lunch now follows Holyrood (ends 3:30 PM), so it MUST be pushed later — the
-  // one stop that genuinely had to move.
-  assert.ok(p(byName['Lunch']) > p('3:30 PM'), 'a stop that is now unreachable is pushed later');
+  // ...and the day is still in chronological order after the swap.
+  assert.equal(fn('_firstChronoViolation')(), 0, 'the day must stay chronological');
 });
 
 test('an unreachable stop is pushed later, never earlier', () => {

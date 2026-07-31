@@ -600,10 +600,18 @@ body.offline #audio-discover-btn{display:none!important}
   // This is why the header only ever needs to show ONE version: a stale page
   // corrects itself instead of asking the user to compare version numbers.
   if('serviceWorker' in navigator){
+    // trip.html is a landing page in its own right (shared read-only links open
+    // here), but only index.html ever registered the worker. Without it there is
+    // no offline support and navigator.serviceWorker.ready never resolves, so
+    // enableTravelAlerts' departure reminders silently never fire.
+    try{navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(reg){reg.update();}).catch(function(){});}catch(e){}
+    var _hadController=!!navigator.serviceWorker.controller;
     var _reloading=false;
     navigator.serviceWorker.addEventListener('controllerchange',function(){
       setVer();
-      if(_reloading)return; _reloading=true;
+      // Skip the reload on FIRST install (no prior controller) — that is the
+      // first-visit double reload, not an update.
+      if(_reloading||!_hadController)return; _reloading=true;
       location.reload();
     });
     // Check for a new build on load and whenever the app is brought back up.
@@ -814,23 +822,10 @@ body.offline #audio-discover-btn{display:none!important}
   </div>
 </div>
 <script src="trip.js?v=162"></script>
-<script>
-(function(){
-  var MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
-  function mk(m,d,y){var i=MON[(m||'').toLowerCase().slice(0,3)];if(i===undefined)return null;var dt=new Date(y,i,+d,12,0,0);return(dt.getMonth()===i&&dt.getDate()===+d)?dt:null;}
-  window._parseTripDate=function(str){
-    if(!str)return null;
-    var iso=str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if(iso){var d=new Date(+iso[1],+iso[2]-1,+iso[3],12,0,0);if(!isNaN(d.getTime()))return d;}
-    var wy=str.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/)||str.match(/(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})/);
-    if(wy){var num=wy[0].match(/^\d/);var c=mk(num?wy[2]:wy[1],num?wy[1]:wy[2],+wy[3]);if(c&&c.getFullYear()>=(new Date().getFullYear()-3)&&c.getFullYear()<=2040)return c;}
-    var ny=str.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);if(!ny)return null;
-    var now=new Date();now.setHours(12,0,0,0);var best=null,bestGap=Infinity;
-    [now.getFullYear()-1,now.getFullYear(),now.getFullYear()+1].forEach(function(yr){var c=mk(ny[1],ny[2],yr);if(!c||c.getFullYear()<2020)return;var g=Math.abs(c-now);if(g<bestGap){bestGap=g;best=c;}});
-    return best;
-  };
-})();
-</script>
+<!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
+     trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
+     that had different year bounds, giving date parsing two sources of truth.
+     trip.js owns _parseTripDate. -->
 <script src="trip-extras.js?v=162"></script>
 </body>
 </html>

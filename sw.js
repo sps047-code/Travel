@@ -53,9 +53,9 @@ self.addEventListener('activate', e => {
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE && k !== 'seasons-audio' && k !== 'seasons-offline').map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
-    .then(() => self.clients.matchAll({type:'window',includeUncontrolled:true}).then(cs =>
-      Promise.all(cs.map(c => c.navigate(c.url).catch(()=>{}))
-    )))
+    // NOTE: do not force-navigate clients here. That plus the pages' own
+    // controllerchange reload produced TWO reloads per update. The guarded
+    // controllerchange handler is the single update mechanism.
   );
 });
 
@@ -88,7 +88,9 @@ self.addEventListener('fetch', e => {
   if (cc && cc.includes('no-cache')) {
     e.respondWith(
       fetch(e.request).then(res => {
-        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        // Clone SYNCHRONOUSLY: .clone() inside the async .then ran after the body
+        // had been handed to the page, so the put silently failed.
+        if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{}); }
         return res;
       }).catch(() => caches.match(e.request))
     );
@@ -100,7 +102,7 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.match(e.request).then(cached => {
         const network = fetch(e.request).then(res => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{}); }
           return res;
         }).catch(() => cached);
         return cached || network;
@@ -125,7 +127,8 @@ self.addEventListener('fetch', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || '/Travel/';
+  // Default to '' — '/Travel/' here produced '/Travel//Travel/' below.
+  const url = e.notification.data?.url || '';
   e.waitUntil(
     clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
       for (const c of list) {

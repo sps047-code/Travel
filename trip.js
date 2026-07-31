@@ -12,6 +12,11 @@ function lsPack(val){
   try{localStorage.setItem(PACK_KEY,JSON.stringify(val))}catch(e){}
 }
 /* ---- Firebase config (Family trip sync) ---- */
+// SECURITY: this Realtime Database is used over plain REST with NO authentication.
+// Anyone who reads this file can read AND write every trip, plus presence data.
+// Before sharing more widely, database security rules restricting reads/writes are
+// required. Corollary: per-trip secrets must NEVER be stored in synced `state` —
+// it is world-readable (see _gpKey, which keeps the Places key device-local).
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyC344fuoqnXG5RWN3hNMkCkr9GoHk6dozY",
   authDomain: "seasons-trips.firebaseapp.com",
@@ -146,10 +151,15 @@ function showPhotoPreview(src){
 function removePhoto(e){if(e)e.stopPropagation();pendingPhoto='';showPhotoPreview(null);document.getElementById('f-photo').value='';}
 async function handlePhotoUpload(input){
   const file=input.files[0];if(!file)return;
+  // Without these guards a non-image (or an unreadable/corrupt file) left the
+  // promise pending forever and the UI hung with no error.
+  if(!file.type||!file.type.startsWith('image/')){alert('Please choose an image file.');input.value='';return;}
   const dataUrl=await new Promise(resolve=>{
     const reader=new FileReader();
+    reader.onerror=()=>resolve(null);
     reader.onload=e=>{
       const img=new Image();
+      img.onerror=()=>resolve(null);
       img.onload=()=>{
         const scale=Math.min(1,500/img.width);
         const canvas=document.createElement('canvas');
@@ -161,6 +171,9 @@ async function handlePhotoUpload(input){
     };
     reader.readAsDataURL(file);
   });
+  // A null result means the file could not be read or decoded — tell the user
+  // rather than silently clearing an existing photo.
+  if(!dataUrl){alert('That image could not be read. Please try another file.');input.value='';return;}
   pendingPhoto=dataUrl;showPhotoPreview(dataUrl);
 }
 
@@ -509,7 +522,12 @@ async function fetchRoute(stops){
   }catch(e){return null}
 }
 
+let _mapGen=0;
 async function renderDayMap(idx,fit=true){
+  // GENERATION GUARD. Two concurrent renderDayMap calls each cleared the layers
+  // and then independently awaited fetchRoute, so BOTH added a route polyline —
+  // stacked lines and doubled OSRM calls. Only the newest call may touch layers.
+  const gen=++_mapGen;
   markersLayer.clearLayers();routeLayer.clearLayers();
   const day=state.days[idx];if(!day)return;
   const st=document.getElementById('route-status');
@@ -527,7 +545,7 @@ async function renderDayMap(idx,fit=true){
   if(startHotel){
     const nm=startHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
     const hm=L.marker([startHotel.lat,startHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127970;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
-    hm.bindPopup('<div style="font-weight:700;font-size:13px">Starting from: '+nm+'</div>',{maxWidth:200});
+    hm.bindPopup('<div style="font-weight:700;font-size:13px">Starting from: '+_escHtml(nm)+'</div>',{maxWidth:200});
     markersLayer.addLayer(hm);bounds.push([startHotel.lat,startHotel.lng]);
   }
   // include tonight's hotel as the route DESTINATION (mirror of the start hotel)
@@ -558,7 +576,7 @@ async function renderDayMap(idx,fit=true){
   if(endHotel&&!_endSameAsStart){
     const enm=endHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
     const ehm=L.marker([endHotel.lat,endHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127976;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
-    ehm.bindPopup('<div style="font-weight:700;font-size:13px">Tonight: '+enm+'</div>',{maxWidth:200});
+    ehm.bindPopup('<div style="font-weight:700;font-size:13px">Tonight: '+_escHtml(enm)+'</div>',{maxWidth:200});
     markersLayer.addLayer(ehm);bounds.push([endHotel.lat,endHotel.lng]);
   }
   if(fit&&bounds.length)map.fitBounds(bounds,{padding:[40,40]});
@@ -578,6 +596,7 @@ async function renderDayMap(idx,fit=true){
   if(straight.length>1)fallbackLine=L.polyline(straight,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer);
   try{
     const rc=await fetchRoute(routeStops);
+    if(gen!==_mapGen)return;
     if(rc){
       // Real road route available — replace the straight connector with it.
       if(fallbackLine)routeLayer.removeLayer(fallbackLine);
@@ -629,6 +648,12 @@ function renderTabs(){
   });
 }
 
+// A LOCAL calendar date as YYYY-MM-DD. new Date(iso+'T00:00:00') is LOCAL
+// midnight, so .toISOString() shifts it to UTC and lands on the PREVIOUS day for
+// every positive UTC offset (UK, Europe, Asia). That silently broke the
+// "roll the end date to the next day" logic abroad — exactly where this app is
+// going. Never use toISOString() for a calendar date.
+function _localISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function dayDateStr(dayIdx){
   const day=state.days[dayIdx];if(!day)return'';
   const sub=day.subtitle||'';
@@ -636,7 +661,7 @@ function dayDateStr(dayIdx){
   if(!datePart)return'';
   const d=_parseTripDate(datePart);
   if(!d)return'';
-  return d.toISOString().slice(0,10);
+  return _localISO(d);
 }
 function findDayByDate(dateStr){
   if(!dateStr)return -1;
@@ -805,8 +830,7 @@ function hotelBookendHtml(label,lodge,otherStop,where){
   let travelHtml='';
   if(label.toLowerCase().startsWith('start')&&otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
     const dist=haversine(lodge.lat,lodge.lng,otherStop.lat,otherStop.lng);
-    const rawMode=lodge.transitMode||_defaultTransitMode(lodge,otherStop);
-    const tmode=rawMode==='subway'?'train':rawMode;
+    const tmode=lodge.transitMode||_defaultTransitMode(lodge,otherStop);   // 'subway' is canonicalised to 'train' at load
     const mi=dist<10?dist.toFixed(1):Math.round(dist);
     const tStr=_minsToStr(_travelMins(dist,tmode));
     const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+lodge.lat+','+lodge.lng+'&destination='+otherStop.lat+','+otherStop.lng+'&travelmode='+(tmode==='walk'?'walking':tmode==='train'?'transit':'driving');
@@ -887,7 +911,10 @@ function renderPanel(idx){
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
-      _airportWarningHtml(si>0?day.stops[si-1]:prevLastStop,s)+
+      // SAME-DAY previous stop only. Using the previous DAY's last stop compared
+      // bare minutes-since-midnight, so yesterday's 9:30 PM dinner made a 10:00 AM
+      // flight today look unreachable and showed a red impossible warning.
+      _airportWarningHtml(si>0?day.stops[si-1]:null,s)+
       (_displayDuration(s,dayDateStr(idx))?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s,dayDateStr(idx)))+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
@@ -902,7 +929,7 @@ function renderPanel(idx){
       (_isUpNext&&s.lat&&s.lng?'<a class="live-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng+'" target="_blank" rel="noopener">&#127907; Navigate Here</a>':'')+
       (s.type==='lodge'&&isLast&&idx<state.days.length-1?'<button class="lodge-next-btn" onclick="openCopyModal('+idx+','+si+')">&#8594; Copy to start of Day '+(idx+2)+'</button>':'')+
       '<div class="stop-img-wrap" id="stopimg-'+idx+'-'+si+'" style="position:relative"></div>'+
-      (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+s.desc+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<div class="stopdesc-wrap" id="stopdesc-'+idx+'-'+si+'">'+(s.desc?'<div class="stop-desc"><span class="stop-desc-text">'+_escHtml(s.desc)+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+idx+','+si+')" title="Regenerate">&#8635;</button></div>':'<button class="stop-desc-btn" onclick="generateStopDesc('+idx+','+si+')">&#10024; Describe</button>')+'</div>':'')+
       _dayHoursHtml(s,idx,si)+
       (s.type==='food'?'<button class="alt-btn" onclick="showAlternates('+idx+','+si+')">&#128260; Alternates</button>':'')+
       _stopPlaceMetaHtml(s)+
@@ -913,7 +940,7 @@ function renderPanel(idx){
     if(!isLast){
       const next=day.stops[si+1];
       const rawMode=s.transitMode||_defaultTransitMode(s,next);
-      const tmode=rawMode==='subway'?'train':rawMode;
+      const tmode=rawMode;
       // Show the distance on the leg that ARRIVES at a real (coordinate-having)
       // place, bridging back over coordinate-less waypoints (drives/fuel stops)
       // so the drive distance appears once instead of some legs blank, some not.
@@ -962,7 +989,7 @@ function renderPanel(idx){
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
     (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
-    '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode==='subway'?'train':rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
+    '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
     (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop,_findStopPos(todayHotel)):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -1013,24 +1040,38 @@ let _renderGen=0; // bumped on every renderAll — invalidates in-flight image l
 async function loadStopImages(){
   const gen=_renderGen;
   const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({stop:s,di,si})));
+  // Local (already-decoded) images paint immediately; only network lookups queue.
+  const queue=[];
   for(const {stop,di,si} of allStops){
-    if(gen!==_renderGen)return; // a newer render replaced the DOM — stop writing
+    if(gen!==_renderGen)return;
     const el=document.getElementById('stopimg-'+di+'-'+si);
     if(!el||el.classList.contains('loaded'))continue;
     if(stop.customImage){
-      el.innerHTML='<img class="stop-img" src="'+_escHtml(/^(https?:|data:image\/)/i.test(stop.customImage)?stop.customImage:'')+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/>';
+      el.innerHTML='<img class="stop-img" src="'+_escHtml(_safeImgSrc(stop.customImage))+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/>';
       el.classList.add('loaded');continue;
     }
-    const url=await fetchStopImage(stop.name);
-    // Re-check generation AND re-fetch the element after the await so a stale
-    // fetch can never paint a photo onto a stop that has since moved/changed.
-    if(gen!==_renderGen)return;
-    const el2=document.getElementById('stopimg-'+di+'-'+si);
-    if(url&&el2&&!el2.classList.contains('loaded')){
-      el2.innerHTML='<img class="stop-img" src="'+_escHtml(url)+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
-      el2.classList.add('loaded');
+    queue.push({stop,di,si});
+  }
+  // CONCURRENCY POOL. One awaited Wikipedia fetch per stop, in order, made a
+  // 60-stop trip painfully slow. Five workers share the queue; the _renderGen
+  // staleness checks around every DOM write are preserved exactly.
+  let next=0;
+  async function worker(){
+    while(next<queue.length){
+      if(gen!==_renderGen)return;
+      const {stop,di,si}=queue[next++];
+      const url=await fetchStopImage(stop.name);
+      // Re-check generation AND re-fetch the element after the await so a stale
+      // fetch can never paint a photo onto a stop that has since moved/changed.
+      if(gen!==_renderGen)return;
+      const el2=document.getElementById('stopimg-'+di+'-'+si);
+      if(url&&el2&&!el2.classList.contains('loaded')){
+        el2.innerHTML='<img class="stop-img" src="'+_escHtml(url)+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/><span class="stop-img-credit">&#169; Wikipedia / CC</span>';
+        el2.classList.add('loaded');
+      }
     }
   }
+  await Promise.all(Array.from({length:Math.min(5,queue.length)},worker));
 }
 
 /* ---- Offline download ---- */
@@ -1069,8 +1110,13 @@ async function downloadTripOffline(){
     try{await cache.put('/Travel/offline-state/'+encodeURIComponent(tripId)+'.json',
       new Response(stateJson,{headers:{'Content-Type':'application/json'}}));}catch(e){}
     // 2. App shell + this trip's page (so navigation works offline).
+    // Include the VERSIONED urls too — the pages request trip.js?v=NNN, which
+    // would miss an offline cache holding only the bare filename. Derived from
+    // APP_CODE_VERSION so release.sh stamping never drifts from a hardcoded number.
+    const _v=String(window.APP_CODE_VERSION||'').replace(/^v/,'');
     const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest',
-      'leaf-logo.png','icon-192.png','icon-512.png',location.pathname+location.search];
+      'leaf-logo.png','icon-192.png','icon-512.png',location.pathname+location.search]
+      .concat(_v?['trip.js?v='+_v,'trip-extras.js?v='+_v]:[]);
     await Promise.all(shell.map(u=>_cachePut(cache,u,{cache:'reload'})));
     if(!location.pathname.includes(tripId))await _cachePut(cache,'trips/'+tripId+'.json',{cache:'reload'});
     // 3. Stop images + 4. map tiles, with a progress counter.
@@ -1171,7 +1217,7 @@ async function fetchDayWeather(day){
   // rounded to a nonsensical 0°F).
   const climateAvg=()=>({tooFarOut:true,wxType:'climateAvg',month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng});
   if(diffDays>16)return climateAvg();
-  const ds=date.toISOString().slice(0,10);
+  const ds=_localISO(date);
   if(diffDays<0){
     try{
       const r=await fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
@@ -1219,7 +1265,7 @@ function dayNarrKey(dayIdx){
     if(d){
       const today=new Date();today.setHours(0,0,0,0);
       const diff=Math.round((d-today)/86400000);
-      if(diff>=-5&&diff<=16)dateTag='|'+new Date().toISOString().slice(0,10);
+      if(diff>=-5&&diff<=16)dateTag='|'+_localISO(new Date());
     }
   }
   const sig=day.title+dateTag+'|'+day.stops.map(s=>s.name+(s.notes||'')).join('|');
@@ -1271,11 +1317,25 @@ function refreshDayNarrative(dayIdx){
   loadDayNarrative(dayIdx);
 }
 
+// The Places key lives on the DEVICE, never in synced `state`.
+function _gpKey(){ try{ return localStorage.getItem('gp_key_'+tripId)||''; }catch(e){ return ''; } }
+// One-time: move a key that was previously written into shared state.
+function _migrateGooglePlacesKey(){
+  try{
+    const k=state&&state.settings&&state.settings.googlePlacesKey;
+    if(!k)return false;
+    if(!localStorage.getItem('gp_key_'+tripId))localStorage.setItem('gp_key_'+tripId,k);
+    delete state.settings.googlePlacesKey;
+    return true;
+  }catch(e){ return false; }
+}
 function promptGoogleKey(){
   const key=prompt('Enter your Google Places API key (stored in trip settings):');
   if(key&&key.trim()){
     if(!state.settings)state.settings={};
-    state.settings.googlePlacesKey=key.trim();
+    // SECURITY: never in `state` — family trips sync `state` to a world-readable
+    // Firebase DB, so a key stored there is published. Device-local only.
+    try{localStorage.setItem('gp_key_'+tripId,key.trim());}catch(e){}
     saveState('Set Google Places key');
     showToast('Google Places key saved');
     renderAll(); // refresh so the "add a key" hint disappears
@@ -1286,7 +1346,7 @@ function promptGoogleKey(){
 const DESC_SYSTEM='You are a travel guidebook author writing in the style of Fodor\'s or Rick Steves. Write exactly 2-3 sentences about this location: what it is, why it matters, and what a visitor should look for. Be specific and evocative, not generic. Do not begin with the place name. Do not use markdown or bullet points.';
 
 function _renderDesc(wrap,text,dayIdx,stopIdx){
-  wrap.innerHTML='<div class="stop-desc"><span class="stop-desc-text">'+text+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+dayIdx+','+stopIdx+')" title="Regenerate">&#8635;</button></div>';
+  wrap.innerHTML='<div class="stop-desc"><span class="stop-desc-text">'+_escHtml(text)+'</span><button class="stop-desc-regen" onclick="refreshStopDesc('+dayIdx+','+stopIdx+')" title="Regenerate">&#8635;</button></div>';
 }
 
 async function generateStopDesc(dayIdx,stopIdx){
@@ -1324,7 +1384,10 @@ function renderAll(){
   // (and the display then disagreed with what was stored). They now run once at
   // load — see _healLoadedItinerary() in init — not on every paint.
   try{ _syncDayHeadings(); }catch(e){}   // headings always reflect the live stops
-  try{ _ensureJnlIds(); }catch(e){}
+  // Persist ids created here. renderAll also runs after the 3s poll adopts a cloud
+  // state; without saving, fresh _sids were generated every render and journal
+  // notes/ratings re-orphaned on each reload. localOnly keeps it off the cloud.
+  try{ if(_ensureJnlIds())saveState('',true); }catch(e){}
   try{renderTabs();}catch(e){console.error('[renderTabs]',e);}
   try{
     // Safety net: if the sort somehow left a day out of order, say so loudly
@@ -1355,6 +1418,9 @@ function renderAll(){
 }
 
 function switchDay(idx){
+  // The ONLY place that keeps an explicit map call after renderAll: switching days
+  // intends a re-zoom (fit=true), whereas renderAll refreshes with fit=false.
+  // The generation guard makes the overlap safe.
   currentDayIdx=idx;renderAll();
   if(idx===-1)renderOverviewMap();
   else renderDayMap(idx);
@@ -1373,7 +1439,7 @@ function removeDay(idx){
   state.days.splice(idx,1);
   _wxDayCache={}; // day indices shifted — weather cache would point at the wrong day
   if(currentDayIdx>=state.days.length)currentDayIdx=state.days.length-1;
-  saveState();renderAll();renderDayMap(currentDayIdx);
+  saveState();renderAll();
 }
 
 function moveDay(idx,dir){
@@ -1383,7 +1449,7 @@ function moveDay(idx,dir){
   _wxDayCache={}; // day indices changed — invalidate the index-keyed weather cache
   if(currentDayIdx===idx)currentDayIdx=ni;
   else if(currentDayIdx===ni)currentDayIdx=idx;
-  saveState();renderAll();renderDayMap(currentDayIdx);
+  saveState();renderAll();
 }
 
 let copyingFrom={dayIdx:0,stopIdx:0};
@@ -1412,19 +1478,12 @@ function doCopy(toDayIdx,atStart){
   delete stop._sid; // give the copy its own journal id so notes/ratings don't bleed between copies
   if(atStart)state.days[toDayIdx].stops.unshift(stop);
   else state.days[toDayIdx].stops.push(stop);
-  saveState();closeCopyModal();renderAll();renderDayMap(currentDayIdx);
+  saveState();closeCopyModal();renderAll();
 }
 
-function _parseTimeMins(t){
-  if(!t)return null;
-  const m=t.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
-  if(!m)return null;
-  let h=parseInt(m[1]),mn=parseInt(m[2]);
-  const ap=(m[3]||'').toLowerCase();
-  if(ap==='pm'&&h!==12)h+=12;
-  else if(ap==='am'&&h===12)h=0;
-  return h*60+mn;
-}
+// _parseTimeMins lives ONCE, further down: the anchored, bounds-checked version.
+// A second, laxer copy used to sit here and won or lost purely on declaration
+// order — a silent drift hazard. Do not add another.
 // THE single canonical time format: "8:30 PM". There used to be two formatters
 // producing different shapes ("8:30pm" here, "8:30 PM" in _minsToClock), so the
 // same instant was written two ways and compared inconsistently. This now
@@ -1566,6 +1625,17 @@ function _fromTimeInput(val){                  // "20:30" -> "8:30 PM"
 // Rewrite any parseable time into the canonical form. This never changes WHEN a
 // stop is — it only makes the stored value unambiguous, so a wrong AM/PM becomes
 // visible instead of silently skewing durations.
+// Legacy 'subway' was normalised at a few render call sites but reached
+// _suggestStopTime, _legTravelMins, _MAX_MPH and _travelMins raw, where it fell
+// through to 'drive' speeds. Canonicalise once on load (no cloud push).
+function _canonicalizeTransitModes(){
+  if(!state||!state.days)return false;
+  let changed=false;
+  state.days.forEach(day=>(day.stops||[]).forEach(s=>{
+    if(s.transitMode==='subway'){s.transitMode='train';changed=true;}
+  }));
+  return changed;
+}
 function _canonicalizeTimes(){
   if(!state||!state.days)return false;
   let changed=false;
@@ -1598,7 +1668,7 @@ function _endDateOf(s,startISO){
   if(!startISO)return '';
   const st=_parseTimeMins(s&&s.time),et=_parseTimeMins(s&&s.endTime);
   if(st!=null&&et!=null&&et<st){
-    try{const d=new Date(startISO+'T00:00:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);}catch(e){}
+    try{const d=new Date(startISO+'T00:00:00');d.setDate(d.getDate()+1);return _localISO(d);}catch(e){}
   }
   return startISO;
 }
@@ -1606,6 +1676,9 @@ function _fmtShortDate(iso){
   if(!iso)return '';
   try{const d=new Date(iso+'T00:00:00');return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}
 }
+// Only http(s) and inline images may be used as an <img src>. A javascript: or
+// data:text/html value from the shared cloud DB would otherwise be a live sink.
+function _safeImgSrc(u){ return (typeof u==='string'&&/^(https?:|data:image\/)/i.test(u))?u:''; }
 function _displayDuration(s,startISO){
   if(!s)return '';
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
@@ -1763,7 +1836,8 @@ function _relaxDurationsToFit(st){
 }
 function _showDurationAdjustWarning(changed){
   const names=[...new Set(changed.map(c=>c.stop))];
-  const msg='Shortened '+names.slice(0,3).join(', ')+(names.length>3?' and others':'')+' to fit the travel times.';
+  // showToast writes innerHTML, so stop names (which sync from the shared DB) must be escaped.
+  const msg='Shortened '+_escHtml(names.slice(0,3).join(', '))+(names.length>3?' and others':'')+' to fit the travel times.';
   try{ if(typeof showToast==='function')showToast('⏱️ '+msg); else alert('⏱️ '+msg); }catch(e){}
 }
 // ── Keep day headings & notes in sync with the LIVE stops ───────────────────
@@ -1878,6 +1952,8 @@ function _dayStartAnchor(stops){
 // Order matters: fix broken end times, then broken timelines, then put the day
 // in chronological order.
 function _healLoadedItinerary(){
+  try{ _canonicalizeTransitModes(); }catch(e){}   // legacy 'subway' -> 'train'
+  try{ if(_migrateGooglePlacesKey())saveState('Moved Places key off shared state'); }catch(e){}
   try{ _canonicalizeTimes(); }catch(e){}   // make every stored time unambiguous
   try{ _healBadEndTimes(); }catch(e){}
   try{ _healEarlyDays(); }catch(e){}
@@ -2091,7 +2167,7 @@ function moveStop(dayIdx,stopIdx,dir){
   if(!canSwap||stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
     _recalcDayTimes(dayIdx,_dayStartAnchor(stops));
   }
-  saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
+  saveState();renderAll();
 }
 // Place a stop at `start`, preserving its own visit length. Transit keeps its
 // arrival span; an activity's duration mirrors start→end.
@@ -2116,7 +2192,7 @@ function deleteStop(dayIdx,stopIdx){
   const _removedName=_st?_st.name:'';
   state.days[dayIdx].stops.splice(stopIdx,1);
   try{ _scrubRemovedStop(dayIdx,_removedName); }catch(e){}   // strip the removed stop from heading + other notes
-  saveState();renderAll();if(dayIdx===currentDayIdx)renderDayMap(currentDayIdx);
+  saveState();renderAll();
 }
 
 function setModalMode(isEdit){
@@ -2278,7 +2354,7 @@ function saveStop(){
   const _sDate=(document.getElementById('f-date')?.value||'');
   let _eDate=(document.getElementById('f-enddate')?.value||'');
   if(!_eDate&&_sDate&&_eMin<=_sMin){
-    try{const d=new Date(_sDate+'T00:00:00');d.setDate(d.getDate()+1);_eDate=d.toISOString().slice(0,10);
+    try{const d=new Date(_sDate+'T00:00:00');d.setDate(d.getDate()+1);_eDate=_localISO(d);
       const _ed=document.getElementById('f-enddate');if(_ed)_ed.value=_eDate;}catch(e){}
   }
   const _sAbs=_absMins(_sDate,_startVal),_eAbs=_absMins(_eDate||_sDate,_endVal);
@@ -2312,7 +2388,17 @@ function saveStop(){
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
   const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
-  const stop={name,lat,lng,type:stopType,time:_startVal,endTime:_endVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),startDate:(document.getElementById('f-date')?.value||undefined),endDate:(document.getElementById('f-enddate')?.value||undefined),tz:(document.getElementById('f-tz')?.value.trim()||undefined),endTz:(document.getElementById('f-endtz')?.value.trim()||undefined),flightDepart:stopType==='flight'?(_startVal||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  // PRESERVE EVERYTHING NOT ON THE FORM. Building a fresh object dropped fields the
+  // form never shows — _sid (journal notes/ratings key), guidebook, dayHours,
+  // dayHoursSrc, destLat/destLng (transit arrival coords) and recentlyChanged —
+  // so every edit silently deleted them. Start from the existing stop and let the
+  // form-backed fields overwrite it.
+  const stop=Object.assign({},existingStop||{},{name,lat,lng,type:stopType,time:_startVal,endTime:_endVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),startDate:(document.getElementById('f-date')?.value||undefined),endDate:(document.getElementById('f-enddate')?.value||undefined),tz:(document.getElementById('f-tz')?.value.trim()||undefined),endTz:(document.getElementById('f-endtz')?.value.trim()||undefined),flightDepart:stopType==='flight'
+      // Keep the ORIGINAL departure unless the user edited the start time.
+      // _recalcDayTimes can overwrite a flight's s.time with a later cumulative
+      // time, and re-saving then clobbered the very value flightDepart preserves.
+      ?((existingStop&&existingStop.flightDepart&&_startVal===existingStop.time)?existingStop.flightDepart:(_startVal||undefined))
+      :undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance});
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.
@@ -2349,7 +2435,7 @@ function saveStop(){
   if(stop.time)_sortDayByTime(destDayIdx);
   saveState();closeModal();
   if(destDayIdx!==currentDayIdx&&destDayIdx>=0){switchDay(destDayIdx);}
-  else{renderAll();if(srcDayIdx===currentDayIdx||destDayIdx===currentDayIdx)renderDayMap(currentDayIdx);}
+  else{renderAll();}
   if(!stop.openingHours)lookupPlaceDetails(stop);
 }
 
@@ -2650,7 +2736,7 @@ function renderOverview(){
     return'<div class="cal-card" onclick="switchDay('+di+')" style="border-left:3px solid '+colors[di%4]+'">'+
       '<div class="cal-day-num">Day '+(di+1)+'</div>'+
       (datePart?'<div class="cal-date">'+_fmtDateWithYear(datePart)+'</div>':'')+
-      '<div class="cal-theme">'+theme+'</div>'+
+      '<div class="cal-theme">'+_escHtml(theme)+'</div>'+
       '<div class="cal-stop-count">'+day.stops.length+' stop'+(day.stops.length!==1?'s':'')+'</div>'+
       (hasConflict?'<div class="cal-conflict-dot" title="Timing issues detected">&#9888;</div>':'')+
       '</div>';
@@ -2663,7 +2749,7 @@ function renderOverview(){
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+
       '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+_fmtDateWithYear(datePart)+'</span>':'')+'</div>'+
-      '<div class="lodge-info"><div class="lodge-name">'+nm+(s.reservation||booked?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+s.notes+'</div>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+_escHtml(nm)+(s.reservation||booked?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+_escHtml(s.notes)+'</div>':'')+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';
@@ -2709,7 +2795,7 @@ function renderOverview(){
     '</div>';
   const panelPack='<div class="ov-tab-panel" id="ovtab-packing"'+(activeOvTab!=='packing'?' style="display:none"':'')+'>'+
     renderPackingListHtml()+
-    (state.settings?.googlePlacesKey?'':'<div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:12px">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
+    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:12px">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
     '</div>';
   const panelAudio='<div class="ov-tab-panel" id="ovtab-audio"'+(activeOvTab!=='audio'?' style="display:none"':'')+'>'+
     renderAudioToursHtml()+'</div>';
@@ -2889,7 +2975,7 @@ function renderPackingListHtml(){
       const catChecked=cat.items.filter((_,ii)=>checked[ci+'-'+ii]).length;
       return'<div class="pack-section">'+
         '<div class="pack-section-hdr" onclick="togglePackSection('+ci+')" aria-expanded="true">'+
-        '<span class="pack-name">'+cat.emoji+' '+cat.name+'</span>'+
+        '<span class="pack-name">'+_escHtml(cat.emoji)+' '+_escHtml(cat.name)+'</span>'+
         '<span class="pack-count">'+catChecked+'/'+cat.items.length+' <span class="pack-toggle" id="pack-tog-'+ci+'">&#9660;</span></span>'+
         '</div>'+
         '<div class="pack-items open" id="pack-cat-'+ci+'">'+
@@ -2898,7 +2984,7 @@ function renderPackingListHtml(){
           const isChecked=!!checked[key];
           return'<label class="pack-item'+(isChecked?' checked':'')+'">'+
             '<input type="checkbox" '+(isChecked?'checked':'')+' onchange="togglePackItem(\''+key+'\',this.checked)"/>'+
-            '<span class="pack-item-text">'+item+'</span>'+
+            '<span class="pack-item-text">'+_escHtml(item)+'</span>'+
             '</label>';
         }).join('')+
         '</div></div>';
@@ -2986,7 +3072,7 @@ async function renderOverviewMap(fit=true){
     day.stops.forEach((s,si)=>{
       if(!s.lat||!s.lng)return;
       const m=L.marker([s.lat,s.lng],{icon:makeIcon(di+1,TC[s.type]||'#8B7355',s.alt)});
-      m.bindPopup('<div style="font-weight:700;font-size:13px">Day '+(di+1)+': '+s.name+'</div>',{maxWidth:200});
+      m.bindPopup('<div style="font-weight:700;font-size:13px">Day '+(di+1)+': '+_escHtml(s.name)+'</div>',{maxWidth:200});
       markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
     });
   });
@@ -3493,7 +3579,7 @@ function _fAutoEndDate(){
   try{
     const d0=new Date(sd+'T00:00:00');
     if(en<=s)d0.setDate(d0.getDate()+1);          // wrapped past midnight
-    const want=d0.toISOString().slice(0,10);
+    const want=_localISO(d0);
     // Only fill/repair it; never fight a date the user deliberately set further out.
     if(!ed.value||ed.value<sd||(en<=s&&ed.value===sd)||(en>s&&ed.value>sd&&!ed.dataset.userSet))ed.value=want;
   }catch(e){}
@@ -3726,7 +3812,11 @@ function _wxWarnHtml(wx){
 
 /* --- Opening Hours / Place Meta --- */
 async function lookupPlaceDetails(stop){
-  const key=(state.settings||{}).googlePlacesKey;
+  // NOTE: these Google Places REST endpoints send no CORS headers, so a direct
+  // browser fetch always throws and this feature is effectively inert. To actually
+  // work it must be proxied through the travel-ai-proxy worker. Kept behind the
+  // existing try/catch so nothing regresses.
+  const key=_gpKey();
   if(!key||!stop.lat||!stop.lng||!stop.name)return;
   const ck='places_'+tripId+'_'+stop.name.slice(0,20);
   try{
@@ -3744,7 +3834,7 @@ async function lookupPlaceDetails(stop){
     if(res.website)stop.website=res.website;
     if(res.formatted_phone_number)stop.phone=res.formatted_phone_number;
     saveState('Updated place details: '+stop.name,true); // derived data — local only, don't clobber others' edits
-    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    renderAll();
   }catch(e){}
 }
 // Opening hours for the specific day of the itinerary, shown in the stop's
@@ -3852,7 +3942,7 @@ async function fixStopLocation(di,si){
     const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon);
     if(!confirm('Move "'+s.name+'" to:\n'+(d[0].display_name||q)+'\n('+lat.toFixed(4)+', '+lng.toFixed(4)+')?'))return;
     s.lat=lat;s.lng=lng;
-    saveState('Fixed location: '+s.name);renderAll();if(di===currentDayIdx)renderDayMap(di);
+    saveState('Fixed location: '+s.name);renderAll();
   }catch(e){alert('Could not reach the location service. Please try again.');}
 }
 // Manual correction — the reliable fix for any wrong hours.
@@ -3912,7 +4002,7 @@ async function _requestDayHours(idx,force,btn){
     }
     places.forEach(o=>{delete o._done;});
     saveState('Added opening hours for '+day.title,true); // derived data — local only, don't race the cloud
-    renderAll();if(idx===currentDayIdx)renderDayMap(currentDayIdx);
+    renderAll();
   }catch(e){
     if(btn){btn.disabled=false;btn.innerHTML='&#128337; Hours';}
     throw e;
@@ -4167,9 +4257,9 @@ function applyOptimizedOrder(){
   _recalcDayTimes(idx,_dayStartAnchor(newStops));
   saveState('Applied optimized order');
   document.getElementById('ai-optimizer-modal').classList.remove('open');
-  renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+  renderAll();
   showUndoBanner('Day '+( idx+1)+' stops reordered.',()=>{
-    const d=state.days[idx];if(d){d.stops=savedStops;saveState('Undid optimizer changes');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
+    const d=state.days[idx];if(d){d.stops=savedStops;saveState('Undid optimizer changes');renderAll();}
   });
 }
 // Sort a day chronologically by start time. Stops WITHOUT a time stay anchored
@@ -4238,9 +4328,9 @@ function showTimingFix(ti){
     _sortDayByTime(_optDayIdx);
     saveState('Fixed timing issue');
     document.getElementById('ai-optimizer-modal').classList.remove('open');
-    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    renderAll();
     showUndoBanner('Set "'+_escHtml(issue.stop_name||day.stops[si]?.name||'')+'" → '+suggestedTime,()=>{
-      state.days[_optDayIdx].stops=savedOrder;saveState('Undid timing fix');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+      state.days[_optDayIdx].stops=savedOrder;saveState('Undid timing fix');renderAll();
     });
   }else{
     document.getElementById('ai-optimizer-modal').classList.remove('open');
@@ -4320,9 +4410,9 @@ function confirmApplyAlternate(dayIdx,stopIdx,altIdx){
   stop.recentlyChanged=true;
   saveState('Applied restaurant alternate');
   document.getElementById('alternates-modal').classList.remove('open');
-  renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+  renderAll();
   showUndoBanner('"'+alt.name+'" applied.',()=>{
-    const d=state.days[dayIdx];if(d?.stops?.[stopIdx]){Object.assign(d.stops[stopIdx],origStop);delete d.stops[stopIdx].recentlyChanged;saveState('Undid restaurant alternate');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);}
+    const d=state.days[dayIdx];if(d?.stops?.[stopIdx]){Object.assign(d.stops[stopIdx],origStop);delete d.stops[stopIdx].recentlyChanged;saveState('Undid restaurant alternate');renderAll();}
   });
 }
 
@@ -4348,7 +4438,7 @@ function saveTravelers(){
   state.travelers=val.split('\n').map(t=>t.trim()).filter(Boolean);
   saveState('Updated travelers');
   document.getElementById('travelers-modal').classList.remove('open');
-  renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+  renderAll();
 }
 function _populateTravelersForm(stop){
   const travelers=getTravelers();
@@ -4475,7 +4565,7 @@ async function enableTravelAlerts(dayIdx){
     if(arrMins===null)continue;
 
     const rawMode=prev.transitMode||_defaultTransitMode(prev,curr);
-    const mode=rawMode==='subway'?'train':rawMode;
+    const mode=rawMode;
     const travelMins=_travelAlertMins(prev,curr,mode);
     // Alert 10 min before you need to leave (so departure = arrMins - travelMins - 10)
     const fireAt=new Date(today);
@@ -4533,7 +4623,6 @@ function _moveDayTo(from,to){
   else if(from<to&&currentDayIdx>from&&currentDayIdx<=to)currentDayIdx--;
   else if(from>to&&currentDayIdx>=to&&currentDayIdx<from)currentDayIdx++;
   saveState('Reordered days');renderAll();
-  if(currentDayIdx>=0)renderDayMap(currentDayIdx);
 }
 function _setupTabDrag(){
   const bar=document.getElementById('tabs-inner');if(!bar||bar._dnd)return;bar._dnd=true;
@@ -4650,7 +4739,6 @@ async function generateGuidebook(regenerate){
   progressEl.textContent='';
   saveState('Generated guidebook');
   renderAll();
-  if(currentDayIdx>=0)renderDayMap(currentDayIdx);else renderOverviewMap();
 }
 
 /* ============================================================
@@ -4916,9 +5004,9 @@ function applyProposedMove(moveIdx){
   if(_applyProposedMove(move)){
     saveState('Applied proposed move');
     document.getElementById('ai-optimizer-modal').classList.remove('open');
-    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    renderAll();
     showUndoBanner('Moved "'+_escHtml(move.stop_name||'')+'" to Day '+move.to_day,()=>{
-      state.days=snapshot;saveState('Undid move');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+      state.days=snapshot;saveState('Undid move');renderAll();
     });
   }
 }
@@ -4931,9 +5019,9 @@ function applyAllProposedMoves(){
   if(applied>0){
     saveState('Applied all proposed moves');
     document.getElementById('ai-optimizer-modal').classList.remove('open');
-    renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+    renderAll();
     showUndoBanner('Applied '+applied+' proposed move'+(applied>1?'s':''),()=>{
-      state.days=snapshot;saveState('Undid moves');renderAll();if(currentDayIdx>=0)renderDayMap(currentDayIdx);
+      state.days=snapshot;saveState('Undid moves');renderAll();
     });
   }
 }
@@ -4970,7 +5058,7 @@ function _renderRecap(){
         return;
       }
       h+='<div class="recap-memory-card">'+
-        (s.customImage?'<img class="recap-photo" src="'+s.customImage+'" alt="'+_escHtml(s.name)+'" loading="lazy"/>':'')+
+        (_safeImgSrc(s.customImage)?'<img class="recap-photo" src="'+_escHtml(_safeImgSrc(s.customImage))+'" alt="'+_escHtml(s.name)+'" loading="lazy"/>':'')+
         '<div class="recap-card-body">'+
         '<div class="recap-stop-name">'+_escHtml(s.name)+'</div>'+
         (rating?'<div class="recap-stars-row">'+Array(rating).fill('&#9733;').join('')+'</div>':'')+
@@ -5143,7 +5231,7 @@ async function init(){
               // NO auto-mutation here. Adopting a cloud copy must never rewrite it and
               // push back — that auto-heal-on-load pattern is what corrupted the trip.
               try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-              renderAll(); if(currentDayIdx>=0)renderDayMap(currentDayIdx); else renderOverviewMap();
+              renderAll();
             }
           }
         }catch(e){}
@@ -5213,7 +5301,7 @@ async function init(){
     if(pending){
       sessionStorage.removeItem('pendingImport_'+tripId);
       const parsedDays=JSON.parse(pending);
-      const _isoFromSub=sub=>{if(!sub)return'';const p=sub.split(/\s*[·•]\s*/)[0].trim();const d=new Date(p+' 12:00');return isNaN(d)?'':(d.toISOString().slice(0,10));};
+      const _isoFromSub=sub=>{if(!sub)return'';const p=sub.split(/\s*[·•]\s*/)[0].trim();const d=new Date(p+' 12:00');return isNaN(d)?'':_localISO(d);};
       const _insertChron=(stops,st)=>{
         const t=_parseTimeMins(st.time);
         if(t===null){stops.push(st);return;}
@@ -5237,7 +5325,7 @@ async function init(){
       if(added>0)saveState('Imported '+added+' stop'+(added>1?'s':''));
     }
   }catch(e){}
-  renderAll();renderOverviewMap();loadTimezones();_setupTabDrag();
+  renderAll();loadTimezones();_setupTabDrag();
   _updateTypeBadge();
   if(isJournalMode()){const b=document.getElementById('journal-mode-banner');if(b)b.classList.add('on');}
   document.getElementById('ai-grader-modal')?.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
@@ -5266,7 +5354,7 @@ async function init(){
   if(imported){
     sessionStorage.removeItem('justImported');
     const b=document.getElementById('import-banner');
-    b.innerHTML='✓ "'+imported+'" was added to your trips. You can now edit it independently.';
+    b.innerHTML='✓ "'+_escHtml(imported)+'" was added to your trips. You can now edit it independently.';
     b.classList.add('visible');
     setTimeout(()=>b.classList.remove('visible'),6000);
   }

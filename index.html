@@ -447,7 +447,7 @@ const TRIP_JSON_SCHEMA=`CRITICAL: Your entire response must be a single raw JSON
 }
 
 Rules:
-1. "type" must be exactly one of: hike, food, lodge, drive, flight, train
+1. "type" must be exactly one of: hike, food, lodge, drive, flight, train, bus
 2. "lat"/"lng" must be real numeric WGS84 coordinates — never 0, never strings, never the word "latitude"
 3. "stars" is a string like "4.5" or null
 4. Every day must end with a lodge stop (that night's hotel/accommodation) unless it is the very last day and the group is flying home
@@ -798,8 +798,14 @@ function openImport(){
   _importMode='new';_pendingImportPdf=null;
   const ta=document.getElementById('import-text');ta.value='';ta.placeholder='Paste your itinerary here…';
   document.getElementById('import-error').classList.remove('visible');
-  document.getElementById('upload-label').classList.remove('has-file');
-  document.getElementById('upload-label').innerHTML='&#128206; Upload a file (.txt, .pdf, etc.)<input type="file" id="import-file" accept=".txt,.md,.csv,.rtf,application/pdf,.pdf" style="display:none"/>';
+  const _ul=document.getElementById('upload-label');
+  _ul.classList.remove('has-file');
+  // Reset the LABEL TEXT and the input value. Rebuilding innerHTML here created a
+  // SECOND element with id="import-file" (the static one already exists) and
+  // re-attached the change listener on every open, so uploads fired repeatedly.
+  const _uf=document.getElementById('import-file');
+  if(_ul.firstChild&&_ul.firstChild.nodeType===3)_ul.firstChild.textContent='\u{1F4CE} Upload a file (.txt, .pdf, etc.) ';
+  if(_uf)_uf.value='';
   _pendingImportPdf=null;
   document.getElementById('mode-new').classList.add('active');
   document.getElementById('mode-append').classList.remove('active');
@@ -811,8 +817,12 @@ function openImport(){
   const tc=trapFocus(document.querySelector('#import-overlay .modal-card'));
   document.getElementById('import-overlay')._trapCleanup=tc;
   setTimeout(()=>document.getElementById('import-text').focus(),150);
-  document.getElementById('import-file').addEventListener('change',handleFileUpload);
 }
+// Attached ONCE at script init (it used to be re-attached on every openImport).
+(function(){
+  function wireImport(){const f=document.getElementById('import-file');if(f&&!f._wired){f._wired=1;f.addEventListener('change',handleFileUpload);}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wireImport);else wireImport();
+})();
 function closeImport(){
   document.getElementById('import-overlay').classList.remove('open');
   const tc=document.getElementById('import-overlay')._trapCleanup;
@@ -979,7 +989,8 @@ document.getElementById('w-start').addEventListener('change',function(){
   const s=this.value;if(!s)return;
   const endEl=document.getElementById('w-end');
   const next=new Date(s+'T00:00:00');next.setDate(next.getDate()+1);
-  const nextStr=next.toISOString().split('T')[0];
+  // LOCAL calendar date — toISOString() would shift to the previous day abroad.
+  const nextStr=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0')+'-'+String(next.getDate()).padStart(2,'0');
   if(!endEl.value||endEl.value<=s)endEl.value=nextStr;
   updateDaysFromDates();
 });
@@ -1140,7 +1151,8 @@ async function _resolveTripState(t){
 async function saveTripOffline(id,ev){
   if(ev){ev.preventDefault();ev.stopPropagation();}
   const t=(_allTripsCache||[]).find(x=>x.id===id); if(!t)return;
-  const btn=document.getElementById('off-'+id);
+  // Element ids are sanitised by _domId when rendered; match that here.
+  const btn=document.getElementById('off-'+_domId(id));
   if(btn){btn.disabled=true;btn.textContent='…';}
   try{
     const state=await _resolveTripState(t);
@@ -1152,8 +1164,14 @@ async function saveTripOffline(id,ev){
     try{localStorage.setItem('tripState_'+id,stateJson);}catch(e){}
     try{await cache.put('/Travel/offline-state/'+encodeURIComponent(id)+'.json',
       new Response(stateJson,{headers:{'Content-Type':'application/json'}}));}catch(e){}
+    // Also cache the VERSIONED urls the pages actually request (trip.js?v=NNN);
+    // caching only the bare filename left the versioned request missing offline.
+    // The version is read from the SW cache name so release.sh stamping can't drift.
+    let _v='';
+    try{const ks=await caches.keys();const ns=ks.map(k=>{const m=/^seasons-v(\d+)$/.exec(k);return m?+m[1]:null;}).filter(n=>n!==null);if(ns.length)_v=String(Math.max(...ns));}catch(e){}
     const shell=['index.html','trip.html','trip.js','trip-extras.js','app.webmanifest','leaf-logo.png','icon-192.png','icon-512.png',
-      'trip.html?id='+encodeURIComponent(id)+(t.shared?'&fam=1':'')];
+      'trip.html?id='+encodeURIComponent(id)+(t.shared?'&fam=1':'')]
+      .concat(_v?['trip.js?v='+_v,'trip-extras.js?v='+_v]:[]);
     await Promise.all(shell.map(u=>_cachePut(cache,u,{cache:'reload'})));
     if(!t.local)await _cachePut(cache,'trips/'+id+'.json',{cache:'reload'});
     const stops=(state.days||[]).flatMap(d=>d.stops||[]);
@@ -1204,6 +1222,24 @@ async function loadTrips(){
   }
 }
 
+// An id safe to place in an id= attribute (and to look up again).
+function _domId(id){return String(id||'').replace(/[^A-Za-z0-9_-]/g,'');}
+// ONE delegated listener for every trip card's buttons. Installed once.
+(function(){
+  function wire(){
+    const grid=document.getElementById('trips-grid');
+    if(!grid||grid._wired)return;
+    grid._wired=1;
+    grid.addEventListener('click',function(e){
+      const del=e.target.closest('.js-del');
+      if(del){e.preventDefault();e.stopPropagation();deleteTrip(del.dataset.id,del.dataset.hard==='1');return;}
+      const off=e.target.closest('.js-off');
+      if(off){e.preventDefault();e.stopPropagation();saveTripOffline(off.dataset.id,e);return;}
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);
+  else wire();
+})();
 function renderTripsGrid(rawAll,hidden){
   const grid=document.getElementById('trips-grid');
   if(!grid)return;
@@ -1235,10 +1271,15 @@ function renderTripsGrid(rawAll,hidden){
     else if(isImported)ownerBadge='<span class="trip-meta-pill" style="color:var(--amber);border-color:rgba(196,123,32,0.22);background:var(--amber-tint)">&#128203; Imported</span>';
     else               ownerBadge='<span class="trip-meta-pill" style="color:var(--pine);border-color:var(--pine-border);background:var(--pine-tint)">&#9998; Yours</span>';
     const isOffline=localStorage.getItem('offline_'+t.id)==='1';
+    // Trip ids for SHARED trips come from the cloud DB, so they are untrusted. They
+    // used to be interpolated RAW into onclick="deleteTrip('${t.id}',...)" — a
+    // crafted id was script injection. Ids now travel in a data- attribute and a
+    // single delegated listener on #trips-grid reads them; nothing is ever parsed
+    // as code. `_domId` additionally sanitises the id used in an id= attribute.
     const deleteBtn=isServer
-      ?`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}',false)" title="Hide trip" style="font-size:12px">&#128065;</button>`
-      :`<button class="card-delete" onclick="event.preventDefault();event.stopPropagation();deleteTrip('${t.id}',true)" title="Delete trip">&#128465;</button>`;
-    const offlineBtn=`<button id="off-${t.id}" class="card-delete" onclick="saveTripOffline('${t.id}',event)" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:13px;color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
+      ?`<button class="card-delete js-del" data-id="${_esc(t.id)}" data-hard="0" title="Hide trip" style="font-size:12px">&#128065;</button>`
+      :`<button class="card-delete js-del" data-id="${_esc(t.id)}" data-hard="1" title="Delete trip">&#128465;</button>`;
+    const offlineBtn=`<button id="off-${_domId(t.id)}" class="card-delete js-off" data-id="${_esc(t.id)}" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:13px;color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
     return`<a class="trip-card" href="trip.html?id=${_esc(t.id)}${t.shared?'&fam=1':''}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
@@ -1275,7 +1316,16 @@ function renderTripsGrid(rawAll,hidden){
 
 loadTrips();
 checkSetup();
-if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload());navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{reg.update();});}
+if('serviceWorker' in navigator){
+  // Reload ONCE, and only for a genuine update. Unguarded, this fired on first
+  // install too (no prior controller), which is the first-visit double reload.
+  const _hadController=!!navigator.serviceWorker.controller;
+  let _reloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(_reloading||!_hadController)return; _reloading=true; location.reload();
+  });
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{reg.update();}).catch(()=>{});
+}
 
 /* ---- PWA Install ---- */
 let _installPrompt=null;

@@ -670,3 +670,58 @@ test('the real flight reads 13h 30min, not 25h 30min', () => {
   const flight = { time: '8:30 PM', endTime: '10:00 AM', startDate: '2026-08-04', endDate: '2026-08-05' };
   assert.equal(d(flight), '13h 30min');
 });
+
+// ---------------------------------------------------------------------------
+// REVIEW FIX P0-1: saveStop rebuilt the stop from scratch and silently dropped
+// every field the form does not show.
+test('editing a stop preserves fields the form never exposes', () => {
+  const F = {};
+  const mk = (id, v) => (F[id] = { value: v == null ? '' : String(v), checked: false, type: '', dataset: {} });
+  ['f-name','f-lat','f-lng','f-time','f-endtime','f-duration','f-stars','f-notes','f-reservation',
+   'f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl','f-date','f-enddate','f-tz','f-endtz',
+   'f-type','f-alt','f-locked','f-intl','f-photo','f-ticket'].forEach(id => mk(id));
+  F['f-name'].value = 'British Museum';
+  F['f-time'].value = '12:03 PM'; F['f-endtime'].value = '4:12 PM';
+  F['f-type'].value = 'hike'; F['f-date'].value = '2026-08-05';
+  const realGet = ctx.document.getElementById;
+  const realQS = ctx.document.querySelector;
+  ctx.document.getElementById = (id) => (id in F ? F[id] : realGet(id));
+  ctx.document.querySelector = () => ({ textContent: '', classList: { add(){}, remove(){} } });
+  const existing = {
+    name: 'British Museum', type: 'hike', time: '12:03 PM', endTime: '4:12 PM',
+    _sid: 'sid-keep-me', guidebook: 'GUIDEBOOK TEXT', dayHours: '10:00 AM - 5:00 PM',
+    dayHoursSrc: 'osm', destLat: 51.5, destLng: -0.12, recentlyChanged: true,
+    lat: 51.5194, lng: -0.127,
+  };
+  ctx.state = { tripType: 'solo', days: [{ title: 'D', subtitle: 'Wed, Aug 5, 2026', stops: [existing] }] };
+  ctx.editingStop = { dayIdx: 0, stopIdx: 0 };
+  ctx.addingToDay = 0;
+  ctx.saveState = () => {}; ctx.renderAll = () => {}; ctx.closeModal = () => {}; ctx.renderDayMap = () => {};
+  try {
+    fn('saveStop')();
+    const s = ctx.state.days[0].stops[0];
+    assert.equal(s._sid, 'sid-keep-me', '_sid must survive (journal notes are keyed by it)');
+    assert.equal(s.guidebook, 'GUIDEBOOK TEXT', 'guidebook must survive');
+    assert.equal(s.dayHours, '10:00 AM - 5:00 PM', 'dayHours must survive');
+    assert.equal(s.dayHoursSrc, 'osm', 'dayHoursSrc must survive');
+    assert.equal(s.destLat, 51.5, 'destLat must survive');
+    assert.equal(s.destLng, -0.12, 'destLng must survive');
+  } finally {
+    ctx.document.getElementById = realGet; ctx.document.querySelector = realQS;
+    ctx.editingStop = null;
+  }
+});
+
+// REVIEW FIX P0-2: local dates must not be serialized through UTC.
+test('_localISO returns the LOCAL calendar date (no UTC day shift)', () => {
+  const iso = fn('_localISO');
+  const d = new Date(2026, 7, 5, 0, 0, 0); // Aug 5 2026, local midnight
+  assert.equal(iso(d), '2026-08-05', 'must stay Aug 5 regardless of UTC offset');
+  assert.equal(iso(new Date(2026, 0, 1, 23, 59)), '2026-01-01');
+});
+
+// REVIEW FIX P0-3: no airport warning against the PREVIOUS DAY's last stop.
+test('_airportWarningHtml is silent when there is no same-day previous stop', () => {
+  assert.equal(fn('_airportWarningHtml')(null, { type: 'flight', time: '10:00 AM' }), '',
+    'a day-first flight must not be judged against yesterday');
+});

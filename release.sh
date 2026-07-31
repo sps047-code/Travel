@@ -21,6 +21,22 @@ echo "==> v$CURRENT -> v$NEXT"
 node -e "new Function(require('fs').readFileSync('trip.js','utf8'))"
 node -e "new Function(require('fs').readFileSync('trip-extras.js','utf8'))"
 node -e "new Function(require('fs').readFileSync('sw.js','utf8'))"
+# STATIC CHECK: every CSS custom property referenced must be declared. A token
+# used but never defined resolves to nothing and silently collapses layout —
+# exactly how a broken home page shipped in v176/v177. Cheap, so run it first.
+python3 - <<'PYEOF' || { echo "UNDEFINED CSS TOKENS — not releasing"; exit 1; }
+import re,sys
+bad=0
+for f in ['trip.html','index.html']:
+    s=open(f).read()
+    used=set(re.findall(r'var\((--[a-z0-9-]+)\)',s))
+    defined=set(re.findall(r'(--[a-z0-9-]+)\s*:',s))
+    missing=sorted(used-defined)
+    if missing:
+        bad=1; print('  %s uses undefined tokens: %s'%(f,', '.join(missing)))
+sys.exit(bad)
+PYEOF
+
 # UNIT tests (trip.js in a Node vm — proves the maths).
 node --test tests/live-core.test.mjs >/dev/null 2>&1 \
   || { node --test tests/live-core.test.mjs; echo "UNIT TESTS FAILED — not releasing"; exit 1; }

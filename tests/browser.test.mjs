@@ -373,3 +373,98 @@ test('a stop scheduled before the landing time is moved automatically', async ()
     'the hotel moved to at/after the 10:00 AM landing, got ' + hotel.time);
   await page.close();
 });
+
+// ===========================================================================
+// THE HOME PAGE (index.html). It had NO browser coverage, which is how a
+// broken home page shipped in v176/v177: index.html used var(--space-*)
+// without defining those tokens, so every padding resolved to nothing and the
+// trip cards collapsed. These assert on COMPUTED styles, so an undefined token
+// fails loudly instead of silently rendering a squashed layout.
+// ===========================================================================
+async function openHome() {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    if (u.includes('firebaseio.com')) return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.goto(`${origin}/Travel/index.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#trips-grid', { timeout: 15000 });
+  await page.waitForTimeout(700);
+  return { page, errors };
+}
+
+test('the home page loads with no errors and shows the trip cards', async () => {
+  const { page, errors } = await openHome();
+  const cards = await page.locator('.trip-card').count();
+  assert.ok(cards >= 1, 'at least one trip card is rendered, got ' + cards);
+  assert.deepEqual(errors.filter((e) => !/favicon|Failed to load resource/i.test(e)), []);
+  await page.close();
+});
+
+test('EVERY CSS custom property the pages use is actually defined', async () => {
+  // The exact failure from v176/v177: a token was referenced but never declared,
+  // so it silently resolved to nothing.
+  for (const url of ['/Travel/index.html', '/Travel/trip.html?id=london-scotland']) {
+    const page = await browser.newPage();
+    await page.route('**/*', (route) => {
+      const u = route.request().url();
+      if (u.startsWith(origin)) return route.continue();
+      if (u.includes('leaflet')) {
+        const ext = u.endsWith('.css') ? '.css' : '.js';
+        const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+        if (fs.existsSync(lf)) return route.fulfill({ status: 200,
+          contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
+      }
+      return route.fulfill({ status: 204, body: '' });
+    });
+    await page.goto(origin + url, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(600);
+    const undefinedTokens = await page.evaluate(() => {
+      const used = new Set();
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+        for (const r of Array.from(rules || [])) {
+          const t = r.cssText || '';
+          for (const m of t.matchAll(/var\((--[a-z0-9-]+)\)/gi)) used.add(m[1]);
+        }
+      }
+      const root = getComputedStyle(document.documentElement);
+      return [...used].filter((t) => !root.getPropertyValue(t).trim());
+    });
+    assert.deepEqual(undefinedTokens, [], url + ' references undefined tokens: ' + undefinedTokens.join(', '));
+    await page.close();
+  }
+});
+
+test('home page trip cards have real padding (not collapsed by a missing token)', async () => {
+  const { page } = await openHome();
+  const box = await page.evaluate(() => {
+    const body = document.querySelector('.trip-card .trip-card-body');
+    if (!body) return null;
+    const cs = getComputedStyle(body);
+    return { top: parseFloat(cs.paddingTop), left: parseFloat(cs.paddingLeft) };
+  });
+  assert.ok(box, 'a trip card body exists');
+  assert.ok(box.top >= 8 && box.left >= 8,
+    'card padding must not collapse — got top ' + box.top + 'px, left ' + box.left + 'px');
+  await page.close();
+});
+
+test('home page destination pills are visually separated', async () => {
+  const { page } = await openHome();
+  const gap = await page.evaluate(() => {
+    const pills = document.querySelectorAll('.trip-card .trip-meta-pill');
+    if (pills.length < 2) return null;
+    const cs = getComputedStyle(pills[0]);
+    return { padX: parseFloat(cs.paddingLeft), w: pills[0].getBoundingClientRect().width };
+  });
+  if (gap) {
+    assert.ok(gap.padX >= 4, 'pills need horizontal padding, got ' + gap.padX + 'px');
+    assert.ok(gap.w > 20, 'pills must have real width, got ' + gap.w + 'px');
+  }
+  await page.close();
+});

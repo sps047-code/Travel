@@ -20,7 +20,9 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PW = '/tmp/claude-0/-home-user-Travel/cc1ebd2e-2695-52d0-b7cf-48956770f86f/scratchpad/node_modules/playwright';
+const SCRATCH = '/tmp/claude-0/-home-user-Travel/cc1ebd2e-2695-52d0-b7cf-48956770f86f/scratchpad';
+const PW = SCRATCH + '/node_modules/playwright';
+const LEAFLET_DIR = SCRATCH + '/node_modules/leaflet/dist';
 
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
   '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
@@ -65,8 +67,17 @@ function serve() {
       const url = new URL(req.url, 'http://x');
       let p = decodeURIComponent(url.pathname).replace(/^\/Travel/, '') || '/';
       if (p === '/') p = '/index.html';
-      // Intercept the Leaflet CDN request with our local stub.
-      if (p.includes('leaflet')) { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(LEAFLET_STUB); }
+      // Serve the REAL Leaflet from node_modules. A stub only proved that
+      // polyline() was CALLED; real Leaflet draws SVG <path> elements, so the
+      // tests can assert a route is genuinely on the map.
+      if (p.includes('leaflet')) {
+        const ext = p.endsWith('.css') ? '.css' : '.js';
+        const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+        if (fs.existsSync(lf)) {
+          res.writeHead(200, { 'Content-Type': ext === '.css' ? 'text/css' : 'application/javascript' });
+          return res.end(fs.readFileSync(lf));
+        }
+      }
       const file = path.join(ROOT, p);
       if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
         res.writeHead(404); return res.end('not found');
@@ -88,9 +99,18 @@ async function openTrip(days, { tripId = 'london-scotland', day = 0 } = {}) {
   await page.route('**/*', (route) => {
     const u = route.request().url();
     if (u.startsWith(origin)) return route.continue();
-    if (u.includes('unpkg.com') || u.includes('cdnjs')) {
-      return route.fulfill({ status: 200, contentType: 'application/javascript', body: LEAFLET_STUB });
+    if (u.includes('leaflet')) {
+      const ext = u.endsWith('.css') ? '.css' : '.js';
+      const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+      if (fs.existsSync(lf)) return route.fulfill({ status: 200,
+        contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
     }
+    if (u.includes('unpkg.com') || u.includes('cdnjs')) {
+      return route.fulfill({ status: 200, contentType: 'application/javascript', body: 'void 0;' });
+    }
+    // Map tiles: a 1x1 PNG so Leaflet lays out normally without the network.
+    if (u.includes('tile.openstreetmap.org')) return route.fulfill({ status: 200, contentType: 'image/png',
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
     if (u.includes('firebaseio.com')) return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
     return route.fulfill({ status: 204, body: '' });
   });
@@ -155,35 +175,43 @@ test('a flight card shows the correct time-zone-aware duration', async () => {
   await page.close();
 });
 
-test('the map draws a route for a day that drives to the airport', async () => {
+// Count the route lines ACTUALLY on the map: Leaflet renders polylines as <path>
+// elements in the overlay pane. Counting polyline() calls (the old stub approach)
+// proved only that code ran, never that the user can see a route.
+async function routePathCount(page) {
+  return page.evaluate(() => document.querySelectorAll('#map .leaflet-overlay-pane path').length);
+}
+
+test('the map really draws a route line for the drive to the airport', async () => {
   const { page } = await openTrip([
     { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
       { name: 'New Port Richey', type: 'hike', time: '3:00 PM', endTime: '3:30 PM', lat: 28.2442, lng: -82.7192 },
       { name: 'Flight ZO 784', type: 'flight', time: '8:30 PM', endTime: '10:00 AM', lat: 28.4312, lng: -81.3081 },
     ] },
   ]);
-  await page.waitForFunction(() => window.__polylines && window.__polylines.length > 0, null, { timeout: 10000 });
-  const n = await page.evaluate(() => window.__polylines.length);
-  assert.ok(n >= 1, 'at least one route line was drawn, got ' + n);
+  await page.waitForFunction(
+    () => document.querySelectorAll('#map .leaflet-overlay-pane path').length > 0,
+    null, { timeout: 15000 });
+  assert.ok(await routePathCount(page) >= 1, 'a route line is rendered on the map');
   await page.close();
 });
 
-test('every day of a transit-heavy trip draws a route', async () => {
+test('EVERY day of the real trip renders a route line on the map', async () => {
   const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
   const { page } = await openTrip(trip.days, { day: null });
   const blank = [];
   for (let i = 0; i < trip.days.length; i++) {
-    const drawn = await page.evaluate(async (idx) => {
-      window.__polylines.length = 0;
-      switchDay(idx);
-      await new Promise((r) => setTimeout(r, 400));
-      return window.__polylines.length;
-    }, i);
-    // A day needs two located stops before a line is even possible.
     const located = (trip.days[i].stops || []).filter((s) => s.lat && s.lng && !s.alt).length;
-    if (located >= 2 && drawn === 0) blank.push(i + 1);
+    await page.evaluate((idx) => switchDay(idx), i);
+    if (located < 2) continue;   // a line needs two points
+    let n = 0;
+    for (let tries = 0; tries < 40 && n === 0; tries++) {
+      n = await routePathCount(page);
+      if (!n) await page.waitForTimeout(150);
+    }
+    if (!n) blank.push(i + 1);
   }
-  assert.deepEqual(blank, [], 'these days drew no route: ' + blank.join(', '));
+  assert.deepEqual(blank, [], 'these days show NO route line on the map: ' + blank.join(', '));
   await page.close();
 });
 

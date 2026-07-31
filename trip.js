@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v169';
+window.APP_CODE_VERSION='v170';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1556,7 +1556,20 @@ function _suggestStopTime(stops,newIdx){
 }
 // How long a stop occupies: prefer an explicit end time, then its duration
 // string, then a sensible default for its type.
-const _VISIT_MINS={hike:120,museum:90,food:75,lodge:30,flight:0,train:0,bus:0,drive:20,beach:120,shop:60,tour:90,show:150};
+const _VISIT_MINS={hike:120,museum:90,food:45,lodge:30,flight:0,train:0,bus:0,drive:20,beach:120,shop:60,tour:90,show:150};
+// Meals get REALISTIC lengths, not a flat 75-minute block for everything: a
+// 2-hour lunch is dead time. Breakfast 30, lunch 45, dinner 1h15, quick stops 30.
+const _MEAL_MINS={breakfast:30,brunch:45,lunch:45,dinner:75,quick:30};
+function _mealMins(s){
+  if(!s||s.type!=='food')return null;
+  const n=(s.name||'').toLowerCase();
+  if(/\bbreakfast\b/.test(n))return _MEAL_MINS.breakfast;
+  if(/\bbrunch\b/.test(n))return _MEAL_MINS.brunch;
+  if(/\blunch\b/.test(n))return _MEAL_MINS.lunch;
+  if(/\bdinner\b|\bsupper\b/.test(n))return _MEAL_MINS.dinner;
+  if(/\bcoffee\b|\bgelato\b|\bice ?cream\b|\bsnack\b|\bquick bite\b|\bpastry\b|\bbakery\b/.test(n))return _MEAL_MINS.quick;
+  return null;
+}
 function _durationToMins(str){
   if(str==null)return null;
   const s=String(str).toLowerCase().trim();
@@ -1825,6 +1838,8 @@ function _stopVisitMins(s){
   if(span!=null)return span;
   const d=_durationToMins(s.duration);
   if(d!=null)return d;
+  const meal=_mealMins(s);
+  if(meal!=null)return meal;
   return _VISIT_MINS[s.type]??60;
 }
 // ============================================================================

@@ -978,3 +978,30 @@ test('_groundSegments ignores alternates and stops without coordinates', () => {
   ]);
   assert.equal(JSON.stringify(segs.map(x => x.map(s => s.name))), JSON.stringify([['A', 'B']]));
 });
+
+// ===========================================================================
+// MEAL LENGTHS. A flat 75-minute block for every food stop produced 2-hour
+// lunches — dead time, not dining.
+// ===========================================================================
+test('meals get realistic default lengths', () => {
+  const v = fn('_stopVisitMins');
+  assert.equal(v({ name: 'Breakfast at the hotel', type: 'food' }), 30, 'breakfast 30 min');
+  assert.equal(v({ name: 'Lunch — Cheapside', type: 'food' }), 45, 'lunch 45 min');
+  assert.equal(v({ name: 'Dinner — Flat Iron Covent Garden', type: 'food' }), 75, 'dinner 1h 15min');
+  assert.equal(v({ name: 'Brunch', type: 'food' }), 45, 'brunch 45 min');
+  assert.equal(v({ name: 'Gelupo Gelato', type: 'food' }), 30, 'a gelato stop is quick');
+  assert.equal(v({ name: 'Coffee at Monmouth', type: 'food' }), 30, 'coffee is quick');
+});
+
+test('an explicit time span always beats the meal default', () => {
+  const v = fn('_stopVisitMins');
+  // A long dinner the user actually chose must be respected.
+  assert.equal(v({ name: 'Dinner', type: 'food', time: '7:00 PM', endTime: '9:30 PM' }), 150);
+  assert.equal(v({ name: 'Lunch', type: 'food', duration: '2hrs' }), 120, 'a stated duration wins');
+});
+
+test('non-meal food and other types are unaffected', () => {
+  const v = fn('_stopVisitMins');
+  assert.equal(v({ name: 'Borough Market', type: 'food' }), 45, 'generic food falls back to 45');
+  assert.equal(v({ name: 'Edinburgh Castle', type: 'hike' }), 120, 'sights unchanged');
+});

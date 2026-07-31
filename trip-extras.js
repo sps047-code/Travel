@@ -179,10 +179,10 @@ function _augmentAudioBadges(){
     card.dataset.audioBadged='1';
     const url=stop.audioUrl;
     const bar=document.createElement('div');
-    bar.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:var(--space-1);border-radius:0 0 10px 10px';
+    bar.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:var(--space-2) var(--space-4) var(--space-2);background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:var(--space-1);border-radius:0 0 10px 10px';
     bar.innerHTML='<span style="font-size:var(--text-xs);font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
       '<audio controls preload="none" src="'+_esc(url)+'" style="flex:1;min-width:180px;height:28px"></audio>'+
-      '<button type="button" class="audio-save-btn" style="font-size:var(--text-xs);font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
+      '<button type="button" class="audio-save-btn" style="font-size:var(--text-xs);font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:var(--space-1) var(--space-2);border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
     card.appendChild(bar);
     const btn=bar.querySelector('.audio-save-btn');
     const _markSaved=()=>{
@@ -411,11 +411,11 @@ function _renderChangePanel(jsonStr){
   if(!msgs) return;
 
   const panel = document.createElement('div');
-  panel.style.cssText = 'margin:10px 0 4px;padding:12px 13px;background:rgba(46,125,82,0.09);border:1.5px solid rgba(46,125,82,0.30);border-radius:12px;font-family:var(--font-ui)';
+  panel.style.cssText = 'margin:var(--space-3) 0 var(--space-1);padding:var(--space-3) var(--space-4);background:rgba(46,125,82,0.09);border:1.5px solid rgba(46,125,82,0.30);border-radius:12px;font-family:var(--font-ui)';
 
   let rows = '';
   changes.forEach((c,i) => {
-    rows += '<div style="padding:5px 0;font-size:var(--text-sm);color:var(--ink-soft);border-bottom:1px solid rgba(46,125,82,0.12)">'+
+    rows += '<div style="padding:var(--space-1) 0;font-size:var(--text-sm);color:var(--ink-soft);border-bottom:1px solid rgba(46,125,82,0.12)">'+
       '<strong style="color:var(--pine)">'+(i+1)+'.</strong> '+_esc(_cleanChangeText(c.description)||_humanizeChange(c))+'</div>';
   });
 
@@ -424,8 +424,8 @@ function _renderChangePanel(jsonStr){
       changes.length+' Proposed Change'+(changes.length!==1?'s':'')+'</div>'+
     rows+
     '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">'+
-      '<button class="_ext-apply-btn" style="flex:1;padding:8px 12px;background:var(--pine);color:#fff;border:none;border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#10003; Apply Changes</button>'+
-      '<button class="_ext-disc-btn" style="padding:8px 14px;background:transparent;color:var(--ruby);border:1.5px solid rgba(194,59,59,0.30);border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#215; Discard</button>'+
+      '<button class="_ext-apply-btn" style="flex:1;padding:var(--space-2) var(--space-3);background:var(--pine);color:#fff;border:none;border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#10003; Apply Changes</button>'+
+      '<button class="_ext-disc-btn" style="padding:var(--space-2) var(--space-4);background:transparent;color:var(--ruby);border:1.5px solid rgba(194,59,59,0.30);border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#215; Discard</button>'+
     '</div>';
 
   panel.querySelector('._ext-apply-btn').addEventListener('click', ()=>{ _applyChanges(changes); panel.remove(); });

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v177';
+window.APP_CODE_VERSION='v178';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -435,7 +435,7 @@ function _airportArrivalHtml(s){
     if(at<0){ at+=1440; note=' (the night before)'; }
     body='&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span>';
   }
-  return '<div style="margin-top:var(--space-2);display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:var(--text-sm);font-weight:700;line-height:1.35">'+body+'</div>';
+  return '<div style="margin-top:var(--space-2);display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:700;line-height:1.35">'+body+'</div>';
 }
 // Will the plan actually get the traveler to the airport early enough? Compares
 // when they'd ARRIVE at the airport (previous stop's departure + travel there)
@@ -462,7 +462,7 @@ function _airportWarningHtml(prev,s){
   if(!f||f.ok)return '';
   const leave=f.latestLeave;
   const leaveTxt=leave<0?'earlier in the day':('by '+_minsToClock(leave));
-  return '<div style="margin-top:var(--space-2);display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:7px 11px;font-size:var(--text-sm);font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
+  return '<div style="margin-top:var(--space-2);display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';
@@ -1486,7 +1486,7 @@ function renderAll(){
     // Safety net: if the sort somehow left a day out of order, say so loudly
     // instead of silently showing it.
     const _cv=_firstChronoViolation();
-    const _errBanner=_cv?'<div style="margin:10px 0;padding:12px 14px;background:rgba(194,59,59,0.12);border:1.5px solid var(--ruby);border-radius:10px;font-family:var(--font-ui);font-size:var(--text-md);color:var(--ruby);font-weight:600">&#9888;&#65039; Day '+_cv+' is out of chronological order. This should be impossible &mdash; please tell me the trip and day so I can fix it.</div>':'';
+    const _errBanner=_cv?'<div style="margin:var(--space-3) 0;padding:var(--space-3) var(--space-4);background:rgba(194,59,59,0.12);border:1.5px solid var(--ruby);border-radius:10px;font-family:var(--font-ui);font-size:var(--text-md);color:var(--ruby);font-weight:600">&#9888;&#65039; Day '+_cv+' is out of chronological order. This should be impossible &mdash; please tell me the trip and day so I can fix it.</div>':'';
     if(currentDayIdx===-1){
       document.getElementById('content-area').innerHTML=_errBanner+renderOverview();
     }else{
@@ -1555,12 +1555,12 @@ function openCopyModal(dayIdx,stopIdx){
     if(i===dayIdx)return'';
     const title=d.title.replace(/^Day \d+ — /,'');
     const startBtn=isLastLodge&&i===dayIdx+1
-      ?'<button class="btn-primary" style="font-size:var(--text-sm);padding:9px 14px;background:var(--pine);margin-bottom:var(--space-2);width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
+      ?'<button class="btn-primary" style="font-size:var(--text-sm);padding:var(--space-2) var(--space-4);background:var(--pine);margin-bottom:var(--space-2);width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
       :'';
-    return'<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
+    return'<div style="padding:var(--space-3) 0;border-bottom:1px solid var(--border)">'+
       '<div style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2)">Day '+(i+1)+' — '+title+'</div>'+
       startBtn+
-      '<button class="btn-cancel" style="font-size:var(--text-sm);padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
+      '<button class="btn-cancel" style="font-size:var(--text-sm);padding:var(--space-2) var(--space-4);width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
       '</div>';
   }).join('');
   document.getElementById('copy-modal').classList.add('open');
@@ -1667,7 +1667,7 @@ function _continuationHtml(dayIdx){
     if(thisISO&&endISO&&endISO!==thisISO)return ''; // ends on some other day
     const tz=_endTz(last);
     const dur=_displayDuration(last,dayDateStr(dayIdx-1));
-    return '<div style="margin:0 0 12px;padding:10px 13px;border-left:3px solid var(--river,#4a7fa5);background:rgba(74,127,165,0.08);border-radius:0 9px 9px 0;font-family:var(--font-ui);font-size:var(--text-sm);line-height:1.45">'+
+    return '<div style="margin:0 0 var(--space-3);padding:var(--space-3) var(--space-4);border-left:3px solid var(--river,#4a7fa5);background:rgba(74,127,165,0.08);border-radius:0 9px 9px 0;font-family:var(--font-ui);font-size:var(--text-sm);line-height:1.45">'+
       '<div style="font-weight:700;color:var(--river,#4a7fa5);letter-spacing:0.04em;font-size:var(--text-xs);text-transform:uppercase;margin-bottom:var(--space-1)">Continues from Day '+dayIdx+'</div>'+
       '<div><b>'+_escHtml(last.name||'Travel')+'</b> arrives <b>'+_escHtml(last.endTime||'')+'</b>'+(tz?' '+_escHtml(tz):'')+
       (dur?' &middot; '+_escHtml(dur)+' total':'')+'</div>'+
@@ -1683,7 +1683,7 @@ function _startEndDateHtml(s,dayIdx){
     const sTxt=_fmtShortDate(startISO);
     if(!sTxt)return '';
     const crosses=endISO&&endISO!==startISO;
-    const style='display:block;font-size:9.5px;font-weight:600;letter-spacing:0.04em;color:var(--muted);margin-top:2px;white-space:nowrap';
+    const style='display:block;font-size:var(--text-2xs);font-weight:600;letter-spacing:0.04em;color:var(--muted);margin-top:2px;white-space:nowrap';
     if(!crosses)return '<span style="'+style+'">'+_escHtml(sTxt)+'</span>';
     return '<span style="'+style+';color:var(--ruby)">'+_escHtml(sTxt)+' &rarr; '+_escHtml(_fmtShortDate(endISO))+(_endTz(s)?' '+_escHtml(_endTz(s)):'')+'</span>';
   }catch(e){ return ''; }
@@ -3081,13 +3081,13 @@ function renderOverview(){
     '<div class="add-check-form-row">'+
     '<input type="text" id="new-check-resv" class="add-check-input" placeholder="Reservation # (optional)" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\')addCheckItem()"/>'+
     '<button class="add-check-btn" onclick="addCheckItem()">&#10003; Add</button>'+
-    '<button class="btn-cancel" style="padding:9px 14px;font-size:var(--text-md)" onclick="hideAddCheckForm()">Cancel</button>'+
+    '<button class="btn-cancel" style="padding:var(--space-2) var(--space-4);font-size:var(--text-md)" onclick="hideAddCheckForm()">Cancel</button>'+
     '</div></div>'+
     '<div id="add-check-toggle"><button class="add-check-toggle-btn" onclick="showAddCheckForm()">+ Add Item</button></div>'+
     '</div>';
   const panelPack='<div class="ov-tab-panel" id="ovtab-packing"'+(activeOvTab!=='packing'?' style="display:none"':'')+'>'+
     renderPackingListHtml()+
-    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:var(--space-3)">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
+    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);padding:var(--space-3) var(--space-4);background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:var(--space-3)">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
     '</div>';
   const panelAudio='<div class="ov-tab-panel" id="ovtab-audio"'+(activeOvTab!=='audio'?' style="display:none"':'')+'>'+
     renderAudioToursHtml()+'</div>';
@@ -3103,7 +3103,7 @@ function renderOverview(){
     (state.title?'<div class="ov-trip-head">'+
     '<div style="display:flex;align-items:center;gap:var(--space-2);min-width:0;flex:1">'+
     '<div class="ov-trip-name" style="margin-bottom:0">'+_escHtml(state.title)+'</div>'+
-    '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:var(--text-lg);padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
+    '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:var(--text-lg);padding:var(--space-1) var(--space-1);color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
     '</div>'+
     '<div style="display:flex;gap:var(--space-2);flex-shrink:0;align-items:center">'+
     '<button class="ai-action-btn" onclick="gradeItinerary()">&#10024; Grade</button>'+
@@ -3185,8 +3185,8 @@ function deleteCheckItem(id){
     '<input type="checkbox" '+(doneProp?'checked':'')+' disabled/>'+
     '<span class="check-text" style="color:var(--muted);font-style:italic">Remove this item?</span>'+
     '<div class="chk-actions" style="opacity:1">'+
-    '<button class="add-check-btn" style="padding:4px 10px;font-size:var(--text-sm);background:var(--ruby);white-space:nowrap" onclick="confirmDeleteCheckItem(\''+id+'\')">Yes, remove</button>'+
-    '<button class="chk-edit-btn" style="color:var(--muted);font-size:var(--text-sm);padding:0 6px" onclick="cancelDeleteCheckItem(\''+id+'\')">No</button>'+
+    '<button class="add-check-btn" style="padding:var(--space-1) var(--space-3);font-size:var(--text-sm);background:var(--ruby);white-space:nowrap" onclick="confirmDeleteCheckItem(\''+id+'\')">Yes, remove</button>'+
+    '<button class="chk-edit-btn" style="color:var(--muted);font-size:var(--text-sm);padding:0 var(--space-2)" onclick="cancelDeleteCheckItem(\''+id+'\')">No</button>'+
     '</div>';
 }
 function confirmDeleteCheckItem(id){
@@ -3213,10 +3213,10 @@ function startEditCheckItem(id){
   el.innerHTML=
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/>'+
     '<div class="chk-inline-edit">'+
-    '<input type="text" class="add-check-input" id="cedit-lbl-'+id+'" value="'+_escHtml(editLabel)+'" style="flex:1;min-width:100px;padding:6px 10px;font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
-    '<input type="text" class="add-check-input" id="cedit-resv-'+id+'" value="'+_escHtml(editResv)+'" placeholder="Conf #" style="width:110px;padding:6px 10px;font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
-    '<button class="add-check-btn" style="padding:6px 12px;font-size:var(--text-sm)" onclick="saveEditCheckItem(\''+id+'\')">&#10003;</button>'+
-    '<button class="chk-edit-btn" style="font-size:var(--text-lg);padding:0 6px" onclick="cancelEditCheckItem(\''+id+'\')" title="Cancel">&#10005;</button>'+
+    '<input type="text" class="add-check-input" id="cedit-lbl-'+id+'" value="'+_escHtml(editLabel)+'" style="flex:1;min-width:100px;padding:var(--space-2) var(--space-3);font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<input type="text" class="add-check-input" id="cedit-resv-'+id+'" value="'+_escHtml(editResv)+'" placeholder="Conf #" style="width:110px;padding:var(--space-2) var(--space-3);font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<button class="add-check-btn" style="padding:var(--space-2) var(--space-3);font-size:var(--text-sm)" onclick="saveEditCheckItem(\''+id+'\')">&#10003;</button>'+
+    '<button class="chk-edit-btn" style="font-size:var(--text-lg);padding:0 var(--space-2)" onclick="cancelEditCheckItem(\''+id+'\')" title="Cancel">&#10005;</button>'+
     '</div>';
   document.getElementById('cedit-lbl-'+id)?.focus();
 }
@@ -3261,7 +3261,7 @@ function renderPackingListHtml(){
   const checkedCount=Object.values(checked).filter(Boolean).length;
   return'<div class="pack-header-row">'+
     '<span class="pack-prog">'+checkedCount+' of '+total+' packed</span>'+
-    '<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:var(--text-sm)" onclick="generatePackingList()">&#8635; Regenerate</button>'+
+    '<button class="pack-gen-btn regen" style="width:auto;padding:var(--space-2) var(--space-4);font-size:var(--text-sm)" onclick="generatePackingList()">&#8635; Regenerate</button>'+
     '</div>'+
     categories.map((cat,ci)=>{
       const catChecked=cat.items.filter((_,ii)=>checked[ci+'-'+ii]).length;
@@ -3597,7 +3597,7 @@ function _recPreview(raw,keyword){
       const hit=kw&&n.toLowerCase().indexOf(kw)>=0;
       return hit?'<b style="background:#fde68a">'+esc(n)+'</b>':esc(n);
     }).join(', ');
-    rows+='<div style="padding:4px 0;border-top:1px solid #eee;font-size:var(--text-sm)"><b>Day '+(i+1)+'</b> '+esc(d.title||'')+'<br><span style="color:#555">'+(hl||'<i>no stops</i>')+'</span></div>';
+    rows+='<div style="padding:var(--space-1) 0;border-top:1px solid #eee;font-size:var(--text-sm)"><b>Day '+(i+1)+'</b> '+esc(d.title||'')+'<br><span style="color:#555">'+(hl||'<i>no stops</i>')+'</span></div>';
   });
   return {ok:true,days:st.days.length,stops:stops,has:has,html:rows};
 }
@@ -3661,20 +3661,20 @@ async function _recoveryScreen(){
   const sources=await _recGather();
   window._recSources=sources;
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const box='border:1px solid #ddd;border-radius:10px;padding:14px;margin:14px 0;background:#fff';
-  const btn='padding:11px 15px;border:0;border-radius:8px;color:#fff;font-size:14px;cursor:pointer';
+  const box='border:1px solid #ddd;border-radius:10px;padding:14px;margin:var(--space-4) 0;background:#fff';
+  const btn='padding:var(--space-3) var(--space-4);border:0;border-radius:8px;color:#fff;font-size:14px;cursor:pointer';
   // Render one card per copy found, best (contains keyword) first.
   const cards=sources.map((s,i)=>({s,i,pv:_recPreview(s.raw,kw)}))
     .sort((a,b)=>(b.pv.has?1:0)-(a.pv.has?1:0))
     .map(({s,i,pv})=>{
       const banner=pv.ok?
-        (pv.has?'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;background:#dcfce7;color:#166534">✓ CONTAINS “'+esc(kw)+'” — '+pv.days+' days · '+pv.stops+' stops. This looks like the RIGHT copy.</div>'
-                :'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;font-weight:700;background:#fee2e2;color:#991b1b">✗ Does NOT contain “'+esc(kw)+'” ('+pv.days+' days · '+pv.stops+' stops).</div>')
-        :'<div style="padding:8px 10px;border-radius:8px;margin:0 0 8px;background:#fef9c3;color:#713f12">Could not read this copy as an itinerary.</div>';
+        (pv.has?'<div style="padding:var(--space-2) var(--space-3);border-radius:8px;margin:0 0 var(--space-2);font-weight:700;background:#dcfce7;color:#166534">✓ CONTAINS “'+esc(kw)+'” — '+pv.days+' days · '+pv.stops+' stops. This looks like the RIGHT copy.</div>'
+                :'<div style="padding:var(--space-2) var(--space-3);border-radius:8px;margin:0 0 var(--space-2);font-weight:700;background:#fee2e2;color:#991b1b">✗ Does NOT contain “'+esc(kw)+'” ('+pv.days+' days · '+pv.stops+' stops).</div>')
+        :'<div style="padding:var(--space-2) var(--space-3);border-radius:8px;margin:0 0 var(--space-2);background:#fef9c3;color:#713f12">Could not read this copy as an itinerary.</div>';
       return '<div style="'+box+'">'+
-        '<h3 style="margin:0 0 6px">'+esc(s.label)+'</h3>'+
+        '<h3 style="margin:0 0 var(--space-2)">'+esc(s.label)+'</h3>'+
         banner+
-        (pv.ok?'<details style="margin:6px 0"><summary style="cursor:pointer;font-size:var(--text-md);color:#2563eb">Show every day &amp; stop</summary>'+
+        (pv.ok?'<details style="margin:var(--space-2) 0"><summary style="cursor:pointer;font-size:var(--text-md);color:#2563eb">Show every day &amp; stop</summary>'+
           '<div style="margin-top:var(--space-2);max-height:300px;overflow:auto">'+pv.html+'</div></details>'+
           '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap">'+
             '<button onclick="_recPush('+i+')" style="'+btn+';background:#dc2626">Push THIS copy to all devices</button>'+
@@ -3685,16 +3685,16 @@ async function _recoveryScreen(){
     }).join('');
   document.body.innerHTML=
     '<div style="max-width:680px;margin:0 auto;padding:var(--space-4);font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
-      '<h2 style="margin:8px 0">Itinerary recovery</h2>'+
-      '<p style="color:#555;font-size:var(--text-md);margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button. Checking for a copy that contains “'+esc(kw)+'”.</p>'+
-      '<p style="color:#555;font-size:var(--text-md);margin:2px 0 0">Found <b>'+sources.length+'</b> stored '+(sources.length===1?'copy':'copies')+' on this device.</p>'+
+      '<h2 style="margin:var(--space-2) 0">Itinerary recovery</h2>'+
+      '<p style="color:#555;font-size:var(--text-md);margin:0 0 var(--space-1)">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button. Checking for a copy that contains “'+esc(kw)+'”.</p>'+
+      '<p style="color:#555;font-size:var(--text-md);margin:var(--space-1) 0 0">Found <b>'+sources.length+'</b> stored '+(sources.length===1?'copy':'copies')+' on this device.</p>'+
       (cards||'<div style="'+box+'"><p style="color:#a00;margin:0">No stored itinerary copies were found on this device.</p></div>')+
       '<div style="'+box+'">'+
-        '<h3 style="margin:0 0 6px">Restore from a backup file or paste</h3>'+
-        '<p style="color:#555;font-size:var(--text-md);margin:0 0 8px">Load a downloaded backup file, or paste a copy, then push it to every device.</p>'+
-        '<div style="margin:0 0 8px"><input type="file" id="rec-file" accept=".json,application/json" onchange="_recLoadFile(event)"></div>'+
+        '<h3 style="margin:0 0 var(--space-2)">Restore from a backup file or paste</h3>'+
+        '<p style="color:#555;font-size:var(--text-md);margin:0 0 var(--space-2)">Load a downloaded backup file, or paste a copy, then push it to every device.</p>'+
+        '<div style="margin:0 0 var(--space-2)"><input type="file" id="rec-file" accept=".json,application/json" onchange="_recLoadFile(event)"></div>'+
         '<textarea id="rec-in" placeholder="…or paste itinerary JSON here" style="width:100%;height:110px;font-family:monospace;font-size:var(--text-xs);border:1px solid #ccc;border-radius:6px;padding:var(--space-2);box-sizing:border-box"></textarea>'+
-        '<div id="rec-in-badge" style="font-size:var(--text-md);margin:8px 0;font-weight:600"></div>'+
+        '<div id="rec-in-badge" style="font-size:var(--text-md);margin:var(--space-2) 0;font-weight:600"></div>'+
         '<div><button onclick="_recImport()" style="'+btn+';background:#dc2626">Restore this copy to all devices</button></div>'+
         '<p id="rec-msg" style="font-size:var(--text-md);margin-top:var(--space-2);font-weight:600"></p>'+
       '</div>'+
@@ -4521,8 +4521,8 @@ function showApplyOrderConfirm(){
   const order=(_optLastData?.optimized_order||[]).map(o=>typeof o==='string'?o:(o.name||''));
   wrap.innerHTML='<div class="opt-confirm-bar">Reorder '+order.length+' stops on Day '+(_optDayIdx+1)+'?'+
     '<div class="opt-confirm-actions">'+
-    '<button class="add-check-btn" style="padding:6px 14px;font-size:var(--text-sm)" onclick="applyOptimizedOrder()">Yes, Apply</button>'+
-    '<button class="chk-edit-btn" style="font-size:var(--text-md);padding:0 8px" onclick="cancelApplyOrder()">Cancel</button>'+
+    '<button class="add-check-btn" style="padding:var(--space-2) var(--space-4);font-size:var(--text-sm)" onclick="applyOptimizedOrder()">Yes, Apply</button>'+
+    '<button class="chk-edit-btn" style="font-size:var(--text-md);padding:0 var(--space-2)" onclick="cancelApplyOrder()">Cancel</button>'+
     '</div></div>';
 }
 function cancelApplyOrder(){
@@ -5231,7 +5231,7 @@ async function loadLiveWeather(dayIdx){
   let lat=null,lng=null;
   for(const s of day.stops){if(s.lat&&s.lng){lat=parseFloat(s.lat);lng=parseFloat(s.lng);break;}}
   if(lat===null){strip.style.display='none';return;}
-  strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:6px 8px">Loading weather...</span>';
+  strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:var(--space-2) var(--space-2)">Loading weather...</span>';
   try{
     const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+
       '&hourly=temperature_2m,weathercode&temperature_unit=fahrenheit&forecast_days=1&timezone=auto';
@@ -5368,7 +5368,7 @@ function _renderRecap(){
         '</div></div>';
     });
   });
-  h+='<div style="text-align:center;padding:16px 16px 32px">'+
+  h+='<div style="text-align:center;padding:var(--space-4) var(--space-4) var(--space-6)">'+
     '<button class="recap-share-btn" onclick="shareRecap()">&#128279; Share Recap</button>'+
     '</div>';
   return h;

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v175';
+window.APP_CODE_VERSION='v176';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -3100,7 +3100,7 @@ function renderOverview(){
 
   return'<div class="ov-panel">'+
     '<div class="ov-section">'+
-    (state.title?'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">'+
+    (state.title?'<div class="ov-trip-head">'+
     '<div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">'+
     '<div class="ov-trip-name" style="margin-bottom:0">'+_escHtml(state.title)+'</div>'+
     '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+

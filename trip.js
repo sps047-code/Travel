@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v164';
+window.APP_CODE_VERSION='v165';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1649,12 +1649,12 @@ function _canonicalizeTimes(){
   return changed;
 }
 function _startTz(s){
-  if(s&&s.tz)return s.tz;
+  if(s&&s.tz)return _tzLabel(s.tz,s.startDate);
   const t=(typeof stopTz==='function')?stopTz(s):null;
   return t?(t.abbr||''):'';
 }
 function _endTz(s){
-  if(s&&s.endTz)return s.endTz;
+  if(s&&s.endTz)return _tzLabel(s.endTz,s.endDate||s.startDate);
   if(s&&s.destLat&&s.destLng){
     const t=tzData[tzKey(s.destLat,s.destLng)];
     if(t)return t.abbr||'';
@@ -1679,22 +1679,95 @@ function _fmtShortDate(iso){
 // Only http(s) and inline images may be used as an <img src>. A javascript: or
 // data:text/html value from the shared cloud DB would otherwise be a live sink.
 function _safeImgSrc(u){ return (typeof u==='string'&&/^(https?:|data:image\/)/i.test(u))?u:''; }
+// ---- TIME-ZONE-AWARE INSTANTS ----------------------------------------------
+// Duration MUST be measured between absolute instants, not by subtracting wall
+// clocks. Orlando 8:30 PM EDT -> London 10:00 AM BST is 8h 30min, but clock
+// arithmetic says 13h 30min because it ignores the 5-hour offset change. Every
+// cross-zone leg was wrong by exactly that difference.
+const _TZ_ABBR_OFFSET={UTC:0,GMT:0,WET:0,BST:60,IST_IE:60,WEST:60,CET:60,CEST:120,EET:120,EEST:180,MSK:180,
+  EST:-300,EDT:-240,CST:-360,CDT:-300,MST:-420,MDT:-360,PST:-480,PDT:-420,AKST:-540,AKDT:-480,HST:-600,
+  AST:-240,ADT:-180,NST:-210,NDT:-150,IST:330,PKT:300,GST:240,ICT:420,WIB:420,SGT:480,HKT:480,CSTA:480,
+  JST:540,KST:540,AEST:600,AEDT:660,ACST:570,ACDT:630,AWST:480,NZST:720,NZDT:780,BRT:-180,ART:-180};
+// Offset (minutes east of UTC) an IANA zone was at a given instant — DST aware.
+function _ianaOffsetMins(zone,date){
+  try{
+    const dtf=new Intl.DateTimeFormat('en-US',{timeZone:zone,hour12:false,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const p={};dtf.formatToParts(date).forEach(x=>{p[x.type]=x.value;});
+    const h=(p.hour==='24')?0:+p.hour;
+    const asUTC=Date.UTC(+p.year,+p.month-1,+p.day,h,+p.minute,+p.second);
+    return Math.round((asUTC-date.getTime())/60000);
+  }catch(e){ return null; }
+}
+// Offset for a zone (IANA name or abbreviation) at a given LOCAL wall time.
+function _zoneOffsetMins(zone,dateISO,timeStr){
+  if(!zone)return null;
+  const z=String(zone).trim();
+  if(z.indexOf('/')>=0){
+    if(!dateISO)return null;
+    const t=_parseTimeMins(timeStr)||0;
+    const guessUTC=Date.UTC(+dateISO.slice(0,4),+dateISO.slice(5,7)-1,+dateISO.slice(8,10),Math.floor(t/60),t%60);
+    let off=_ianaOffsetMins(z,new Date(guessUTC));
+    if(off==null)return null;
+    // One refinement pass so a wall time near a DST boundary resolves correctly.
+    const off2=_ianaOffsetMins(z,new Date(guessUTC-off*60000));
+    return (off2==null)?off:off2;
+  }
+  const up=z.toUpperCase().replace(/[^A-Z]/g,'');
+  return (up in _TZ_ABBR_OFFSET)?_TZ_ABBR_OFFSET[up]:null;
+}
+// The IANA zone for a stop's start / end, when we know it.
+// A zone rendered for HUMANS: "BST", not "Europe/London". Falls back to the raw
+// value when we cannot derive an abbreviation.
+function _tzLabel(zone,dateISO){
+  if(!zone)return '';
+  const z=String(zone).trim();
+  if(z.indexOf('/')<0)return z.toUpperCase();
+  try{
+    const d=dateISO?new Date(dateISO+'T12:00:00Z'):new Date();
+    const p=new Intl.DateTimeFormat('en-US',{timeZone:z,timeZoneName:'short'}).formatToParts(d);
+    const n=p.find(x=>x.type==='timeZoneName');
+    return (n&&n.value)?n.value:z;
+  }catch(e){ return z; }
+}
+function _startZone(s){
+  if(s&&s.tz)return s.tz;
+  try{const t=stopTz(s);if(t&&t.tz)return t.tz;}catch(e){}
+  return '';
+}
+function _endZone(s){
+  if(s&&s.endTz)return s.endTz;
+  try{
+    if(s&&s.destLat&&s.destLng){const t=tzData[tzKey(s.destLat,s.destLng)];if(t&&t.tz)return t.tz;}
+  }catch(e){}
+  return _startZone(s);
+}
 function _displayDuration(s,startISO){
   if(!s)return '';
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
-  if(st!=null&&et!=null){
-    // Use the explicit dates when we have them, so a multi-day leg is measured
-    // properly instead of being folded into a single 24-hour wrap.
-    let days=0;
-    const sISO=s.startDate||startISO||'';
-    const eISO=s.endDate||'';
-    if(sISO&&eISO){
-      try{ days=Math.round((new Date(eISO+'T00:00:00')-new Date(sISO+'T00:00:00'))/86400000); }catch(e){ days=0; }
-      if(!(days>=0&&days<=30))days=0;
-    }
-    let span=(days>0)?(days*1440+et-st):((et>st)?(et-st):(1440-st+et));
-    if(span>0&&span<=43200)return _fmtDur(span);
+  if(st==null||et==null)return s.duration||'';
+  const sISO=s.startDate||startISO||'';
+  const eISO=s.endDate||_endDateOf(s,sISO)||sISO;
+  // Whole days between the two calendar dates.
+  let days=0;
+  if(sISO&&eISO){
+    try{ days=Math.round((new Date(eISO+'T00:00:00')-new Date(sISO+'T00:00:00'))/86400000); }catch(e){ days=0; }
+    if(!(days>=0&&days<=30))days=0;
   }
+  // Wall-clock span first. When the dates are known, ALWAYS use days*1440+et-st —
+  // do NOT fall back to a midnight wrap. Sydney -> Los Angeles arrives at an
+  // EARLIER clock time on the SAME date (crossing the date line), so the wrap
+  // turned a 13-hour flight into 37 hours. A negative wall span is legitimate
+  // here and the zone correction below resolves it.
+  const haveDates=!!(sISO&&eISO);
+  let span=haveDates?(days*1440+et-st):((et>st)?(et-st):(1440-st+et));
+  // ...then correct for a CHANGE OF TIME ZONE. Flying Orlando -> London the clock
+  // jumps forward 5 hours, so the wall-clock span overstates the real elapsed time
+  // by exactly that much. Converting both ends to UTC is the only correct measure.
+  const sOff=_zoneOffsetMins(_startZone(s),sISO,s.time);
+  const eOff=_zoneOffsetMins(_endZone(s),eISO,s.endTime);
+  if(sOff!=null&&eOff!=null&&sOff!==eOff)span-=(eOff-sOff);
+  if(span>0&&span<=43200)return _fmtDur(span);
   return s.duration||'';
 }
 function _stopVisitMins(s){

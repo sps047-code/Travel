@@ -725,3 +725,56 @@ test('_airportWarningHtml is silent when there is no same-day previous stop', ()
   assert.equal(fn('_airportWarningHtml')(null, { type: 'flight', time: '10:00 AM' }), '',
     'a day-first flight must not be judged against yesterday');
 });
+
+// ===========================================================================
+// DURATION — the root-cause fix. Duration must be measured between absolute
+// INSTANTS, not by subtracting wall clocks. Orlando 8:30 PM EDT -> London
+// 10:00 AM BST is 8h 30min; clock arithmetic says 13h 30min because it ignores
+// the 5-hour offset change, and with a lost PM the app showed 25h 30min.
+// ===========================================================================
+const DURATION_CASES = [
+  ['MCO->LGW transatlantic eastbound', { time: '8:30 PM', endTime: '10:00 AM', startDate: '2026-08-04', endDate: '2026-08-05', tz: 'America/New_York', endTz: 'Europe/London' }, '8h 30min'],
+  ['LGW->MCO transatlantic westbound', { time: '11:00 AM', endTime: '3:30 PM', startDate: '2026-08-14', endDate: '2026-08-14', tz: 'Europe/London', endTz: 'America/New_York' }, '9h 30min'],
+  ['JFK->LAX westbound, same day', { time: '10:00 AM', endTime: '1:00 PM', startDate: '2026-08-04', endDate: '2026-08-04', tz: 'America/New_York', endTz: 'America/Los_Angeles' }, '6hrs'],
+  ['LAX->JFK redeye, lands next day', { time: '10:00 PM', endTime: '6:30 AM', startDate: '2026-08-04', endDate: '2026-08-05', tz: 'America/Los_Angeles', endTz: 'America/New_York' }, '5h 30min'],
+  ['SYD->LAX crosses the date line backwards', { time: '10:00 AM', endTime: '6:00 AM', startDate: '2026-08-04', endDate: '2026-08-04', tz: 'Australia/Sydney', endTz: 'America/Los_Angeles' }, '13hrs'],
+  ['zone abbreviations typed by the user', { time: '8:30 PM', endTime: '10:00 AM', startDate: '2026-08-04', endDate: '2026-08-05', tz: 'EDT', endTz: 'BST' }, '8h 30min'],
+  ['same zone, crosses midnight', { time: '9:00 PM', endTime: '2:00 AM', startDate: '2026-08-04', endDate: '2026-08-05', tz: 'Europe/London', endTz: 'Europe/London' }, '5hrs'],
+  ['ordinary same-day visit', { time: '12:03 PM', endTime: '4:12 PM', startDate: '2026-08-05', endDate: '2026-08-05', tz: 'Europe/London', endTz: 'Europe/London' }, '4h 9min'],
+  ['no zone info falls back to clock math', { time: '9:00 AM', endTime: '11:30 AM', startDate: '2026-08-05' }, '2h 30min'],
+];
+for (const [label, stop, expected] of DURATION_CASES) {
+  test('duration: ' + label, () => {
+    assert.equal(fn('_displayDuration')(stop, stop.startDate), expected);
+  });
+}
+
+test('duration: the exact bug from the screenshot is gone', () => {
+  const d = fn('_displayDuration');
+  const flight = { type: 'flight', time: '8:30 PM', endTime: '10:00 AM',
+    startDate: '2026-08-04', endDate: '2026-08-05', tz: 'America/New_York', endTz: 'Europe/London' };
+  const got = d(flight, '2026-08-04');
+  assert.notEqual(got, '25h 30min', 'the lost-PM value must never appear');
+  assert.notEqual(got, '13h 30min', 'the timezone-blind value must never appear');
+  assert.equal(got, '8h 30min', 'the real Norse Atlantic ZO 784 flight time');
+});
+
+test('_zoneOffsetMins handles IANA zones (DST aware) and abbreviations', () => {
+  const z = fn('_zoneOffsetMins');
+  assert.equal(z('America/New_York', '2026-08-04', '8:30 PM'), -240, 'EDT in August');
+  assert.equal(z('America/New_York', '2026-01-04', '8:30 PM'), -300, 'EST in January');
+  assert.equal(z('Europe/London', '2026-08-05', '10:00 AM'), 60, 'BST in August');
+  assert.equal(z('Europe/London', '2026-01-05', '10:00 AM'), 0, 'GMT in January');
+  assert.equal(z('EDT'), -240); assert.equal(z('BST'), 60); assert.equal(z('UTC'), 0);
+  assert.equal(z(''), null, 'unknown zone must not silently become 0');
+  assert.equal(z('NOPE'), null);
+});
+
+test('a lost AM/PM is repaired, killing the 25h 30min reading', () => {
+  const canon = fn('_canonicalizeTimes');
+  ctx.state = { days: [{ stops: [{ name: 'Flight', type: 'flight', time: '8:30', endTime: '10AM' }] }] };
+  canon();
+  const s = ctx.state.days[0].stops[0];
+  assert.match(s.time, /\d:\d\d (AM|PM)$/, 'canonical, explicit meridiem: ' + s.time);
+  assert.match(s.endTime, /\d:\d\d (AM|PM)$/, 'canonical end: ' + s.endTime);
+});

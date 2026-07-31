@@ -214,7 +214,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <div class="brand">
       <img src="leaf-logo.png" class="leaf-logo-svg" width="36" height="42" alt="Seasons leaf logo">
       <div class="brand-text">
-        <span class="brand-name-text">Seasons <span id="app-version" style="font-family:var(--font-ui);font-size:11px;font-weight:600;letter-spacing:0.04em;color:rgba(253,252,250,0.45);vertical-align:middle"></span></span>
+        <span class="brand-name-text">Seasons <span id="app-version" style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;letter-spacing:0.04em;color:rgba(253,252,250,0.45);vertical-align:middle"></span></span>
         <div class="brand-bar"></div>
       </div>
     </div>
@@ -295,13 +295,13 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
         <input type="date" class="wiz-input-date" id="w-end" aria-label="End date"/>
       </div>
       <div class="wiz-sublabel">How long?</div>
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap">
         <div class="stepper" id="days-stepper" role="group" aria-label="Number of days">
           <button class="stepper-btn" id="days-minus" onclick="adjustDays(-1)" aria-label="Fewer days">&#8722;</button>
           <div class="stepper-val" id="days-val" aria-live="polite" aria-atomic="true">3</div>
           <button class="stepper-btn" id="days-plus" onclick="adjustDays(1)" aria-label="More days">+</button>
         </div>
-        <span style="font-family:var(--font-ui);font-size:13px;color:var(--muted)" id="days-label">days</span>
+        <span style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted)" id="days-label">days</span>
       </div>
       <div class="wiz-sublabel">Who’s coming?</div>
       <div class="chip-row" id="who-chips" role="group" aria-label="Travel group">
@@ -346,11 +346,11 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
       <span class="wiz-emoji" aria-hidden="true">&#128221;</span>
       <div class="wiz-question">Budget &amp; notes</div>
       <div class="wiz-sublabel">Trip budget (optional)</div>
-      <div class="chip-row" style="margin-bottom:10px" role="group" aria-label="Budget type">
+      <div class="chip-row" style="margin-bottom:var(--space-3)" role="group" aria-label="Budget type">
         <button class="chip active" id="btype-total" onclick="setBudgetType('total')">Total trip</button>
         <button class="chip" id="btype-perday" onclick="setBudgetType('perday')">Per day</button>
       </div>
-      <div class="budget-input-wrap" style="margin-bottom:10px">
+      <div class="budget-input-wrap" style="margin-bottom:var(--space-3)">
         <span class="dollar-sign" aria-hidden="true">$</span>
         <input type="number" class="wiz-input" id="w-budget-amt" placeholder="e.g. 3000" min="0" step="50" oninput="updateBudgetCalc()" aria-label="Budget amount in dollars"/>
       </div>
@@ -378,7 +378,7 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
     <button class="modal-close" onclick="closeImport()" aria-label="Close import">&times;</button>
     <span class="wiz-emoji" aria-hidden="true">&#128203;</span>
     <div class="wiz-question" id="import-title">Import an Itinerary</div>
-    <p style="font-family:var(--font-ui);font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Paste anything &#8212; a travel agent email, Google Doc, notes app text, booking confirmations. AI will parse it into a full interactive itinerary.</p>
+    <p style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);line-height:1.6;margin-bottom:var(--space-4)">Paste anything &#8212; a travel agent email, Google Doc, notes app text, booking confirmations. AI will parse it into a full interactive itinerary.</p>
 
     <div class="import-mode-row">
       <button class="import-mode-btn active" id="mode-new" onclick="setImportMode('new')">&#10024; Create new trip</button>
@@ -1197,7 +1197,7 @@ async function loadTrips(){
   const grid=document.getElementById('trips-grid');
   grid.innerHTML='';
   const loadTimeout=setTimeout(()=>{
-    grid.innerHTML='<div style="font-family:var(--font-ui);font-size:13px;color:var(--muted);padding:20px;grid-column:1/-1">Loading trips…</div>';
+    grid.innerHTML='<div style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);padding:var(--space-5);grid-column:1/-1">Loading trips…</div>';
   },500);
   let serverTrips=[];
   try{const r=await fetch('trips/manifest.json');if(r.ok)serverTrips=await r.json()}catch(e){}
@@ -1254,7 +1254,7 @@ function renderTripsGrid(rawAll,hidden){
       <div class="empty-btns">
         <button class="btn-primary" style="flex:none;padding:13px 24px" onclick="openWizard()">✨ Plan a New Trip</button>
         <button class="btn-primary river" style="flex:none;padding:13px 24px" onclick="openImport()">&#128203; Import an Itinerary</button>
-      </div>`+(hidden.length>0?`<div style="margin-top:14px"><button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:13px;color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button></div>`:'')+`
+      </div>`+(hidden.length>0?`<div style="margin-top:var(--space-4)"><button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button></div>`:'')+`
     </div>`;
     return;
   }
@@ -1277,9 +1277,9 @@ function renderTripsGrid(rawAll,hidden){
     // single delegated listener on #trips-grid reads them; nothing is ever parsed
     // as code. `_domId` additionally sanitises the id used in an id= attribute.
     const deleteBtn=isServer
-      ?`<button class="card-delete js-del" data-id="${_esc(t.id)}" data-hard="0" title="Hide trip" style="font-size:12px">&#128065;</button>`
+      ?`<button class="card-delete js-del" data-id="${_esc(t.id)}" data-hard="0" title="Hide trip" style="font-size:var(--text-sm)">&#128065;</button>`
       :`<button class="card-delete js-del" data-id="${_esc(t.id)}" data-hard="1" title="Delete trip">&#128465;</button>`;
-    const offlineBtn=`<button id="off-${_domId(t.id)}" class="card-delete js-off" data-id="${_esc(t.id)}" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:13px;color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
+    const offlineBtn=`<button id="off-${_domId(t.id)}" class="card-delete js-off" data-id="${_esc(t.id)}" title="${isOffline?'Saved for offline — tap to refresh':'Save for offline viewing'}" style="font-size:var(--text-md);color:${isOffline?'var(--pine)':'inherit'}">${isOffline?'&#10003;':'&#11015;'}</button>`;
     return`<a class="trip-card" href="trip.html?id=${_esc(t.id)}${t.shared?'&fam=1':''}">
       <div class="trip-card-banner"></div>
       <div class="trip-card-body">
@@ -1309,8 +1309,8 @@ function renderTripsGrid(rawAll,hidden){
       <div class="add-label">Import an Itinerary</div>
       <div class="add-sub">Paste or upload any text &amp; AI populates it</div>
     </button>`+(hidden.length>0?`
-    <div style="grid-column:1/-1;text-align:center;margin-top:6px">
-      <button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:13px;color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button>
+    <div style="grid-column:1/-1;text-align:center;margin-top:var(--space-2)">
+      <button onclick="restoreHiddenTrips()" style="background:none;border:none;cursor:pointer;font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);text-decoration:underline">&#128064; Restore ${hidden.length} hidden trip${hidden.length!==1?'s':''}</button>
     </div>`:'');
 }
 

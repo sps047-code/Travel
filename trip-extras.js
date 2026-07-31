@@ -95,8 +95,8 @@ function augmentCards(){
       const dTz = _tzOf(stop);
       const endEl = document.createElement('span');
       endEl.className = 'card-endtime';
-      endEl.style.cssText = 'display:block;font-size:10px;font-weight:600;color:var(--muted);margin-top:3px;letter-spacing:0.02em;white-space:nowrap';
-      endEl.innerHTML = '&#8594; ' + _esc(stop.endTime) + (dTz ? ' <span style="font-size:9px;font-weight:700;letter-spacing:0.10em;color:var(--river);opacity:0.85">'+_esc(dTz.abbr)+'</span>' : '');
+      endEl.style.cssText = 'display:block;font-size:var(--text-xs);font-weight:600;color:var(--muted);margin-top:var(--space-1);letter-spacing:0.02em;white-space:nowrap';
+      endEl.innerHTML = '&#8594; ' + _esc(stop.endTime) + (dTz ? ' <span style="font-size:var(--text-xs);font-weight:700;letter-spacing:0.10em;color:var(--river);opacity:0.85">'+_esc(dTz.abbr)+'</span>' : '');
       timeEl.appendChild(endEl);
     }
   });
@@ -179,10 +179,10 @@ function _augmentAudioBadges(){
     card.dataset.audioBadged='1';
     const url=stop.audioUrl;
     const bar=document.createElement('div');
-    bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:2px;border-radius:0 0 10px 10px';
-    bar.innerHTML='<span style="font-size:11px;font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
+    bar.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:7px 14px 8px;background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:var(--space-1);border-radius:0 0 10px 10px';
+    bar.innerHTML='<span style="font-size:var(--text-xs);font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
       '<audio controls preload="none" src="'+_esc(url)+'" style="flex:1;min-width:180px;height:28px"></audio>'+
-      '<button type="button" class="audio-save-btn" style="font-size:11px;font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
+      '<button type="button" class="audio-save-btn" style="font-size:var(--text-xs);font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:3px 8px;border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
     card.appendChild(bar);
     const btn=bar.querySelector('.audio-save-btn');
     const _markSaved=()=>{
@@ -415,17 +415,17 @@ function _renderChangePanel(jsonStr){
 
   let rows = '';
   changes.forEach((c,i) => {
-    rows += '<div style="padding:5px 0;font-size:12px;color:var(--ink-soft);border-bottom:1px solid rgba(46,125,82,0.12)">'+
+    rows += '<div style="padding:5px 0;font-size:var(--text-sm);color:var(--ink-soft);border-bottom:1px solid rgba(46,125,82,0.12)">'+
       '<strong style="color:var(--pine)">'+(i+1)+'.</strong> '+_esc(_cleanChangeText(c.description)||_humanizeChange(c))+'</div>';
   });
 
   panel.innerHTML =
-    '<div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--pine);margin-bottom:8px">'+
+    '<div style="font-size:var(--text-xs);font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--pine);margin-bottom:var(--space-2)">'+
       changes.length+' Proposed Change'+(changes.length!==1?'s':'')+'</div>'+
     rows+
-    '<div style="display:flex;gap:8px;margin-top:10px">'+
-      '<button class="_ext-apply-btn" style="flex:1;padding:8px 12px;background:var(--pine);color:#fff;border:none;border-radius:8px;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer">&#10003; Apply Changes</button>'+
-      '<button class="_ext-disc-btn" style="padding:8px 14px;background:transparent;color:var(--ruby);border:1.5px solid rgba(194,59,59,0.30);border-radius:8px;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer">&#215; Discard</button>'+
+    '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">'+
+      '<button class="_ext-apply-btn" style="flex:1;padding:8px 12px;background:var(--pine);color:#fff;border:none;border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#10003; Apply Changes</button>'+
+      '<button class="_ext-disc-btn" style="padding:8px 14px;background:transparent;color:var(--ruby);border:1.5px solid rgba(194,59,59,0.30);border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer">&#215; Discard</button>'+
     '</div>';
 
   panel.querySelector('._ext-apply-btn').addEventListener('click', ()=>{ _applyChanges(changes); panel.remove(); });
@@ -577,7 +577,7 @@ function _injectPlanChatBtn(){
     const btn = document.createElement('button');
     btn.textContent = '✶ Request Changes';
     btn.title = 'Turn the AI suggestions in this chat into applyable edits';
-    btn.style.cssText = 'display:block;width:100%;margin-top:7px;padding:8px;background:rgba(46,125,82,0.09);color:var(--pine);border:1.5px dashed rgba(46,125,82,0.38);border-radius:8px;font-family:var(--font-ui);font-size:11.5px;font-weight:600;cursor:pointer;transition:all 0.18s;letter-spacing:0.02em';
+    btn.style.cssText = 'display:block;width:100%;margin-top:var(--space-2);padding:var(--space-2);background:rgba(46,125,82,0.09);color:var(--pine);border:1.5px dashed rgba(46,125,82,0.38);border-radius:8px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:600;cursor:pointer;transition:all 0.18s;letter-spacing:0.02em';
     btn.onmouseover=()=>{btn.style.background='var(--pine)';btn.style.color='#fff';btn.style.borderStyle='solid';};
     btn.onmouseout=()=>{btn.style.background='rgba(46,125,82,0.09)';btn.style.color='var(--pine)';btn.style.borderStyle='dashed';};
     btn.addEventListener('click', _requestStructuredChanges);

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v176';
+window.APP_CODE_VERSION='v177';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -435,7 +435,7 @@ function _airportArrivalHtml(s){
     if(at<0){ at+=1440; note=' (the night before)'; }
     body='&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span>';
   }
-  return '<div style="margin-top:7px;display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;line-height:1.35">'+body+'</div>';
+  return '<div style="margin-top:var(--space-2);display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:var(--text-sm);font-weight:700;line-height:1.35">'+body+'</div>';
 }
 // Will the plan actually get the traveler to the airport early enough? Compares
 // when they'd ARRIVE at the airport (previous stop's departure + travel there)
@@ -462,7 +462,7 @@ function _airportWarningHtml(prev,s){
   if(!f||f.ok)return '';
   const leave=f.latestLeave;
   const leaveTxt=leave<0?'earlier in the day':('by '+_minsToClock(leave));
-  return '<div style="margin-top:7px;display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:7px 11px;font-size:12.5px;font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
+  return '<div style="margin-top:var(--space-2);display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:7px 11px;font-size:var(--text-sm);font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';
@@ -592,8 +592,8 @@ async function renderDayMap(idx,fit=true){
   if(startHotel&&day.stops[0]&&day.stops[0].lat===startHotel.lat&&day.stops[0].lng===startHotel.lng)startHotel=null;
   if(startHotel){
     const nm=startHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
-    const hm=L.marker([startHotel.lat,startHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127970;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
-    hm.bindPopup('<div style="font-weight:700;font-size:13px">Starting from: '+_escHtml(nm)+'</div>',{maxWidth:200});
+    const hm=L.marker([startHotel.lat,startHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:var(--text-md);box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127970;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
+    hm.bindPopup('<div style="font-weight:700;font-size:var(--text-md)">Starting from: '+_escHtml(nm)+'</div>',{maxWidth:200});
     markersLayer.addLayer(hm);bounds.push([startHotel.lat,startHotel.lng]);
   }
   // include tonight's hotel as the route DESTINATION (mirror of the start hotel)
@@ -614,7 +614,7 @@ async function renderDayMap(idx,fit=true){
   day.stops.forEach((s,i)=>{
     if(!s.lat||!s.lng)return;
     const m=L.marker([s.lat,s.lng],{icon:makeIcon(i+1,TC[s.type]||'#8B7355',s.alt)});
-    m.bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(s.name)+'</div>'+(s.alt?'<div style="font-size:11px;color:#5555BB;margin-top:3px">Alternate option</div>':''),{maxWidth:200});
+    m.bindPopup('<div style="font-weight:700;font-size:var(--text-md)">'+_escHtml(s.name)+'</div>'+(s.alt?'<div style="font-size:var(--text-xs);color:#5555BB;margin-top:var(--space-1)">Alternate option</div>':''),{maxWidth:200});
     markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
   });
   // End-hotel marker. If tonight's hotel is the same place you started from
@@ -623,8 +623,8 @@ async function renderDayMap(idx,fit=true){
   const _endSameAsStart=startHotel&&endHotel&&startHotel.lat===endHotel.lat&&startHotel.lng===endHotel.lng;
   if(endHotel&&!_endSameAsStart){
     const enm=endHotel.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
-    const ehm=L.marker([endHotel.lat,endHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127976;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
-    ehm.bindPopup('<div style="font-weight:700;font-size:13px">Tonight: '+_escHtml(enm)+'</div>',{maxWidth:200});
+    const ehm=L.marker([endHotel.lat,endHotel.lng],{icon:L.divIcon({html:'<div style="background:#2E7D52;color:white;border:2px solid white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:var(--text-md);box-shadow:0 1px 4px rgba(0,0,0,0.4)">&#127976;</div>',className:'',iconSize:[28,28],iconAnchor:[14,14]})});
+    ehm.bindPopup('<div style="font-weight:700;font-size:var(--text-md)">Tonight: '+_escHtml(enm)+'</div>',{maxWidth:200});
     markersLayer.addLayer(ehm);bounds.push([endHotel.lat,endHotel.lng]);
   }
   if(fit&&bounds.length)map.fitBounds(bounds,{padding:[40,40]});
@@ -906,10 +906,10 @@ function _lodgeBookingHtml(lodge,where,opts){
   const o=opts||{};
   const hasPos=!!(where&&where.dayIdx>=0&&where.stopIdx>=0);
   const resv=lodge.reservation
-    ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:3px">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
+    ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:var(--space-1)">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
     :'';
   const ticket=(hasPos&&lodge.ticketImage)
-    ?'<button class="ticket-view-btn" onclick="event.preventDefault();event.stopPropagation();showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:6px">&#127903; '+(o.label||'View Reservation')+'</button>'
+    ?'<button class="ticket-view-btn" onclick="event.preventDefault();event.stopPropagation();showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:var(--space-2)">&#127903; '+(o.label||'View Reservation')+'</button>'
     :'';
   return resv+ticket;
 }
@@ -996,13 +996,13 @@ function renderPanel(idx){
       '<div class="card-controls" ontouchstart="event.stopPropagation()">'+
       '<button class="card-btn" aria-label="Move stop earlier" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
       '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
-      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:16px">&times;</button>'+
+      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:var(--text-lg)">&times;</button>'+
       '<button class="card-btn" aria-label="Move stop later" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
-      '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
+      '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:var(--text-xs)">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:3px">&#128274;</span>':'')+_escHtml(s.time)+(_startTz(s)?'<span class="card-tz">'+_escHtml(_startTz(s))+'</span>':'')+_startEndDateHtml(s,idx)+' </span>':'')+'<div class="card-main">'+
-      '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
-      (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
+      '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:var(--space-1)">&#128274;</span>':'')+_escHtml(s.time)+(_startTz(s)?'<span class="card-tz">'+_escHtml(_startTz(s))+'</span>':'')+_startEndDateHtml(s,idx)+' </span>':'')+'<div class="card-main">'+
+      '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:var(--text-sm)">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
+      (_tr?'<div class="card-notes" style="font-size:var(--text-sm);font-weight:600;margin-top:var(--space-1)">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
       // SAME-DAY previous stop only. Using the previous DAY's last stop compared
       // bare minutes-since-midnight, so yesterday's 9:30 PM dinner made a 10:00 AM
@@ -1011,7 +1011,7 @@ function renderPanel(idx){
       (_displayDuration(s,dayDateStr(idx))?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s,dayDateStr(idx)))+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
-      (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
+      (s.reservation?'<div class="card-notes" style="margin-top:var(--space-1);font-size:var(--text-sm);font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
       (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
@@ -1055,7 +1055,7 @@ function renderPanel(idx){
         const ps2=_parseTimeMins(s.time),pe2=_parseTimeMins(s.endTime),tn2=_parseTimeMins(next.time);
         if(ps2!==null&&tn2!==null&&tv>=15&&tv<=600){
           const dep2=(pe2!==null&&pe2>ps2)?pe2:ps2+_stopVisitMins(s);
-          if(tn2<dep2+tv-10)infeasWarn='<span style="color:var(--ruby);font-weight:700;margin-left:10px">&#9888;&#65039; Not enough time — earliest arrival '+_formatTimeMins(dep2+tv)+'</span>';
+          if(tn2<dep2+tv-10)infeasWarn='<span style="color:var(--ruby);font-weight:700;margin-left:var(--space-3)">&#9888;&#65039; Not enough time — earliest arrival '+_formatTimeMins(dep2+tv)+'</span>';
         }
       }
       if(leg||tzc){
@@ -1069,9 +1069,9 @@ function renderPanel(idx){
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');
   return'<div class="'+panelCls+'" id="panel-'+idx+'">'+
-    '<div class="day-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+    '<div class="day-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap">'+
     '<div><h2>'+_escHtml(day.title)+'</h2>'+(day.subtitle?'<p>'+_escHtml(_fmtSubtitle(day.subtitle))+'</p>':'')+'</div>'+
-    '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:2px">'+
+    '<div style="display:flex;gap:var(--space-2);flex-shrink:0;flex-wrap:wrap;margin-top:var(--space-1)">'+
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
@@ -1446,7 +1446,7 @@ async function generateStopDesc(dayIdx,stopIdx){
   const wrap=document.getElementById('stopdesc-'+dayIdx+'-'+stopIdx);if(!wrap)return;
   const stop=state.days[dayIdx]?.stops[stopIdx];if(!stop)return;
   if(stop.desc){_renderDesc(wrap,stop.desc,dayIdx,stopIdx);return;}
-  wrap.innerHTML='<span style="font-family:var(--font-ui);font-size:12px;color:var(--muted);animation:narr-pulse 1.5s ease-in-out infinite">Loading…</span>';
+  wrap.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);animation:narr-pulse 1.5s ease-in-out infinite">Loading…</span>';
   try{
     const parts=[stop.name,'Type: '+stop.type];
     if(stop.notes)parts.push('Notes: '+stop.notes);
@@ -1486,7 +1486,7 @@ function renderAll(){
     // Safety net: if the sort somehow left a day out of order, say so loudly
     // instead of silently showing it.
     const _cv=_firstChronoViolation();
-    const _errBanner=_cv?'<div style="margin:10px 0;padding:12px 14px;background:rgba(194,59,59,0.12);border:1.5px solid var(--ruby);border-radius:10px;font-family:var(--font-ui);font-size:13px;color:var(--ruby);font-weight:600">&#9888;&#65039; Day '+_cv+' is out of chronological order. This should be impossible &mdash; please tell me the trip and day so I can fix it.</div>':'';
+    const _errBanner=_cv?'<div style="margin:10px 0;padding:12px 14px;background:rgba(194,59,59,0.12);border:1.5px solid var(--ruby);border-radius:10px;font-family:var(--font-ui);font-size:var(--text-md);color:var(--ruby);font-weight:600">&#9888;&#65039; Day '+_cv+' is out of chronological order. This should be impossible &mdash; please tell me the trip and day so I can fix it.</div>':'';
     if(currentDayIdx===-1){
       document.getElementById('content-area').innerHTML=_errBanner+renderOverview();
     }else{
@@ -1502,7 +1502,7 @@ function renderAll(){
   }catch(e){
     console.error('[renderAll]',e);
     const ca=document.getElementById('content-area');
-    if(ca)ca.innerHTML='<div style="padding:32px;font-family:var(--font-ui);color:var(--ruby)">⚠️ Render error: '+_escHtml(e.message)+'<br><small style="color:var(--muted)">Check browser console for details.</small></div>';
+    if(ca)ca.innerHTML='<div style="padding:var(--space-6);font-family:var(--font-ui);color:var(--ruby)">⚠️ Render error: '+_escHtml(e.message)+'<br><small style="color:var(--muted)">Check browser console for details.</small></div>';
   }
   // ALWAYS refresh the map to match the data (markers/route), without re-zooming.
   // This is why the map stays in sync no matter which action changed the data —
@@ -1555,12 +1555,12 @@ function openCopyModal(dayIdx,stopIdx){
     if(i===dayIdx)return'';
     const title=d.title.replace(/^Day \d+ — /,'');
     const startBtn=isLastLodge&&i===dayIdx+1
-      ?'<button class="btn-primary" style="font-size:12px;padding:9px 14px;background:var(--pine);margin-bottom:6px;width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
+      ?'<button class="btn-primary" style="font-size:var(--text-sm);padding:9px 14px;background:var(--pine);margin-bottom:var(--space-2);width:100%" onclick="doCopy('+i+',true)">&#8594; Start of Day '+(i+1)+' — as lodging origin</button>'
       :'';
     return'<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
-      '<div style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Day '+(i+1)+' — '+title+'</div>'+
+      '<div style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2)">Day '+(i+1)+' — '+title+'</div>'+
       startBtn+
-      '<button class="btn-cancel" style="font-size:12px;padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
+      '<button class="btn-cancel" style="font-size:var(--text-sm);padding:8px 14px;width:100%;text-align:left" onclick="doCopy('+i+',false)">Copy to end of Day '+(i+1)+'</button>'+
       '</div>';
   }).join('');
   document.getElementById('copy-modal').classList.add('open');
@@ -1667,11 +1667,11 @@ function _continuationHtml(dayIdx){
     if(thisISO&&endISO&&endISO!==thisISO)return ''; // ends on some other day
     const tz=_endTz(last);
     const dur=_displayDuration(last,dayDateStr(dayIdx-1));
-    return '<div style="margin:0 0 12px;padding:10px 13px;border-left:3px solid var(--river,#4a7fa5);background:rgba(74,127,165,0.08);border-radius:0 9px 9px 0;font-family:var(--font-ui);font-size:12.5px;line-height:1.45">'+
-      '<div style="font-weight:700;color:var(--river,#4a7fa5);letter-spacing:0.04em;font-size:10.5px;text-transform:uppercase;margin-bottom:2px">Continues from Day '+dayIdx+'</div>'+
+    return '<div style="margin:0 0 12px;padding:10px 13px;border-left:3px solid var(--river,#4a7fa5);background:rgba(74,127,165,0.08);border-radius:0 9px 9px 0;font-family:var(--font-ui);font-size:var(--text-sm);line-height:1.45">'+
+      '<div style="font-weight:700;color:var(--river,#4a7fa5);letter-spacing:0.04em;font-size:var(--text-xs);text-transform:uppercase;margin-bottom:var(--space-1)">Continues from Day '+dayIdx+'</div>'+
       '<div><b>'+_escHtml(last.name||'Travel')+'</b> arrives <b>'+_escHtml(last.endTime||'')+'</b>'+(tz?' '+_escHtml(tz):'')+
       (dur?' &middot; '+_escHtml(dur)+' total':'')+'</div>'+
-      '<div style="color:var(--muted);font-size:11px;margin-top:2px">Edit it on Day '+dayIdx+' — it is one event, not a separate stop.</div>'+
+      '<div style="color:var(--muted);font-size:var(--text-xs);margin-top:var(--space-1)">Edit it on Day '+dayIdx+' — it is one event, not a separate stop.</div>'+
     '</div>';
   }catch(e){ return ''; }
 }
@@ -2858,7 +2858,7 @@ function renderAudioToursHtml(){
   const tours=state.audioTours||[];
   const discoverBtn='<button class="audio-discover-btn" id="audio-discover-btn" onclick="findAudioToursWithAI()">&#10024; '+(tours.length?'Find More Audio Tours':'Find Audio Tours with AI')+'</button><div id="audio-discover-result"></div>';
   if(!tours.length){
-    return'<div class="ov-empty" style="margin-bottom:16px">No audio tours saved yet. Let AI find self-guided walking tours and museum guides for your destinations.</div>'+discoverBtn;
+    return'<div class="ov-empty" style="margin-bottom:var(--space-4)">No audio tours saved yet. Let AI find self-guided walking tours and museum guides for your destinations.</div>'+discoverBtn;
   }
   const byCity={};
   tours.forEach(t=>{const c=(t.city||'').toLowerCase();if(!byCity[c])byCity[c]=[];byCity[c].push(t);});
@@ -2888,7 +2888,7 @@ async function findAudioToursWithAI(){
     const panel=document.getElementById('ovtab-audio');
     if(panel)panel.innerHTML=renderAudioToursHtml();
   }catch(e){
-    if(result)result.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:13px;margin-top:8px">Could not find tours — please try again.</div>';
+    if(result)result.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:var(--text-md);margin-top:var(--space-2)">Could not find tours — please try again.</div>';
     if(btn){btn.disabled=false;btn.innerHTML='&#10024; Find Audio Tours with AI';}
   }
 }
@@ -3052,7 +3052,7 @@ function renderOverview(){
   if(state.budget&&state.budget.total){
     const bTotal=state.budget.type==='total'?state.budget.total:state.budget.total*state.days.length;
     const bPerDay=state.budget.type==='total'?Math.round(bTotal/state.days.length):state.budget.total;
-    budgetHtml='<div class="budget-ov-card" style="margin-top:12px">'+
+    budgetHtml='<div class="budget-ov-card" style="margin-top:var(--space-3)">'+
       '<div class="budget-ov-num">$'+Math.round(bTotal).toLocaleString()+'</div>'+
       '<div class="budget-ov-meta">Total budget · $'+bPerDay.toLocaleString()+'/day</div>'+
       '</div>';
@@ -3081,13 +3081,13 @@ function renderOverview(){
     '<div class="add-check-form-row">'+
     '<input type="text" id="new-check-resv" class="add-check-input" placeholder="Reservation # (optional)" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\')addCheckItem()"/>'+
     '<button class="add-check-btn" onclick="addCheckItem()">&#10003; Add</button>'+
-    '<button class="btn-cancel" style="padding:9px 14px;font-size:13px" onclick="hideAddCheckForm()">Cancel</button>'+
+    '<button class="btn-cancel" style="padding:9px 14px;font-size:var(--text-md)" onclick="hideAddCheckForm()">Cancel</button>'+
     '</div></div>'+
     '<div id="add-check-toggle"><button class="add-check-toggle-btn" onclick="showAddCheckForm()">+ Add Item</button></div>'+
     '</div>';
   const panelPack='<div class="ov-tab-panel" id="ovtab-packing"'+(activeOvTab!=='packing'?' style="display:none"':'')+'>'+
     renderPackingListHtml()+
-    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:12px;color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:12px">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
+    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);padding:10px 14px;background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:var(--space-3)">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
     '</div>';
   const panelAudio='<div class="ov-tab-panel" id="ovtab-audio"'+(activeOvTab!=='audio'?' style="display:none"':'')+'>'+
     renderAudioToursHtml()+'</div>';
@@ -3095,17 +3095,17 @@ function renderOverview(){
   const startIso=dayDateStr(0);
   const startDateHtml='<div class="ov-start-date">&#128197; Starts: '+
     '<input type="date" id="ov-start-input" value="'+startIso+'" onchange="setTripStartDate(this.value)"/>'+
-    (startIso?'':'<span style="color:var(--muted);font-size:12px"> (pick a date to set day dates)</span>')+
+    (startIso?'':'<span style="color:var(--muted);font-size:var(--text-sm)"> (pick a date to set day dates)</span>')+
     '</div>';
 
   return'<div class="ov-panel">'+
     '<div class="ov-section">'+
     (state.title?'<div class="ov-trip-head">'+
-    '<div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">'+
+    '<div style="display:flex;align-items:center;gap:var(--space-2);min-width:0;flex:1">'+
     '<div class="ov-trip-name" style="margin-bottom:0">'+_escHtml(state.title)+'</div>'+
-    '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:15px;padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
+    '<button onclick="renameTripPrompt()" title="Rename trip" style="background:none;border:none;cursor:pointer;font-size:var(--text-lg);padding:2px 5px;color:var(--muted);line-height:1;flex-shrink:0" aria-label="Rename trip">&#9998;</button>'+
     '</div>'+
-    '<div style="display:flex;gap:8px;flex-shrink:0;align-items:center">'+
+    '<div style="display:flex;gap:var(--space-2);flex-shrink:0;align-items:center">'+
     '<button class="ai-action-btn" onclick="gradeItinerary()">&#10024; Grade</button>'+
     '<button class="ai-action-btn" onclick="generateGuidebook()">&#128366; Guidebook</button>'+
     (jnl?'<button class="ai-action-btn" onclick="openTripRecap()" style="background:var(--amber)">&#128196; Recap</button>':'')+
@@ -3185,8 +3185,8 @@ function deleteCheckItem(id){
     '<input type="checkbox" '+(doneProp?'checked':'')+' disabled/>'+
     '<span class="check-text" style="color:var(--muted);font-style:italic">Remove this item?</span>'+
     '<div class="chk-actions" style="opacity:1">'+
-    '<button class="add-check-btn" style="padding:4px 10px;font-size:12px;background:var(--ruby);white-space:nowrap" onclick="confirmDeleteCheckItem(\''+id+'\')">Yes, remove</button>'+
-    '<button class="chk-edit-btn" style="color:var(--muted);font-size:12px;padding:0 6px" onclick="cancelDeleteCheckItem(\''+id+'\')">No</button>'+
+    '<button class="add-check-btn" style="padding:4px 10px;font-size:var(--text-sm);background:var(--ruby);white-space:nowrap" onclick="confirmDeleteCheckItem(\''+id+'\')">Yes, remove</button>'+
+    '<button class="chk-edit-btn" style="color:var(--muted);font-size:var(--text-sm);padding:0 6px" onclick="cancelDeleteCheckItem(\''+id+'\')">No</button>'+
     '</div>';
 }
 function confirmDeleteCheckItem(id){
@@ -3213,10 +3213,10 @@ function startEditCheckItem(id){
   el.innerHTML=
     '<input type="checkbox" '+(item.done?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/>'+
     '<div class="chk-inline-edit">'+
-    '<input type="text" class="add-check-input" id="cedit-lbl-'+id+'" value="'+_escHtml(editLabel)+'" style="flex:1;min-width:100px;padding:6px 10px;font-size:12px" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
-    '<input type="text" class="add-check-input" id="cedit-resv-'+id+'" value="'+_escHtml(editResv)+'" placeholder="Conf #" style="width:110px;padding:6px 10px;font-size:12px" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
-    '<button class="add-check-btn" style="padding:6px 12px;font-size:12px" onclick="saveEditCheckItem(\''+id+'\')">&#10003;</button>'+
-    '<button class="chk-edit-btn" style="font-size:16px;padding:0 6px" onclick="cancelEditCheckItem(\''+id+'\')" title="Cancel">&#10005;</button>'+
+    '<input type="text" class="add-check-input" id="cedit-lbl-'+id+'" value="'+_escHtml(editLabel)+'" style="flex:1;min-width:100px;padding:6px 10px;font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<input type="text" class="add-check-input" id="cedit-resv-'+id+'" value="'+_escHtml(editResv)+'" placeholder="Conf #" style="width:110px;padding:6px 10px;font-size:var(--text-sm)" onkeydown="if(event.key===\'Enter\')saveEditCheckItem(\''+id+'\')"/>'+
+    '<button class="add-check-btn" style="padding:6px 12px;font-size:var(--text-sm)" onclick="saveEditCheckItem(\''+id+'\')">&#10003;</button>'+
+    '<button class="chk-edit-btn" style="font-size:var(--text-lg);padding:0 6px" onclick="cancelEditCheckItem(\''+id+'\')" title="Cancel">&#10005;</button>'+
     '</div>';
   document.getElementById('cedit-lbl-'+id)?.focus();
 }
@@ -3261,7 +3261,7 @@ function renderPackingListHtml(){
   const checkedCount=Object.values(checked).filter(Boolean).length;
   return'<div class="pack-header-row">'+
     '<span class="pack-prog">'+checkedCount+' of '+total+' packed</span>'+
-    '<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:12px" onclick="generatePackingList()">&#8635; Regenerate</button>'+
+    '<button class="pack-gen-btn regen" style="width:auto;padding:6px 14px;font-size:var(--text-sm)" onclick="generatePackingList()">&#8635; Regenerate</button>'+
     '</div>'+
     categories.map((cat,ci)=>{
       const catChecked=cat.items.filter((_,ii)=>checked[ci+'-'+ii]).length;
@@ -3364,7 +3364,7 @@ async function renderOverviewMap(fit=true){
     day.stops.forEach((s,si)=>{
       if(!s.lat||!s.lng)return;
       const m=L.marker([s.lat,s.lng],{icon:makeIcon(di+1,TC[s.type]||'#8B7355',s.alt)});
-      m.bindPopup('<div style="font-weight:700;font-size:13px">Day '+(di+1)+': '+_escHtml(s.name)+'</div>',{maxWidth:200});
+      m.bindPopup('<div style="font-weight:700;font-size:var(--text-md)">Day '+(di+1)+': '+_escHtml(s.name)+'</div>',{maxWidth:200});
       markersLayer.addLayer(m);bounds.push([s.lat,s.lng]);
     });
   });
@@ -3597,7 +3597,7 @@ function _recPreview(raw,keyword){
       const hit=kw&&n.toLowerCase().indexOf(kw)>=0;
       return hit?'<b style="background:#fde68a">'+esc(n)+'</b>':esc(n);
     }).join(', ');
-    rows+='<div style="padding:4px 0;border-top:1px solid #eee;font-size:12px"><b>Day '+(i+1)+'</b> '+esc(d.title||'')+'<br><span style="color:#555">'+(hl||'<i>no stops</i>')+'</span></div>';
+    rows+='<div style="padding:4px 0;border-top:1px solid #eee;font-size:var(--text-sm)"><b>Day '+(i+1)+'</b> '+esc(d.title||'')+'<br><span style="color:#555">'+(hl||'<i>no stops</i>')+'</span></div>';
   });
   return {ok:true,days:st.days.length,stops:stops,has:has,html:rows};
 }
@@ -3674,9 +3674,9 @@ async function _recoveryScreen(){
       return '<div style="'+box+'">'+
         '<h3 style="margin:0 0 6px">'+esc(s.label)+'</h3>'+
         banner+
-        (pv.ok?'<details style="margin:6px 0"><summary style="cursor:pointer;font-size:13px;color:#2563eb">Show every day &amp; stop</summary>'+
-          '<div style="margin-top:6px;max-height:300px;overflow:auto">'+pv.html+'</div></details>'+
-          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+        (pv.ok?'<details style="margin:6px 0"><summary style="cursor:pointer;font-size:var(--text-md);color:#2563eb">Show every day &amp; stop</summary>'+
+          '<div style="margin-top:var(--space-2);max-height:300px;overflow:auto">'+pv.html+'</div></details>'+
+          '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap">'+
             '<button onclick="_recPush('+i+')" style="'+btn+';background:#dc2626">Push THIS copy to all devices</button>'+
             '<button onclick="_recCopy('+i+')" style="'+btn+';background:#2563eb">Copy</button>'+
             '<button onclick="_recDownload('+i+')" style="'+btn+';background:#059669">Download</button>'+
@@ -3684,21 +3684,21 @@ async function _recoveryScreen(){
       '</div>';
     }).join('');
   document.body.innerHTML=
-    '<div style="max-width:680px;margin:0 auto;padding:16px;font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
+    '<div style="max-width:680px;margin:0 auto;padding:var(--space-4);font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f6f7f9;min-height:100vh">'+
       '<h2 style="margin:8px 0">Itinerary recovery</h2>'+
-      '<p style="color:#555;font-size:14px;margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button. Checking for a copy that contains “'+esc(kw)+'”.</p>'+
-      '<p style="color:#555;font-size:13px;margin:2px 0 0">Found <b>'+sources.length+'</b> stored '+(sources.length===1?'copy':'copies')+' on this device.</p>'+
+      '<p style="color:#555;font-size:var(--text-md);margin:0 0 4px">Trip: <b>'+esc(tripId)+'</b>. Nothing changes until you tap a button. Checking for a copy that contains “'+esc(kw)+'”.</p>'+
+      '<p style="color:#555;font-size:var(--text-md);margin:2px 0 0">Found <b>'+sources.length+'</b> stored '+(sources.length===1?'copy':'copies')+' on this device.</p>'+
       (cards||'<div style="'+box+'"><p style="color:#a00;margin:0">No stored itinerary copies were found on this device.</p></div>')+
       '<div style="'+box+'">'+
         '<h3 style="margin:0 0 6px">Restore from a backup file or paste</h3>'+
-        '<p style="color:#555;font-size:13px;margin:0 0 8px">Load a downloaded backup file, or paste a copy, then push it to every device.</p>'+
+        '<p style="color:#555;font-size:var(--text-md);margin:0 0 8px">Load a downloaded backup file, or paste a copy, then push it to every device.</p>'+
         '<div style="margin:0 0 8px"><input type="file" id="rec-file" accept=".json,application/json" onchange="_recLoadFile(event)"></div>'+
-        '<textarea id="rec-in" placeholder="…or paste itinerary JSON here" style="width:100%;height:110px;font-family:monospace;font-size:11px;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"></textarea>'+
-        '<div id="rec-in-badge" style="font-size:13px;margin:8px 0;font-weight:600"></div>'+
+        '<textarea id="rec-in" placeholder="…or paste itinerary JSON here" style="width:100%;height:110px;font-family:monospace;font-size:var(--text-xs);border:1px solid #ccc;border-radius:6px;padding:var(--space-2);box-sizing:border-box"></textarea>'+
+        '<div id="rec-in-badge" style="font-size:var(--text-md);margin:8px 0;font-weight:600"></div>'+
         '<div><button onclick="_recImport()" style="'+btn+';background:#dc2626">Restore this copy to all devices</button></div>'+
-        '<p id="rec-msg" style="font-size:13px;margin-top:8px;font-weight:600"></p>'+
+        '<p id="rec-msg" style="font-size:var(--text-md);margin-top:var(--space-2);font-weight:600"></p>'+
       '</div>'+
-      '<p style="color:#888;font-size:12px">Version '+(window.APP_CODE_VERSION||'')+'</p>'+
+      '<p style="color:#888;font-size:var(--text-sm)">Version '+(window.APP_CODE_VERSION||'')+'</p>'+
     '</div>';
 }
 function _recSrcRaw(i){ const s=(window._recSources||[])[i]; return s?s.raw:''; }
@@ -3982,7 +3982,7 @@ function _jnlStopHtml(di,si){
   return'<div class="journal-section">'+
     '<div class="journal-sec-label">&#9997; Journal</div>'+
     '<textarea class="journal-textarea" placeholder="How was it? Any memories..." oninput="saveJnlStopNote('+di+','+si+',this.value)">'+_escHtml(note)+'</textarea>'+
-    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-left:7px">Worth it?</span></div>'+
+    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);margin-left:var(--space-2)">Worth it?</span></div>'+
     '</div>';
 }
 function _jnlDayHtml(di){
@@ -3999,7 +3999,7 @@ function expandJnl(btn,di,si){
   const sec=btn.closest('.journal-section');
   sec.innerHTML='<div class="journal-sec-label">&#9997; Journal</div>'+
     '<textarea class="journal-textarea" placeholder="How was it? Any memories..." oninput="saveJnlStopNote('+di+','+si+',this.value)">'+_escHtml(note)+'</textarea>'+
-    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:10px;color:var(--muted);margin-left:7px">Worth it?</span></div>';
+    '<div class="journal-stars">'+_jnlStarsHtml(di,si,rat)+'<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);margin-left:var(--space-2)">Worth it?</span></div>';
   sec.querySelector('textarea').focus();
 }
 function _tripHighlightsHtml(){
@@ -4012,9 +4012,9 @@ function _tripHighlightsHtml(){
   rated.sort((a,b)=>b.r-a.r);
   const rows=rated.slice(0,5).map(h=>
     '<div class="trip-highlights-item">'+
-    '<span style="color:var(--amber);font-size:15px;white-space:nowrap">'+'&#9733;'.repeat(h.r)+'&#9734;'.repeat(5-h.r)+'</span>'+
-    '<span style="font-family:var(--font-ui);font-size:13px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(h.name)+'</span>'+
-    '<span style="font-family:var(--font-ui);font-size:11px;color:var(--muted);flex-shrink:0">Day '+(h.di+1)+'</span>'+
+    '<span style="color:var(--amber);font-size:var(--text-lg);white-space:nowrap">'+'&#9733;'.repeat(h.r)+'&#9734;'.repeat(5-h.r)+'</span>'+
+    '<span style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(h.name)+'</span>'+
+    '<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);flex-shrink:0">Day '+(h.di+1)+'</span>'+
     '</div>'
   ).join('');
   return'<div class="ov-section"><div class="ov-heading">&#11088; Trip Highlights</div>'+rows+'</div>';
@@ -4216,7 +4216,7 @@ function _dayHoursHtml(s,di,si){
   const verified=s.dayHoursSrc==='osm'||s.dayHoursSrc==='user';
   const tip=verified?'Opening hours — tap to edit':'Estimated hours — tap to correct';
   return '<div class="stop-day-hours" title="'+tip+'" onclick="editStopHours('+di+','+si+')" '+
-    'style="font-family:var(--font-ui);font-size:12px;margin-top:6px;font-weight:600;cursor:pointer;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
+    'style="font-family:var(--font-ui);font-size:var(--text-sm);margin-top:var(--space-2);font-weight:600;cursor:pointer;color:'+(closed?'var(--ruby)':'var(--pine)')+'">'+
     '&#128337; '+_escHtml(s.dayHours)+(verified?'':' <span style="color:var(--muted);font-weight:400">(est.)</span>')+
     ' <span style="color:var(--muted);font-weight:400">&#9998;</span></div>';
 }
@@ -4346,7 +4346,7 @@ async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
   const content=document.getElementById('ai-grader-content');
   modal.classList.add('open');
-  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Analyzing your itinerary…</div></div>';
+  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted)">Analyzing your itinerary…</div></div>';
   try{
     let prompt='CRITICAL: The itinerary is ONLY the numbered stops listed under each day. A day heading or a stop note may still mention a place that has ALREADY BEEN REMOVED from the plan — treat headings and notes as labels/context only. NEVER recommend removing, replacing, or swapping anything that is not present as a numbered stop, and never state a place is in the plan unless it appears as a numbered stop.\n\n';
     prompt+='Trip: '+(state.title||'Unknown')+'\nDays: '+state.days.length+'\n\n';
@@ -4394,7 +4394,7 @@ function _renderGradeResult(d){
   }
   if(d.suggested_additions?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#10024; Consider Adding</div>';
-    d.suggested_additions.forEach(a=>h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em><br>'+_escHtml(a.reason||'')+(a.fits_near?' <span style="color:var(--muted);font-size:11.5px">&#128205; Near '+_escHtml(a.fits_near)+'</span>':'')+'</div>');h+='</div>';
+    d.suggested_additions.forEach(a=>h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em><br>'+_escHtml(a.reason||'')+(a.fits_near?' <span style="color:var(--muted);font-size:var(--text-sm)">&#128205; Near '+_escHtml(a.fits_near)+'</span>':'')+'</div>');h+='</div>';
   }
   if(d.suggested_swaps?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#8644; Consider Swapping</div>';
@@ -4402,7 +4402,7 @@ function _renderGradeResult(d){
       h+='<div class="ai-item" style="border-left:3px solid var(--amber)">'+
         '<span style="color:var(--ruby)">&#10007; Day '+r.day+': <strong>'+_escHtml(r.remove||'')+'</strong></span><br>'+
         '<span style="color:var(--pine)">&#10003; Replace with <strong>'+_escHtml(r.add||'')+'</strong></span><br>'+
-        '<span style="color:var(--muted);font-size:12px">'+_escHtml(r.reason||'')+'</span></div>';
+        '<span style="color:var(--muted);font-size:var(--text-sm)">'+_escHtml(r.reason||'')+'</span></div>';
     });h+='</div>';
   }
   /* backward-compat: old suggested_removals field */
@@ -4421,7 +4421,7 @@ async function optimizeDay(idx){
   const day=state.days[idx];if(!day)return;
   _optDayIdx=idx;_optLastData=null;
   modal.classList.add('open');
-  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Optimizing your day…</div></div>';
+  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted)">Optimizing your day…</div></div>';
   try{
     const dp=(day.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
     const dd=dp?(_parseTripDate(dp)||new Date(dp+' 12:00')):null;
@@ -4485,14 +4485,14 @@ function _renderOptResult(d){
     d.optimized_order.forEach((o,i)=>{
       const name=typeof o==='string'?o:(o.name||'');
       const rat=typeof o==='object'?o.rationale:'';
-      h+='<div class="ai-item"><strong>'+(i+1)+'. '+_escHtml(name)+'</strong>'+(rat?' <span style="color:var(--muted);font-size:11.5px">&mdash; '+_escHtml(rat)+'</span>':'')+'</div>';
+      h+='<div class="ai-item"><strong>'+(i+1)+'. '+_escHtml(name)+'</strong>'+(rat?' <span style="color:var(--muted);font-size:var(--text-sm)">&mdash; '+_escHtml(rat)+'</span>':'')+'</div>';
     });
     h+='<div id="opt-apply-wrap"><button class="opt-apply-btn" onclick="showApplyOrderConfirm()">&#10003; Apply This Order</button></div>';
     h+='</div>';
   }
   if(d.timing_issues?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#9888;&#65039; Timing Issues</div>'+
-      '<p style="font-family:var(--font-ui);font-size:11px;color:var(--muted);margin-bottom:8px;font-style:italic">AI checks typical hours — verify directly with venues.</p>';
+      '<p style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);margin-bottom:var(--space-2);font-style:italic">AI checks typical hours — verify directly with venues.</p>';
     d.timing_issues.forEach((t,ti)=>{
       h+='<div class="ai-item ai-item-warn"><strong>'+_escHtml(t.stop_name||'')+'</strong>: '+_escHtml(t.issue||'')+(t.suggestion?' <em>&rarr; '+_escHtml(t.suggestion)+'</em>':'')+
         '<div><button class="opt-fix-btn" onclick="showTimingFix('+ti+')">&#9889; Fix This</button></div></div>';
@@ -4505,7 +4505,7 @@ function _renderOptResult(d){
       h+='<div class="opt-move-row">'+
         '<div class="opt-move-info">'+
         '<div class="opt-move-from"><strong>'+_escHtml(m.stop_name||'')+'</strong></div>'+
-        '<div style="font-family:var(--font-ui);font-size:11px;color:var(--muted)">Day '+m.from_day+' <span class="opt-move-to">Day '+m.to_day+'</span></div>'+
+        '<div style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted)">Day '+m.from_day+' <span class="opt-move-to">Day '+m.to_day+'</span></div>'+
         '<div class="opt-move-reason">'+_escHtml(m.reason||'')+'</div>'+
         '</div>'+
         '<button class="opt-move-btn" onclick="applyProposedMove('+mi+')">Apply</button>'+
@@ -4521,8 +4521,8 @@ function showApplyOrderConfirm(){
   const order=(_optLastData?.optimized_order||[]).map(o=>typeof o==='string'?o:(o.name||''));
   wrap.innerHTML='<div class="opt-confirm-bar">Reorder '+order.length+' stops on Day '+(_optDayIdx+1)+'?'+
     '<div class="opt-confirm-actions">'+
-    '<button class="add-check-btn" style="padding:6px 14px;font-size:12px" onclick="applyOptimizedOrder()">Yes, Apply</button>'+
-    '<button class="chk-edit-btn" style="font-size:13px;padding:0 8px" onclick="cancelApplyOrder()">Cancel</button>'+
+    '<button class="add-check-btn" style="padding:6px 14px;font-size:var(--text-sm)" onclick="applyOptimizedOrder()">Yes, Apply</button>'+
+    '<button class="chk-edit-btn" style="font-size:var(--text-md);padding:0 8px" onclick="cancelApplyOrder()">Cancel</button>'+
     '</div></div>';
 }
 function cancelApplyOrder(){
@@ -4663,7 +4663,7 @@ async function showAlternates(dayIdx,stopIdx){
   const day=state.days[dayIdx];const stop=day?.stops[stopIdx];if(!day||!stop)return;
   _altDayIdx=dayIdx;_altStopIdx=stopIdx;_altResults=[];
   modal.classList.add('open');
-  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:13px;color:var(--muted)">Finding alternates…</div></div>';
+  content.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted)">Finding alternates…</div></div>';
   try{
     const cityCtx=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
     const otherStops=day.stops.map(s=>s.name).filter(n=>n!==stop.name).join(', ');
@@ -4672,10 +4672,10 @@ async function showAlternates(dayIdx,stopIdx){
     const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
     const js=t.indexOf('['),je=t.lastIndexOf(']');
     _altResults=JSON.parse(js>=0&&je>js?t.slice(js,je+1):t);
-    content.innerHTML='<p style="font-family:var(--font-ui);font-size:12px;color:var(--muted);margin-bottom:14px">Alternatives to <strong>'+_escHtml(stop.name)+'</strong></p>'+
+    content.innerHTML='<p style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);margin-bottom:var(--space-4)">Alternatives to <strong>'+_escHtml(stop.name)+'</strong></p>'+
       _renderAlternates(_altResults,dayIdx,stopIdx);
   }catch(e){
-    content.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:13px">Could not find alternates — please try again.</div>';
+    content.innerHTML='<div style="color:var(--ruby);font-family:var(--font-ui);font-size:var(--text-md)">Could not find alternates — please try again.</div>';
   }
 }
 function _renderAlternates(alts,dayIdx,stopIdx){
@@ -4692,8 +4692,8 @@ function _renderAlternates(alts,dayIdx,stopIdx){
       _escHtml(a.cuisine||'')+(a.distance_estimate?' &middot; '+_escHtml(a.distance_estimate):'')+
       '</div>'+
       (a.why_recommended?'<div class="alt-card-why">'+_escHtml(a.why_recommended)+'</div>':'')+
-      (a.approximate_wait_or_reservation_needed?'<div style="font-family:var(--font-ui);font-size:11px;color:var(--amber);margin-bottom:8px">&#9201; '+_escHtml(a.approximate_wait_or_reservation_needed)+'</div>':'')+
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      (a.approximate_wait_or_reservation_needed?'<div style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--amber);margin-bottom:var(--space-2)">&#9201; '+_escHtml(a.approximate_wait_or_reservation_needed)+'</div>':'')+
+      '<div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">'+
       '<button class="alt-use-btn" onclick="confirmApplyAlternate('+dayIdx+','+stopIdx+','+ai+')">&#10003; Use This Instead</button>'+
       (a.google_maps_search_url?'<a class="map-link" href="'+_escHtml(a.google_maps_search_url)+'" target="_blank" rel="noopener">&#128205; Maps</a>':'')+
       '</div></div>';
@@ -4751,7 +4751,7 @@ function _populateTravelersForm(stop){
   sec.style.display='';
   const att=stop?stop.attendance||travelers:travelers;
   box.innerHTML=travelers.map(t=>
-    '<label style="display:flex;align-items:center;gap:8px;font-family:var(--font-ui);font-size:13px;cursor:pointer">'+
+    '<label style="display:flex;align-items:center;gap:var(--space-2);font-family:var(--font-ui);font-size:var(--text-md);cursor:pointer">'+
     '<input type="checkbox" '+(att.includes(t)?'checked':'')+' value="'+_escHtml(t)+'" style="width:15px;height:15px;accent-color:var(--river)"/>'+
     _escHtml(t)+'</label>'
   ).join('');
@@ -5111,11 +5111,11 @@ function _setupTourGuideStopPicker(){
     });
   });
   const content=document.getElementById('tg-content');if(!content)return;
-  content.innerHTML='<div class="tg-thinking" style="margin-bottom:12px">Choose a stop to get guided:</div>'+
+  content.innerHTML='<div class="tg-thinking" style="margin-bottom:var(--space-3)">Choose a stop to get guided:</div>'+
     '<select class="tg-stop-select" id="tg-stop-sel">'+
     stops.map(({di,si,name,day})=>'<option value="'+di+'-'+si+'">'+_escHtml(name)+' ('+_escHtml(day)+')</option>').join('')+
     '</select>'+
-    '<button class="tg-send" style="width:100%;margin-top:8px;border-radius:8px;padding:10px" onclick="_tgPickStop()">Start Tour Guide</button>';
+    '<button class="tg-send" style="width:100%;margin-top:var(--space-2);border-radius:8px;padding:var(--space-3)" onclick="_tgPickStop()">Start Tour Guide</button>';
 }
 
 function _tgPickStop(){
@@ -5204,8 +5204,8 @@ function renderUnbookedSection(){
           db+'</div>';
       }).join('')
     :'<div class="unbooked-all-clear">&#10003; All bookings confirmed</div>';
-  return'<div class="ov-section" style="margin-top:16px">'+
-    '<div style="font-family:var(--font-ui);font-weight:600;font-size:14px;margin-bottom:10px;color:var(--ink)">&#128197; Still Unbooked '+badge+'</div>'+
+  return'<div class="ov-section" style="margin-top:var(--space-4)">'+
+    '<div style="font-family:var(--font-ui);font-weight:600;font-size:var(--text-md);margin-bottom:var(--space-3);color:var(--ink)">&#128197; Still Unbooked '+badge+'</div>'+
     inner+'</div>';
 }
 
@@ -5231,7 +5231,7 @@ async function loadLiveWeather(dayIdx){
   let lat=null,lng=null;
   for(const s of day.stops){if(s.lat&&s.lng){lat=parseFloat(s.lat);lng=parseFloat(s.lng);break;}}
   if(lat===null){strip.style.display='none';return;}
-  strip.innerHTML='<span style="font-family:var(--font-ui);font-size:11px;color:var(--muted);padding:6px 8px">Loading weather...</span>';
+  strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:6px 8px">Loading weather...</span>';
   try{
     const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+
       '&hourly=temperature_2m,weathercode&temperature_unit=fahrenheit&forecast_days=1&timezone=auto';
@@ -5348,7 +5348,7 @@ function _renderRecap(){
   state.days.forEach((d,di)=>{
     const dayNote=jnlData[_jnlDayKey(di)]||'';
     h+='<div class="recap-day-hdr">'+_escHtml(d.title)+
-      (d.subtitle?'<span style="font-weight:400;font-size:13px;margin-left:8px;color:var(--muted)">'+_escHtml(d.subtitle)+'</span>':'')+
+      (d.subtitle?'<span style="font-weight:400;font-size:var(--text-md);margin-left:var(--space-2);color:var(--muted)">'+_escHtml(d.subtitle)+'</span>':'')+
       '</div>';
     if(dayNote)h+='<div class="recap-day-jnl">'+_escHtml(dayNote)+'</div>';
     d.stops.forEach((s,si)=>{
@@ -5496,7 +5496,7 @@ async function init(){
   // read or the family watcher — so it can never overwrite this device's copy.
   if(new URLSearchParams(location.search).get('recover')==='1'){
     try{ await _recoveryScreen(); }
-    catch(e){ document.body.innerHTML='<pre style="padding:16px;white-space:pre-wrap">Recovery screen error: '+((e&&e.message)||e)+'</pre>'; }
+    catch(e){ document.body.innerHTML='<pre style="padding:var(--space-4);white-space:pre-wrap">Recovery screen error: '+((e&&e.message)||e)+'</pre>'; }
     return;
   }
   const localTrips=JSON.parse(localStorage.getItem('localTrips')||'[]');

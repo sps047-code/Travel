@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v165';
+window.APP_CODE_VERSION='v166';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -49,8 +49,11 @@ function saveState(changeDesc='',localOnly=false){
     let errs=_logicErrors(state);
     let added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
     if(added.length){
-      // First TRY to make it fit by shrinking visit durations (not refusing).
+      // First TRY to make it fit, rather than refusing and making the user fix it.
+      // 1) Move anything scheduled before the day's arrival to after you land.
+      // 2) Then shrink visit durations if travel still does not fit.
       const snap=JSON.stringify(state);
+      const shifted=_shiftStopsAfterArrival(state);
       const changed=_relaxDurationsToFit(state);
       errs=_logicErrors(state);
       added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
@@ -61,7 +64,8 @@ function saveState(changeDesc='',localOnly=false){
         _showLogicError(added);
         return;
       }
-      if(changed.length)_showDurationAdjustWarning(changed); // fit by trimming — warn only
+      if(shifted.length)_showArrivalShiftWarning(shifted);    // moved after landing — warn only
+      if(changed.length)_showDurationAdjustWarning(changed);  // fit by trimming — warn only
     }
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
@@ -1875,6 +1879,44 @@ function _showLogicError(errs){
 // stop start times) so each stop is reachable from the previous one. Returns the
 // list of stops that were shortened. A leg where even a zero-length visit can't
 // make it (travel time alone exceeds the gap) is left for the gate to refuse.
+// AUTO-FIX for "Before arrival": a stop scheduled before you land is not the
+// user's mistake to repair by hand — push it to after the landing time and carry
+// the rest of the day forward, keeping each stop's own visit length. A LOCKED
+// stop (a reservation) is never moved; it only raises the floor for what follows.
+// Returns the stops that were moved, so the save can warn instead of refusing.
+function _shiftStopsAfterArrival(st){
+  const moved=[];
+  if(!st||!Array.isArray(st.days))return moved;
+  st.days.forEach((day,di)=>{
+    const stops=day.stops||[];
+    if(!stops.length)return;
+    const arrive=_dayArrivalMins(di,st);
+    if(arrive==null)return;
+    let floor=arrive;               // nothing this day may begin before this
+    for(const stop of stops){
+      if(stop._arrivalAnchor)continue;          // the arrival marker itself
+      const t=_parseTimeMins(stop.time);
+      if(t==null)continue;
+      if(t>=floor){ floor=Math.max(floor,t); continue; }
+      const span=Math.min(_stopVisitMins(stop),_MAX_VISIT_CASCADE);
+      if(stop.locked){ floor=Math.max(floor,t+span); continue; }   // reservations hold
+      const start=Math.min(floor,_DAY_END_CAP);
+      moved.push({stop:stop.name,from:stop.time,to:_formatTimeMins(start)});
+      _setStopSlot(stop,start,span);
+      floor=start+span;
+    }
+  });
+  return moved;
+}
+// Tell the user what the app moved for them, and why.
+function _showArrivalShiftWarning(moved){
+  if(!moved||!moved.length)return;
+  const one=moved[0];
+  const msg=(moved.length===1)
+    ? 'Moved "'+one.stop+'" to '+one.to+' — it was scheduled before you land.'
+    : 'Moved '+moved.length+' stops after your arrival time (starting with "'+one.stop+'" at '+one.to+').';
+  try{ if(typeof showToast==='function')showToast('&#9992; '+_escHtml(msg)); else alert(msg); }catch(e){}
+}
 function _relaxDurationsToFit(st){
   const changed=[];
   if(!st||!Array.isArray(st.days))return changed;

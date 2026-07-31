@@ -778,3 +778,67 @@ test('a lost AM/PM is repaired, killing the 25h 30min reading', () => {
   assert.match(s.time, /\d:\d\d (AM|PM)$/, 'canonical, explicit meridiem: ' + s.time);
   assert.match(s.endTime, /\d:\d\d (AM|PM)$/, 'canonical end: ' + s.endTime);
 });
+
+// ===========================================================================
+// AUTO-FIX: a stop scheduled before you land must be MOVED automatically, not
+// rejected with an error the user has to repair by hand. (Screenshot: setting
+// the flight arrival to 10:00 AM refused the save because Day 2's hotel sat at
+// 9:00 AM.)
+// ===========================================================================
+function overnightTrip() {
+  return { days: [
+    { title: 'Day 1', stops: [
+      { name: 'Flight ZO 784', type: 'flight', time: '8:30 PM', endTime: '10:00 AM', lat: 28.43, lng: -81.31 },
+    ] },
+    { title: 'Day 2', stops: [
+      { name: 'Royal Horseguards Hotel', type: 'lodge', time: '9:00 AM', endTime: '9:30 AM', lat: 51.5063, lng: -0.1237 },
+      { name: 'British Museum', type: 'hike', time: '11:00 AM', endTime: '1:00 PM', lat: 51.5194, lng: -0.127 },
+    ] },
+  ] };
+}
+
+test('a stop before the landing time is moved automatically', () => {
+  const shift = fn('_shiftStopsAfterArrival');
+  const p = fn('_parseTimeMins');
+  const st = overnightTrip();
+  const moved = shift(st);
+  assert.equal(moved.length, 1, 'exactly the offending stop moves: ' + JSON.stringify(moved));
+  assert.equal(moved[0].stop, 'Royal Horseguards Hotel');
+  const hotel = st.days[1].stops[0];
+  assert.ok(p(hotel.time) >= p('10:00 AM'), 'hotel must start at/after the 10:00 AM landing, got ' + hotel.time);
+  assert.equal(p(st.days[1].stops[1].time), p('11:00 AM'), 'a stop already after landing is left alone');
+});
+
+test('after the auto-shift there is no Before arrival error left', () => {
+  const shift = fn('_shiftStopsAfterArrival'), le = fn('_logicErrors');
+  const st = overnightTrip();
+  assert.ok(le(st).some(e => e.rule === 'Before arrival'), 'precondition: the error exists');
+  shift(st);
+  assert.equal(le(st).filter(e => e.rule === 'Before arrival').length, 0,
+    'the save must no longer be refused');
+});
+
+test('the auto-shift preserves each stop\'s own visit length', () => {
+  const shift = fn('_shiftStopsAfterArrival'), p = fn('_parseTimeMins');
+  const st = overnightTrip();
+  shift(st);
+  const hotel = st.days[1].stops[0];
+  assert.equal(p(hotel.endTime) - p(hotel.time), 30, 'the 30-minute check-in stays 30 minutes');
+});
+
+test('a LOCKED reservation is never moved by the auto-shift', () => {
+  const shift = fn('_shiftStopsAfterArrival'), p = fn('_parseTimeMins');
+  const st = overnightTrip();
+  st.days[1].stops[0].locked = true;
+  const moved = shift(st);
+  assert.equal(moved.length, 0, 'a locked stop must not be moved');
+  assert.equal(p(st.days[1].stops[0].time), p('9:00 AM'), 'its reserved time holds');
+});
+
+test('the auto-shift does nothing when no travel carries over', () => {
+  const shift = fn('_shiftStopsAfterArrival');
+  const st = { days: [{ title: 'D', stops: [
+    { name: 'Castle', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 55.9486, lng: -3.1999 },
+  ] }] };
+  assert.equal(shift(st).length, 0);
+});

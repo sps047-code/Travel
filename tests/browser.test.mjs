@@ -90,7 +90,7 @@ function serve() {
 
 // Open a trip page with a known itinerary injected, so tests do not depend on
 // the shared cloud database (which the browser here cannot reach anyway).
-async function openTrip(days, { tripId = 'london-scotland', day = 0 } = {}) {
+async function openTrip(days, { tripId = 'london-scotland', day = 0, family = false } = {}) {
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -114,11 +114,11 @@ async function openTrip(days, { tripId = 'london-scotland', day = 0 } = {}) {
     if (u.includes('firebaseio.com')) return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
     return route.fulfill({ status: 204, body: '' });
   });
-  await page.addInitScript(([id, d]) => {
-    localStorage.setItem('tripState_' + id, JSON.stringify({ tripType: 'solo', title: 'Test', days: d }));
-    localStorage.setItem('tripFamily_' + id, '0');
-  }, [tripId, days]);
-  await page.goto(`${origin}/Travel/trip.html?id=${tripId}`, { waitUntil: 'domcontentloaded' });
+  await page.addInitScript(([id, d, fam]) => {
+    localStorage.setItem('tripState_' + id, JSON.stringify({ tripType: fam ? 'family' : 'solo', title: 'Test', days: d }));
+    localStorage.setItem('tripFamily_' + id, fam ? '1' : '0');
+  }, [tripId, days, family]);
+  await page.goto(`${origin}/Travel/trip.html?id=${tripId}` + (family ? '&fam=1' : ''), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof state !== 'undefined' && state && Array.isArray(state.days), null, { timeout: 20000 });
   // The app opens on the OVERVIEW unless one of the days happens to be today, so
   // a test that inspects stop cards must select the day explicitly first.
@@ -212,6 +212,54 @@ test('EVERY day of the real trip renders a route line on the map', async () => {
     if (!n) blank.push(i + 1);
   }
   assert.deepEqual(blank, [], 'these days show NO route line on the map: ' + blank.join(', '));
+  await page.close();
+});
+
+test('a SHARED (family) trip still renders routes while the sync poll runs', async () => {
+  const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
+  const { page } = await openTrip(trip.days, { day: null, family: true });
+  const blank = [];
+  for (const d of [2, 3, 9, 10, 11]) {
+    await page.evaluate((i) => switchDay(i), d - 1);
+    let n = 0;
+    for (let t = 0; t < 40 && n === 0; t++) {
+      n = await routePathCount(page);
+      if (!n) await page.waitForTimeout(150);
+    }
+    if (!n) blank.push(d);
+  }
+  assert.deepEqual(blank, [], 'shared trip days with NO route: ' + blank.join(', '));
+  await page.close();
+});
+
+test('the map never gets stuck on "Loading driving routes"', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.9486, lng: -3.1999 },
+      { name: 'B', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', lat: 55.9526, lng: -3.1722 },
+    ] },
+  ]);
+  // Force overlapping renders, which is what the 3s family poll does.
+  await page.evaluate(() => { renderDayMap(0); renderDayMap(0); renderDayMap(0); });
+  await page.waitForFunction(() => {
+    const st = document.getElementById('route-status');
+    return !st || st.style.display === 'none' || !/Loading/.test(st.textContent || '');
+  }, null, { timeout: 12000 });
+  await page.close();
+});
+
+test('a day that truly cannot draw a route SAYS so instead of going blank', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'No pin', type: 'hike', time: '9:00 AM', endTime: '10:00 AM' },
+    ] },
+  ]);
+  await page.waitForFunction(() => {
+    const st = document.getElementById('route-status');
+    return st && st.style.display !== 'none' && /No route/.test(st.textContent || '');
+  }, null, { timeout: 12000 });
+  const msg = await page.textContent('#route-status');
+  assert.match(msg, /No route: 0 located stops of 1/, 'the map explains itself: ' + msg);
   await page.close();
 });
 

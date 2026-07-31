@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v174';
+window.APP_CODE_VERSION='v175';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -644,18 +644,38 @@ async function renderDayMap(idx,fit=true){
     const pts=_dropCoordOutliers(seg).map(s=>[s.lat,s.lng]);
     return pts.length>1?L.polyline(pts,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer):null;
   });
+  // DIAGNOSTIC. When a day shows no route the cause is invisible from the outside,
+  // which has cost several rounds of guessing. Record exactly what happened and,
+  // if nothing could be drawn, SAY SO on the map instead of leaving it blank.
+  const diag={day:idx+1,stops:(day.stops||[]).length,
+    located:routeStops.filter(x=>!x.alt&&_validLL(x)).length,
+    segments:segs.length,straightLines:fallbacks.filter(Boolean).length,roadRoutes:0,routeErrors:0};
+  const finish=()=>{
+    try{
+      window.__routeDiag=diag;
+      if(!diag.straightLines&&!diag.roadRoutes){
+        st.style.display='block';
+        st.textContent='No route: '+diag.located+' located stop'+(diag.located===1?'':'s')+
+          ' of '+diag.stops+' (a line needs 2 with map pins)';
+      }else{ st.style.display='none'; }
+    }catch(e){}
+  };
   try{
     for(let i=0;i<segs.length;i++){
-      const rc=await fetchRoute(segs[i]);
-      if(gen!==_mapGen)return;
+      let rc=null;
+      try{ rc=await fetchRoute(segs[i]); }catch(e){ diag.routeErrors++; }
+      // A newer render superseded this one: stop, but never leave the status
+      // stuck on "Loading driving routes..." (it used to hang there forever).
+      if(gen!==_mapGen){ try{ st.style.display='none'; }catch(e){} return; }
       if(rc){
         // Real road route available — replace that segment's straight connector.
         if(fallbacks[i])routeLayer.removeLayer(fallbacks[i]);
         L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
-      }
+        diag.roadRoutes++;
+      }else{ diag.routeErrors++; }
     }
-    st.style.display='none';
-  }catch(e){st.style.display='none'}
+  }catch(e){ diag.routeErrors++; }
+  finish();
 }
 
 function updateTabsTop(){

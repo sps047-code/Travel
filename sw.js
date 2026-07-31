@@ -17,13 +17,14 @@
 //      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
-const CACHE = 'seasons-v154';
+const CACHE = 'seasons-v155';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
   '/Travel/trip.js',
-  '/Travel/trip.js?v=154',
+  '/Travel/trip.js?v=155',
   '/Travel/trip-extras.js',
+  '/Travel/trip-extras.js?v=155',
   '/Travel/app.webmanifest',
   '/Travel/icon-192.png',
   '/Travel/icon-512.png',
@@ -65,14 +66,20 @@ self.addEventListener('fetch', e => {
   // you get fresh HTML online, but fall back to the cached page when offline. The
   // query string is ignored so any trip URL resolves to the cached page shell.
   if (e.request.mode === 'navigate') {
+    // TRULY network-first. This previously did `return cached || network`, which is
+    // cache-FIRST: the stale page was served every time and the fresh copy only
+    // landed in the cache for the NEXT load. Every HTML change therefore needed two
+    // reloads to appear, so new inline handlers and fields looked like they had
+    // never shipped. Online = always the current page; offline = the cached one.
     e.respondWith(
-      caches.match(e.request, {ignoreSearch:true}).then(cached => {
-        const network = fetch(e.request).then(res => {
-          if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{}); }
-          return res;
-        }).catch(() => cached || caches.match(new URL(e.request.url).pathname) || caches.match('/Travel/index.html'));
-        return cached || network;
-      })
+      fetch(e.request).then(res => {
+        if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{}); }
+        return res;
+      }).catch(() =>
+        caches.match(e.request, {ignoreSearch:true})
+          .then(c => c || caches.match('/Travel/trip.html', {ignoreSearch:true}))
+          .then(c => c || caches.match('/Travel/index.html'))
+      )
     );
     return;
   }

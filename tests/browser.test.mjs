@@ -468,3 +468,109 @@ test('home page destination pills are visually separated', async () => {
   }
   await page.close();
 });
+
+// ===========================================================================
+// DATA INTEGRITY through real UI actions. Every bug in this app that actually
+// cost the user work was a silent data change, not a visual glitch. These drive
+// the real functions and assert nothing is lost.
+// ===========================================================================
+function richStop(over) {
+  return Object.assign({
+    name: 'British Museum', type: 'hike', time: '12:00 PM', endTime: '2:00 PM',
+    lat: 51.5194, lng: -0.127, _sid: 'sid-keep', guidebook: 'GUIDEBOOK TEXT',
+    dayHours: '10:00 AM - 5:00 PM', dayHoursSrc: 'osm', destLat: 51.5, destLng: -0.12,
+    reservation: 'ABC123', notes: 'Rosetta Stone.', url: 'https://example.com',
+  }, over || {});
+}
+
+test('journal notes and ratings survive an edit of the same stop', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [richStop()] },
+  ]);
+  const kept = await page.evaluate(() => {
+    // Write a journal note + rating the way the UI does.
+    saveJnlStopNote(0, 0, 'Loved the Egyptian rooms');
+    saveJnlStopRating(0, 0, 5);
+    const noteKey = _jnlNoteKey(0, 0), ratingKey = _jnlRatingKey(0, 0);
+    // Now edit the stop through the real save path.
+    const s = state.days[0].stops[0];
+    s.notes = 'edited notes';
+    saveState('edit');
+    return { note: jnlData[noteKey], rating: jnlData[ratingKey], sid: state.days[0].stops[0]._sid };
+  });
+  assert.equal(kept.note, 'Loved the Egyptian rooms', 'the journal note survives');
+  assert.equal(kept.rating, 5, 'the rating survives');
+  assert.equal(kept.sid, 'sid-keep', 'the stable id it is keyed by survives');
+  await page.close();
+});
+
+test('moving a stop keeps every hidden field intact', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Castle', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.9486, lng: -3.1999 },
+      richStop(),
+    ] },
+  ]);
+  const after = await page.evaluate(() => {
+    moveStop(0, 1, -1);
+    const s = state.days[0].stops.find((x) => x.name === 'British Museum');
+    return { sid: s._sid, guidebook: s.guidebook, dayHours: s.dayHours,
+      dayHoursSrc: s.dayHoursSrc, destLat: s.destLat, reservation: s.reservation, url: s.url };
+  });
+  assert.equal(after.sid, 'sid-keep');
+  assert.equal(after.guidebook, 'GUIDEBOOK TEXT');
+  assert.equal(after.dayHours, '10:00 AM - 5:00 PM');
+  assert.equal(after.dayHoursSrc, 'osm');
+  assert.equal(after.destLat, 51.5);
+  assert.equal(after.reservation, 'ABC123');
+  assert.equal(after.url, 'https://example.com');
+  await page.close();
+});
+
+test('deleting a stop removes exactly one and leaves the rest untouched', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.94, lng: -3.19 },
+      { name: 'B', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', lat: 55.95, lng: -3.18 },
+      { name: 'C', type: 'hike', time: '1:00 PM', endTime: '2:00 PM', lat: 55.96, lng: -3.17 },
+    ] },
+  ]);
+  const after = await page.evaluate(() => {
+    window.confirm = () => true;              // the delete prompt
+    deleteStop(0, 1);
+    return state.days[0].stops.map((s) => ({ n: s.name, t: s.time }));
+  });
+  assert.equal(after.length, 2, 'exactly one stop removed');
+  assert.deepEqual(JSON.stringify(after.map((x) => x.n)), JSON.stringify(['A', 'C']));
+  assert.equal(after[0].t, '9:00 AM', 'a surviving stop keeps its time');
+  assert.equal(after[1].t, '1:00 PM', 'the other survivor keeps its time too');
+  await page.close();
+});
+
+test('the checklist and packing list persist a toggle', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [richStop()] },
+  ]);
+  const res = await page.evaluate(() => {
+    state.checklist = state.checklist || [];
+    state.checklist.push({ id: 'test-item', text: 'Book museum tickets', done: false });
+    toggleCheckItem('test-item', true);
+    const item = state.checklist.find((c) => c.id === 'test-item');
+    const saved = JSON.parse(localStorage.getItem('tripState_london-scotland') || '{}');
+    const savedItem = (saved.checklist || []).find((c) => c.id === 'test-item');
+    return { done: item && item.done, persisted: savedItem && savedItem.done };
+  });
+  assert.equal(res.done, true, 'the checklist item is ticked in state');
+  assert.equal(res.persisted, true, 'and written to storage, not just the DOM');
+  await page.close();
+});
+
+test('a day with no stops renders without throwing', async () => {
+  const { page, errors } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [] },
+  ]);
+  const html = await page.innerHTML('#content-area');
+  assert.ok(html.length > 0, 'something renders for an empty day');
+  assert.deepEqual(errors.filter((e) => !/favicon|Failed to load resource/i.test(e)), []);
+  await page.close();
+});

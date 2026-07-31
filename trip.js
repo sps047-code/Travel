@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v172';
+window.APP_CODE_VERSION='v173';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -877,6 +877,22 @@ function _findStopPos(stop){
   }catch(e){}
   return null;
 }
+// THE single definition of how a hotel surfaces its booking: the confirmation
+// number and a button that opens the stored reservation/ticket. Every place that
+// renders a hotel uses this, so adding it to one surface can never again leave
+// the others behind.
+function _lodgeBookingHtml(lodge,where,opts){
+  if(!lodge)return '';
+  const o=opts||{};
+  const hasPos=!!(where&&where.dayIdx>=0&&where.stopIdx>=0);
+  const resv=lodge.reservation
+    ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:3px">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
+    :'';
+  const ticket=(hasPos&&lodge.ticketImage)
+    ?'<button class="ticket-view-btn" onclick="event.preventDefault();event.stopPropagation();showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:6px">&#127903; '+(o.label||'View Reservation')+'</button>'
+    :'';
+  return resv+ticket;
+}
 function hotelBookendHtml(label,lodge,otherStop,where){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
   let travelHtml='';
@@ -895,13 +911,8 @@ function hotelBookendHtml(label,lodge,otherStop,where){
   // Booking details, right where the hotel is shown: the confirmation number and
   // a button that opens the stored reservation/ticket. Previously the bookend was
   // display-only and the ticket could only be reached from the stop's own day.
-  const resvHtml=lodge.reservation
-    ?'<div class="hotel-bookend-resv" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:3px">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
-    :'';
-  const ticketBtn=(hasPos&&lodge.ticketImage)
-    ?'<button class="ticket-view-btn" onclick="showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:6px">&#127903; View Reservation</button>'
-    :'';
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+resvHtml+travelHtml+ticketBtn+'</div>'+editBtn+'</div>';
+  const booking=_lodgeBookingHtml(lodge,where);
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+travelHtml+booking+'</div>'+editBtn+'</div>';
 }
 
 function transitBookendHtml(transitStop,firstStop){
@@ -2980,7 +2991,7 @@ function renderOverview(){
   state.checklist=generateChecklist();
   const totalStops=state.days.reduce((n,d)=>n+d.stops.length,0);
   const lodges=[];
-  state.days.forEach((day,di)=>day.stops.forEach(s=>{if(s.type==='lodge')lodges.push({di,day,s});}));
+  state.days.forEach((day,di)=>day.stops.forEach((s,si)=>{if(s.type==='lodge')lodges.push({di,si,day,s});}));
 
   const statsHtml='<div class="ov-stats">'+
     '<div class="ov-stat"><div class="ov-stat-num">'+state.days.length+'</div><div class="ov-stat-label">Days</div></div>'+
@@ -3003,14 +3014,14 @@ function renderOverview(){
       '</div>';
   }).join('');
 
-  const lodgeHtml=lodges.length?lodges.map(({di,day,s})=>{
+  const lodgeHtml=lodges.length?lodges.map(({di,si,day,s})=>{
     const nm=s.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim()||s.name;
     const id='auto-bk-lodge-'+nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,25);
     const booked=(state.checklist||[]).find(c=>c.id===id)?.done||false;
     const datePart=day.subtitle?day.subtitle.split(/\s*[·•]\s*/)[0].trim():'';
     return'<div class="lodge-card">'+
       '<div class="lodge-night-badge"><span class="lodge-night">Night '+(di+1)+'</span>'+(datePart?'<span class="lodge-date">'+_fmtDateWithYear(datePart)+'</span>':'')+'</div>'+
-      '<div class="lodge-info"><div class="lodge-name">'+_escHtml(nm)+(s.reservation||booked?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+_escHtml(s.notes)+'</div>':'')+'</div>'+
+      '<div class="lodge-info"><div class="lodge-name">'+_escHtml(nm)+(s.reservation||booked?'<span class="badge-booked-sm">&#10003; Booked</span>':'')+'</div>'+(s.notes?'<div class="lodge-notes">'+_escHtml(s.notes)+'</div>':'')+_lodgeBookingHtml(s,{dayIdx:di,stopIdx:si})+'</div>'+
       '<label class="lodge-booked"><input type="checkbox" '+(booked?'checked':'')+' onchange="toggleCheckItem(\''+id+'\',this.checked)"/> Booked</label>'+
       '</div>';
   }).join(''):'<div class="ov-empty">No lodging stops yet. Add stops with type "Lodging" to see them here.</div>';

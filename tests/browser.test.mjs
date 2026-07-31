@@ -223,7 +223,43 @@ test('a stop card never shows a duration that contradicts its own times', async 
   await page.close();
 });
 
-test('the hotel box exposes the reservation and its ticket', async () => {
+// CASE STUDY: "put the ticket button on the hotel box" means EVERY hotel box.
+// It was first implemented on the day bookend only, leaving the Overview's
+// lodging cards without it. This test walks every surface that renders a hotel,
+// so a future change to one cannot silently skip the others.
+test('EVERY hotel surface shows the reservation and its ticket', async () => {
+  const hotel = { name: 'Royal Horseguards Hotel', type: 'lodge', time: '9:00 PM', endTime: '9:30 PM',
+    reservation: '1072991266', ticketImage: 'data:image/png;base64,iVBORw0KGgo=', lat: 51.5063, lng: -0.1237 };
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [hotel] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '11:00 AM', endTime: '1:00 PM', lat: 51.5194, lng: -0.127 },
+      Object.assign({}, hotel, { name: 'Royal Horseguards Hotel' }),
+    ] },
+  ], { day: null });
+
+  const surfaces = [];
+  // 1. The OVERVIEW lodging cards.
+  await page.evaluate(() => switchDay(-1));
+  await page.waitForFunction(() => /lodge-card/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
+  surfaces.push(['overview lodging card', await page.innerHTML('#content-area')]);
+  // 2. The end-of-day "Tonight" bookend.
+  await page.evaluate(() => switchDay(1));
+  await page.waitForFunction(() => /hotel-bookend/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
+  surfaces.push(['day hotel bookend', await page.innerHTML('#content-area')]);
+  // 3. The hotel's own stop card.
+  await page.evaluate(() => switchDay(0));
+  await page.waitForFunction(() => /stop-card/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
+  surfaces.push(['hotel stop card', await page.innerHTML('#content-area')]);
+
+  for (const [what, html] of surfaces) {
+    assert.ok(/1072991266/.test(html), what + ' must show the confirmation number');
+    assert.ok(/showTicketViewer\(/.test(html), what + ' must offer a button that opens the reservation');
+  }
+  await page.close();
+});
+
+test('the day hotel bookend exposes the reservation and its ticket', async () => {
   const { page } = await openTrip([
     { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
       { name: 'Royal Horseguards Hotel', type: 'lodge', time: '9:00 PM', endTime: '9:30 PM',

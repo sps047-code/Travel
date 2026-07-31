@@ -21,7 +21,19 @@ echo "==> v$CURRENT -> v$NEXT"
 node -e "new Function(require('fs').readFileSync('trip.js','utf8'))"
 node -e "new Function(require('fs').readFileSync('trip-extras.js','utf8'))"
 node -e "new Function(require('fs').readFileSync('sw.js','utf8'))"
-node --test tests/*.test.mjs >/dev/null 2>&1 || { node --test tests/*.test.mjs; echo "TESTS FAILED — not releasing"; exit 1; }
+# UNIT tests (trip.js in a Node vm — proves the maths).
+node --test tests/live-core.test.mjs >/dev/null 2>&1 \
+  || { node --test tests/live-core.test.mjs; echo "UNIT TESTS FAILED — not releasing"; exit 1; }
+
+# BROWSER tests (the real pages in Chromium — proves the APP works). The unit
+# tests stub the DOM and Leaflet, so they passed while real bugs shipped. These
+# are the gate that actually reflects what the user sees.
+if [ -f tests/browser.test.mjs ]; then
+  echo "==> running browser tests (real Chromium)"
+  timeout 300 node --test tests/browser.test.mjs >/tmp/browser-test.log 2>&1 \
+    || { tail -40 /tmp/browser-test.log; echo "BROWSER TESTS FAILED — not releasing"; exit 1; }
+  grep -E "^# (pass|fail)" /tmp/browser-test.log | sed "s/^/    /"
+fi
 
 # Stamp the single version into every file that must agree.
 sed -i "s/APP_CODE_VERSION='v$CURRENT'/APP_CODE_VERSION='v$NEXT'/" trip.js

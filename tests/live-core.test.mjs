@@ -1044,3 +1044,43 @@ test('a day with no usable coordinates draws nothing (and does not throw)', () =
   assert.equal(pick([{ name: 'X', type: 'hike' }]).length, 0);
   assert.equal(pick([]).length, 0);
 });
+
+// ===========================================================================
+// OVERNIGHT LEGS. Stops after a flight that lands the next morning legitimately
+// have SMALLER clock times. Treating that as corruption clamped the whole day to
+// the 11:45 PM cap and destroyed real times just from opening the app.
+// ===========================================================================
+test('opening a day with an overnight flight does not rewrite its times', () => {
+  const heal = fn('_healLoadedItinerary');
+  ctx.state = { days: [{ title: 'D', stops: [
+    { name: 'Flight', type: 'flight', time: '8:30 PM', endTime: '10:00 AM', lat: 28.43, lng: -81.31 },
+    { name: 'Hotel check-in', type: 'lodge', time: '12:03 PM', endTime: '12:33 PM', lat: 51.51, lng: -0.12 },
+  ] }] };
+  heal();
+  const byName = {};
+  for (const s of ctx.state.days[0].stops) byName[s.name] = s.time + '->' + s.endTime;
+  assert.equal(byName['Flight'], '8:30 PM->10:00 AM', 'the flight is untouched');
+  assert.equal(byName['Hotel check-in'], '12:03 PM->12:33 PM', 'the arrival-day stop keeps its real times');
+});
+
+test('an overnight leg keeps later stops AFTER it in the list', () => {
+  const heal = fn('_healLoadedItinerary');
+  ctx.state = { days: [{ title: 'D', stops: [
+    { name: 'Flight', type: 'flight', time: '8:30 PM', endTime: '10:00 AM', lat: 28.43, lng: -81.31 },
+    { name: 'Hotel check-in', type: 'lodge', time: '12:03 PM', endTime: '12:33 PM', lat: 51.51, lng: -0.12 },
+  ] }] };
+  heal();
+  assert.equal(ctx.state.days[0].stops[0].name, 'Flight', 'you cannot check in before you fly');
+  assert.equal(ctx.state.days[0].stops[1].name, 'Hotel check-in');
+});
+
+test('a genuinely backwards day is STILL healed', () => {
+  const heal = fn('_healLoadedItinerary'), p = fn('_parseTimeMins');
+  ctx.state = { days: [{ title: 'D', stops: [
+    { name: 'A', type: 'hike', time: '2:00 PM', endTime: '3:00 PM', lat: 55.94, lng: -3.19 },
+    { name: 'B', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.95, lng: -3.18 },
+  ] }] };
+  heal();
+  const t = ctx.state.days[0].stops.map((s) => p(s.time));
+  assert.ok(t[1] > t[0], 'no overnight leg here, so the day is put back in order');
+});

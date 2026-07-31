@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v171';
+window.APP_CODE_VERSION='v172';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2191,7 +2191,24 @@ function _healEarlyDays(){
     let corrupt=(ft!=null&&ft<240&&!TR.includes(s0.type)); // absurdly early start
     // Times that run BACKWARDS in list order are the wrap-around signature (a bad
     // coordinate's huge travel time pushed the clock past midnight) — recompute.
-    if(!corrupt){let last=-1;for(const s of stops){const m=_parseTimeMins(s.time);if(m==null)continue;if(m<last){corrupt=true;break;}last=m;}}
+    // Times that run BACKWARDS in list order are the wrap-around signature — EXCEPT
+    // after an overnight leg. A flight leaving 8:30 PM and landing 10:00 AM means
+    // every following stop is legitimately on the next calendar day, so its smaller
+    // clock time is not corruption. Treating it as corruption ran _recalcDayTimes,
+    // which clamped the whole day to the 11:45 PM cap and destroyed real times.
+    if(!corrupt){
+      let last=-1,pastOvernight=false;
+      for(const s of stops){
+        const m=_parseTimeMins(s.time);
+        if(TR.includes(s.type)){
+          const e=_parseTimeMins(s.endTime);
+          if(m!=null&&e!=null&&e<m)pastOvernight=true;   // this leg lands the next day
+        }
+        if(m==null)continue;
+        if(!pastOvernight&&m<last){corrupt=true;break;}
+        last=m;
+      }
+    }
     if(corrupt)_recalcDayTimes(di);
   });
 }
@@ -4511,16 +4528,26 @@ function applyOptimizedOrder(){
 // the end — so a timeless stop never jumps out of chronological order.
 function _sortDayByTime(dayIdx){
   const day=state.days[dayIdx];const stops=day&&day.stops;if(!stops||stops.length<2)return;
+  const TR=['flight','train','bus'];
   const timed=stops.filter(s=>_parseTimeMins(s.time)!==null);
   if(timed.length<2)return;
-  let last=-1;
+  // Sorting by clock time alone is DATE-BLIND: after an overnight leg (a flight
+  // that leaves 8:30 PM and lands 10:00 AM) every later stop is on the NEXT
+  // calendar day, so its smaller clock time must not drag it above the flight.
+  // Each stop carries a day offset that increments past every overnight leg.
+  let last=-1,offset=0;
   const arr=stops.map((s,i)=>{
-    let m=_parseTimeMins(s.time);
-    if(m===null){ m=(last>=0?last:0)+0.001; }   // keep with the preceding timed stop
-    else last=m;
-    return {s,i,m};
+    const m=_parseTimeMins(s.time);
+    const key=(m===null)?((last>=0?last:0)+0.001):m;   // untimed keeps its place
+    const rec={s,i,off:offset,m:key};
+    if(m!==null)last=m;
+    if(TR.includes(s.type)){
+      const e=_parseTimeMins(s.endTime);
+      if(m!==null&&e!==null&&e<m){offset++;last=-1;}   // this leg lands the next day
+    }
+    return rec;
   });
-  arr.sort((a,b)=>(a.m-b.m)||(a.i-b.i));
+  arr.sort((a,b)=>(a.off-b.off)||(a.m-b.m)||(a.i-b.i));
   day.stops=arr.map(x=>x.s);
 }
 // Re-order every day chronologically (used on load so a trip synced/edited out of

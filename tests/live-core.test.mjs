@@ -642,3 +642,31 @@ test('a same-day stop is unaffected', () => {
   const stop = { time: '9:00 AM', endTime: '11:30 AM', startDate: '2026-08-04' };
   assert.equal(eAbs(stop) - sAbs(stop), 150, '2h 30min, no date rollover');
 });
+
+// ---------------------------------------------------------------------------
+// A bare "8:30" was silently read as 8:30 AM. That single ambiguity produced an
+// 8:30 PM flight showing a 25h 30min duration and a 5:30 AM airport time.
+test('an ambiguous bare time is canonicalised, never silently assumed AM', () => {
+  const canon = fn('_canonicalizeTimes');
+  ctx.state = { days: [{ stops: [
+    { name: 'Flight', type: 'flight', time: '8:30', endTime: '10AM' },
+  ] }] };
+  canon();
+  const s = ctx.state.days[0].stops[0];
+  assert.match(s.time, /AM|PM/, 'the stored time must state AM/PM: ' + s.time);
+  assert.match(s.endTime, /AM|PM/, 'the stored end time must state AM/PM: ' + s.endTime);
+});
+
+test('time input conversion round-trips without losing AM/PM', () => {
+  const toIn = fn('_toTimeInput'), fromIn = fn('_fromTimeInput');
+  assert.equal(toIn('8:30 PM'), '20:30', 'PM maps to 24h');
+  assert.equal(fromIn('20:30'), '8:30 PM', 'and back again');
+  assert.equal(fromIn(toIn('12:05 AM')), '12:05 AM', 'midnight hour survives');
+  assert.equal(fromIn(toIn('12:05 PM')), '12:05 PM', 'noon hour survives');
+});
+
+test('the real flight reads 13h 30min, not 25h 30min', () => {
+  const d = fn('_displayDuration');
+  const flight = { time: '8:30 PM', endTime: '10:00 AM', startDate: '2026-08-04', endDate: '2026-08-05' };
+  assert.equal(d(flight), '13h 30min');
+});

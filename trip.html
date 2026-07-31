@@ -586,7 +586,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v161'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v162'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -651,10 +651,10 @@ body.offline #audio-discover-btn{display:none!important}
     <div class="form-grid">
       <div class="form-group full"><label class="form-label">Name</label><input type="text" class="form-input" id="f-name" placeholder="Stop name"/></div>
       <div class="form-group"><label class="form-label">Start Date</label><input type="date" class="form-input" id="f-date"/></div>
-      <div class="form-group"><label class="form-label">Start Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-time" placeholder="e.g. 9:00 AM" oninput="_fSyncFromStart()"/></div>
+      <div class="form-group"><label class="form-label">Start Time <span style="color:var(--ruby)">*</span></label><input type="time" class="form-input" id="f-time" oninput="_fSyncFromStart()"/></div>
       <div class="form-group"><label class="form-label">Start Time Zone</label><input type="text" class="form-input" id="f-tz" list="tz-list" placeholder="auto from location" autocomplete="off"/></div>
       <div class="form-group"><label class="form-label">End Date</label><input type="date" class="form-input" id="f-enddate"/></div>
-      <div class="form-group"><label class="form-label">End Time <span style="color:var(--ruby)">*</span></label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM" oninput="_fSyncDurFromTimes()"/></div>
+      <div class="form-group"><label class="form-label">End Time <span style="color:var(--ruby)">*</span></label><input type="time" class="form-input" id="f-endtime" oninput="_fSyncDurFromTimes()"/></div>
       <div class="form-group"><label class="form-label">End Time Zone</label><input type="text" class="form-input" id="f-endtz" list="tz-list" placeholder="auto from location" autocomplete="off"/>
         <datalist id="tz-list"><option value="EDT"><option value="EST"><option value="CDT"><option value="CST"><option value="MDT"><option value="MST"><option value="PDT"><option value="PST"><option value="AKDT"><option value="HST"><option value="GMT"><option value="BST"><option value="CET"><option value="CEST"><option value="EET"><option value="EEST"><option value="IST"><option value="JST"><option value="AEST"><option value="AEDT"><option value="NZST"><option value="UTC"></datalist></div>
       <div class="form-group"><label class="form-label">Duration</label><input type="text" class="form-input" id="f-duration" placeholder="e.g. 2h, 45 min" oninput="_fSyncEndFromDur()"/></div>
@@ -813,7 +813,7 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=161"></script>
+<script src="trip.js?v=162"></script>
 <script>
 (function(){
   var MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
@@ -831,6 +831,6 @@ body.offline #audio-discover-btn{display:none!important}
   };
 })();
 </script>
-<script src="trip-extras.js?v=161"></script>
+<script src="trip-extras.js?v=162"></script>
 </body>
 </html>

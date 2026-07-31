@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v161';
+window.APP_CODE_VERSION='v162';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -786,7 +786,21 @@ function getNextHotelForDay(dayIdx){
   if(dayIdx>=state.days.length-1)return null;
   return _lastLodgeUpTo(dayIdx-1);
 }
-function hotelBookendHtml(label,lodge,otherStop){
+// `where` locates the ACTUAL stop this bookend mirrors ({dayIdx,stopIdx}), so the
+// hotel can be edited from the bookend instead of only from its own day's card.
+// Where does this exact stop object live? Identity match, so the bookend edits the
+// real stop rather than a copy.
+function _findStopPos(stop){
+  try{
+    if(!stop||!state||!state.days)return null;
+    for(let d=0;d<state.days.length;d++){
+      const i=(state.days[d].stops||[]).indexOf(stop);
+      if(i>=0)return {dayIdx:d,stopIdx:i};
+    }
+  }catch(e){}
+  return null;
+}
+function hotelBookendHtml(label,lodge,otherStop,where){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
   let travelHtml='';
   if(label.toLowerCase().startsWith('start')&&otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
@@ -798,7 +812,10 @@ function hotelBookendHtml(label,lodge,otherStop){
     const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+lodge.lat+','+lodge.lng+'&destination='+otherStop.lat+','+otherStop.lng+'&travelmode='+(tmode==='walk'?'walking':tmode==='train'?'transit':'driving');
     travelHtml='<div class="hotel-bookend-travel"><span class="hotel-bookend-dist">'+mi+' mi · '+tStr+' '+(TM_LABEL[tmode]||'Drive').toLowerCase()+'</span><a class="map-link" href="'+mapsUrl+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a></div>';
   }
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+travelHtml+'</div></div>';
+  const editBtn=(where&&where.dayIdx>=0&&where.stopIdx>=0)
+    ?'<button class="card-btn edit-btn" onclick="openEditStopModal('+where.dayIdx+','+where.stopIdx+')" title="Edit '+_escHtml(nm)+'" style="flex-shrink:0;align-self:center">&#9998;</button>'
+    :'';
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+travelHtml+'</div>'+editBtn+'</div>';
 }
 
 function transitBookendHtml(transitStop,firstStop){
@@ -852,7 +869,7 @@ function renderPanel(idx){
   const _upNextSi=_todayDayIdx===idx?_getUpNextStopIdx(idx):-1;
   let cards=_continuationHtml(idx)+
     (prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
-    showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'');
+    showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0],_findStopPos(prevHotel)):'');
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     const _tr=['flight','train','bus'].includes(s.type)?parsedTransitRoute(s):null;
@@ -946,7 +963,7 @@ function renderPanel(idx){
     (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
     (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
     '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode==='subway'?'train':rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
-    (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop):'')+
+    (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop,_findStopPos(todayHotel)):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
     (day.tip?'<div class="pro-tip"><div class="pro-tip-label">Pro Tip — Day '+(idx+1)+'</div><p>'+_escHtml(day.tip)+'</p></div>':'')+
@@ -1408,12 +1425,11 @@ function _parseTimeMins(t){
   else if(ap==='am'&&h===12)h=0;
   return h*60+mn;
 }
-function _formatTimeMins(mins){
-  mins=((mins%1440)+1440)%1440;
-  const h=Math.floor(mins/60),m=mins%60;
-  const hh=h%12||12,ampm=h<12?'am':'pm';
-  return hh+':'+(m<10?'0':'')+m+ampm;
-}
+// THE single canonical time format: "8:30 PM". There used to be two formatters
+// producing different shapes ("8:30pm" here, "8:30 PM" in _minsToClock), so the
+// same instant was written two ways and compared inconsistently. This now
+// delegates, so there is exactly one definition of what a time looks like.
+function _formatTimeMins(mins){ return _minsToClock(mins); }
 function _suggestStopTime(stops,newIdx){
   const prev=newIdx>0?stops[newIdx-1]:null;
   if(!prev||!prev.time)return null;
@@ -1529,6 +1545,38 @@ function _stopStartAbs(s,dayISO){ return _absMins((s&&s.startDate)||dayISO||'',s
 function _stopEndAbs(s,dayISO){
   const startISO=(s&&s.startDate)||dayISO||'';
   return _absMins(_endDateOf(s,startISO)||startISO,s&&s.endTime);
+}
+// ---- CANONICAL TIME I/O -----------------------------------------------------
+// A bare "8:30" is ambiguous and was silently read as 8:30 AM, which is how an
+// 8:30 PM flight produced a 25h 30min duration and a 5:30 AM airport time. Times
+// are entered through a native <input type="time"> (24h, unambiguous) and stored
+// in ONE canonical form: "8:30 PM".
+function _toTimeInput(str){                    // stored -> "HH:MM" for the input
+  const m=_parseTimeMins(str);
+  if(m==null)return '';
+  return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+}
+function _fromTimeInput(val){                  // "20:30" -> "8:30 PM"
+  const m=String(val||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return '';
+  const h=+m[1],mn=+m[2];
+  if(h>23||mn>59)return '';
+  return _formatTimeMins(h*60+mn);
+}
+// Rewrite any parseable time into the canonical form. This never changes WHEN a
+// stop is — it only makes the stored value unambiguous, so a wrong AM/PM becomes
+// visible instead of silently skewing durations.
+function _canonicalizeTimes(){
+  if(!state||!state.days)return false;
+  let changed=false;
+  state.days.forEach(day=>(day.stops||[]).forEach(s=>{
+    ['time','endTime','flightDepart'].forEach(k=>{
+      if(!s[k])return;
+      const c=_formatTimeMins(_parseTimeMins(s[k]));
+      if(c&&c!==s[k]){s[k]=c;changed=true;}
+    });
+  }));
+  return changed;
 }
 function _startTz(s){
   if(s&&s.tz)return s.tz;
@@ -1830,6 +1878,7 @@ function _dayStartAnchor(stops){
 // Order matters: fix broken end times, then broken timelines, then put the day
 // in chronological order.
 function _healLoadedItinerary(){
+  try{ _canonicalizeTimes(); }catch(e){}   // make every stored time unambiguous
   try{ _healBadEndTimes(); }catch(e){}
   try{ _healEarlyDays(); }catch(e){}
   try{ _sortAllDaysByTime(); }catch(e){}
@@ -2104,7 +2153,7 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('place-search').value='';
   document.getElementById('f-name').value=s.name||'';
   document.getElementById('f-date').value=dayDateStr(dayIdx);
-  document.getElementById('f-time').value=s.time||'';
+  document.getElementById('f-time').value=_toTimeInput(s.time);
   document.getElementById('f-type').value=s.type||'hike';
   document.getElementById('f-stars').value=s.stars||'';
   document.getElementById('f-lat').value=s.lat||'';
@@ -2121,7 +2170,7 @@ function openEditStopModal(dayIdx,stopIdx){
   const _ftz=document.getElementById('f-tz');if(_ftz)_ftz.value=s.tz||_startTz(s)||'';
   const _fetz=document.getElementById('f-endtz');if(_fetz)_fetz.value=s.endTz||_endTz(s)||'';
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
-  const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
+  const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=_toTimeInput(s.endTime);
   // Populate Duration from the stop FIRST. It was never set here, so it kept the
   // value from the previously-edited stop whenever the derive below bailed out —
   // which is how a 12:03pm–4:12pm stop showed a stale "2hrs".
@@ -2216,8 +2265,9 @@ function saveStop(){
   let lng=parseFloat(document.getElementById('f-lng').value);
   if(!name){alert('Please enter a stop name.');return}
   // Start Time and End Time are REQUIRED, and the end must be after the start.
-  const _startVal=(document.getElementById('f-time')?.value||'').trim();
-  const _endVal=(document.getElementById('f-endtime')?.value||'').trim();
+  // The inputs are native 24h time pickers; convert to the canonical stored form.
+  const _startVal=_fromTimeInput(document.getElementById('f-time')?.value)||(document.getElementById('f-time')?.value||'').trim();
+  const _endVal=_fromTimeInput(document.getElementById('f-endtime')?.value)||(document.getElementById('f-endtime')?.value||'').trim();
   const _sMin=_parseTimeMins(_startVal),_eMin=_parseTimeMins(_endVal);
   if(_sMin==null){alert('Please enter a valid Start Time (e.g. 9:00 AM).');return}
   if(_eMin==null){alert('Please enter a valid End Time (e.g. 11:00 AM).');return}
@@ -2262,7 +2312,7 @@ function saveStop(){
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
   const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),startDate:(document.getElementById('f-date')?.value||undefined),endDate:(document.getElementById('f-enddate')?.value||undefined),tz:(document.getElementById('f-tz')?.value.trim()||undefined),endTz:(document.getElementById('f-endtz')?.value.trim()||undefined),flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const stop={name,lat,lng,type:stopType,time:_startVal,endTime:_endVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),startDate:(document.getElementById('f-date')?.value||undefined),endDate:(document.getElementById('f-enddate')?.value||undefined),tz:(document.getElementById('f-tz')?.value.trim()||undefined),endTz:(document.getElementById('f-endtz')?.value.trim()||undefined),flightDepart:stopType==='flight'?(_startVal||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.
@@ -3427,7 +3477,12 @@ function setTransitMode(mode){
 }
 // End Time and Duration are INTERACTIVE: editing one recomputes the other, using
 // Start Time as the anchor.
-function _fVal(id){const e=document.getElementById(id);return e?e.value.trim():'';}
+function _fVal(id){
+  const e=document.getElementById(id);if(!e)return '';
+  const v=(e.value||'').trim();
+  // Native time inputs report 24h "20:30"; the helpers reason in canonical text.
+  return (e.type==='time')?(_fromTimeInput(v)||v):v;
+}
 // If the end time is earlier on the clock than the start, this stop runs past
 // midnight — roll the End Date to the next day automatically, the way a calendar
 // does, instead of making the user discover an "end before start" error.
@@ -3454,7 +3509,7 @@ function _fSyncDurFromTimes(){ // Start/End changed → Duration = End − Start
 }
 function _fSyncEndFromDur(){ // Duration changed → End = Start + Duration
   const s=_parseTimeMins(_fVal('f-time')),dur=_durationToMins(_fVal('f-duration')),e=document.getElementById('f-endtime');
-  if(e&&s!=null&&dur!=null&&dur>0)e.value=_formatTimeMins((s+dur)%1440);
+  if(e&&s!=null&&dur!=null&&dur>0){const t=_formatTimeMins((s+dur)%1440);e.value=(e.type==='time')?_toTimeInput(t):t;}
 }
 function _fSyncFromStart(){ // Start changed → keep the Duration if present (move End), else recompute Duration
   const dur=_durationToMins(_fVal('f-duration'));

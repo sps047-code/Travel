@@ -38,8 +38,22 @@ git add -A trip.js trip-extras.js sw.js trip.html index.html tests/ release.sh C
 git commit -q -m "v$NEXT: $MSG"
 git tag -f "v$NEXT" -m "v$NEXT: $MSG"
 
+# Push the branch. This is the release; it must succeed.
+PUSHED=0
 for i in 1 2 3 4; do
-  git push origin gh-pages && git push -f origin "v$NEXT" && break
+  if git push origin gh-pages; then PUSHED=1; break; fi
   sleep $((2 ** i))
 done
-echo "==> released v$NEXT ($(git rev-parse --short HEAD))"
+[ "$PUSHED" = 1 ] || { echo "PUSH FAILED — v$NEXT is NOT released"; exit 1; }
+
+# Verify the remote really has this commit. Never report a release we did not
+# confirm — a deploy that only *looks* successful is how stale builds hide.
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git ls-remote origin gh-pages | cut -f1)
+[ "$LOCAL" = "$REMOTE" ] || { echo "VERIFY FAILED: remote is $REMOTE, expected $LOCAL"; exit 1; }
+
+# Tags are best-effort: some proxies reject tag pushes. Say so rather than lie.
+git push -f origin "v$NEXT" 2>/dev/null && echo "==> tag v$NEXT pushed" \
+  || echo "==> note: tag v$NEXT is local only (remote rejected the tag push)"
+
+echo "==> released v$NEXT ($(git rev-parse --short HEAD)) — verified on origin/gh-pages"

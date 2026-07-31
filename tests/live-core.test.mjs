@@ -420,3 +420,11 @@ test('_airportArrivalHtml shows the be-at-airport time before departure', () => 
   assert.match(dom, /6:30 PM/, 'domestic 8:30 PM departure -> at airport 6:30 PM');
   assert.equal(h({ type: 'hike', time: '9:00 AM' }), '', 'non-flights get no airport line');
 });
+
+test('_flightDepMins tolerates timezone suffixes and reads notes', () => {
+  const dep = fn('_flightDepMins');
+  const p = fn('_parseTimeMins');
+  assert.equal(dep({ time: '8:30 PM' }), p('8:30 PM'));
+  assert.equal(dep({ time: '8:30 PM EDT' }), p('8:30 PM'), 'a timezone suffix must not break it');
+  assert.equal(dep({ time: '', notes: 'Departs Orlando 8:30 PM.' }), p('8:30 PM'), 'falls back to Departs ... in notes');
+});

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v150';
+window.APP_CODE_VERSION='v151';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -380,14 +380,34 @@ function _isIntlFlight(s){
 // Minutes you should be at the airport before departure: 180 intl, 120 domestic.
 function _airportBufferMin(s){ return _isIntlFlight(s)?180:120; }
 // The "be at the airport by" chip shown on a flight card (styled to stand out).
+// Best departure time for a flight: the stop's time, tolerating extra text like a
+// timezone suffix ("8:30 PM EDT"); else pull "Departs ... 8:30 PM" from the notes.
+function _flightDepMins(s){
+  if(!s)return null;
+  let d=_parseTimeMins(s.time);
+  if(d!=null)return d;
+  const fromTime=String(s.time||'').match(/(\d{1,2}:\d{2})\s*(am|pm)?/i);
+  if(fromTime)d=_parseTimeMins((fromTime[1]+' '+(fromTime[2]||'')).trim());
+  if(d!=null)return d;
+  const fromNotes=String(s.notes||'').match(/depart\w*[^0-9]{0,12}(\d{1,2}:\d{2})\s*(am|pm)?/i);
+  if(fromNotes)d=_parseTimeMins((fromNotes[1]+' '+(fromNotes[2]||'')).trim());
+  return d;
+}
 function _airportArrivalHtml(s){
-  if(!s||s.type!=='flight')return '';
-  const dep=_parseTimeMins(s.time);
-  if(dep==null)return '';
+  if(!s||s.type!=='flight')return '';   // shown on flights only
   const intl=_isIntlFlight(s), buf=intl?180:120;
-  let at=dep-buf, note='';
-  if(at<0){ at+=1440; note=' (the night before)'; }
-  return '<div style="margin-top:7px;display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;line-height:1.35">&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span></div>';
+  const dep=_flightDepMins(s);
+  let body;
+  if(dep==null){
+    // No readable departure time — still show the rule so a flight always tells
+    // the traveler how early to arrive.
+    body='&#128747; Arrive '+(intl?'3 hrs':'2 hrs')+' early '+(intl?'(international)':'(domestic)')+' &mdash; add the flight’s start time to see the exact airport time';
+  }else{
+    let at=dep-buf, note='';
+    if(at<0){ at+=1440; note=' (the night before)'; }
+    body='&#128747; Be at the airport by '+_escHtml(_minsToClock(at))+note+'<span style="font-weight:500;opacity:0.85"> &mdash; '+(intl?'3 hrs before (international)':'2 hrs before (domestic)')+'</span>';
+  }
+  return '<div style="margin-top:7px;display:inline-block;background:rgba(46,125,82,0.10);border:1px solid rgba(46,125,82,0.32);color:var(--pine);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;line-height:1.35">'+body+'</div>';
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';

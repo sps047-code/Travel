@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v157';
+window.APP_CODE_VERSION='v158';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -865,12 +865,12 @@ function renderPanel(idx){
       '<button class="card-btn" aria-label="Move stop later" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
       '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:11px">&#8599;</button>'+
       '</div>'+
-      '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:3px">&#128274;</span>':'')+_escHtml(s.time)+(stopTz(s)?'<span class="card-tz">'+_escHtml(stopTz(s).abbr)+'</span>':'')+' </span>':'')+'<div class="card-main">'+
+      '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:3px">&#128274;</span>':'')+_escHtml(s.time)+(_startTz(s)?'<span class="card-tz">'+_escHtml(_startTz(s))+'</span>':'')+_startEndDateHtml(s,idx)+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:12px">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
       _airportWarningHtml(si>0?day.stops[si-1]:prevLastStop,s)+
-      (_displayDuration(s)?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s))+'</span>':'')+
+      (_displayDuration(s,dayDateStr(idx))?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s,dayDateStr(idx)))+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
@@ -1460,12 +1460,70 @@ function _fmtDur(mins){
 // a card can never show a duration that contradicts the times printed beside it.
 // (The stored s.duration string is a second source of truth and goes stale — e.g.
 // a 12:03pm–4:12pm stop showing "2hrs". It is used only when there is no end time.)
-function _displayDuration(s){
+// ---- Start/End DATES and TIME ZONES -----------------------------------------
+// A stop's start and end each carry their own date and zone, so an overnight
+// flight reads "Aug 4, 8:30 PM EDT -> Aug 5, 9:35 AM BST".
+// The zone is whatever the user typed; otherwise it is derived from the stop's
+// coordinates (the arrival end uses the destination coords when we have them).
+// The small date line under a stop's time. Shows the start date, and the end
+// date whenever the stop finishes on a DIFFERENT day (an overnight flight), so
+// an arrival is never mistaken for the same morning.
+function _startEndDateHtml(s,dayIdx){
+  try{
+    const startISO=(s&&s.startDate)||(typeof dayDateStr==='function'?dayDateStr(dayIdx):'');
+    if(!startISO)return '';
+    const endISO=_endDateOf(s,startISO);
+    const sTxt=_fmtShortDate(startISO);
+    if(!sTxt)return '';
+    const crosses=endISO&&endISO!==startISO;
+    const style='display:block;font-size:9.5px;font-weight:600;letter-spacing:0.04em;color:var(--muted);margin-top:2px;white-space:nowrap';
+    if(!crosses)return '<span style="'+style+'">'+_escHtml(sTxt)+'</span>';
+    return '<span style="'+style+';color:var(--ruby)">'+_escHtml(sTxt)+' &rarr; '+_escHtml(_fmtShortDate(endISO))+(_endTz(s)?' '+_escHtml(_endTz(s)):'')+'</span>';
+  }catch(e){ return ''; }
+}
+function _startTz(s){
+  if(s&&s.tz)return s.tz;
+  const t=(typeof stopTz==='function')?stopTz(s):null;
+  return t?(t.abbr||''):'';
+}
+function _endTz(s){
+  if(s&&s.endTz)return s.endTz;
+  if(s&&s.destLat&&s.destLng){
+    const t=tzData[tzKey(s.destLat,s.destLng)];
+    if(t)return t.abbr||'';
+  }
+  return _startTz(s);
+}
+// The end DATE. Explicit if set; otherwise the start date, rolled to the next day
+// when the end time is earlier on the clock than the start (it crossed midnight).
+function _endDateOf(s,startISO){
+  if(s&&s.endDate)return s.endDate;
+  if(!startISO)return '';
+  const st=_parseTimeMins(s&&s.time),et=_parseTimeMins(s&&s.endTime);
+  if(st!=null&&et!=null&&et<st){
+    try{const d=new Date(startISO+'T00:00:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);}catch(e){}
+  }
+  return startISO;
+}
+function _fmtShortDate(iso){
+  if(!iso)return '';
+  try{const d=new Date(iso+'T00:00:00');return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}
+}
+function _displayDuration(s,startISO){
   if(!s)return '';
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
   if(st!=null&&et!=null){
-    const span=(et>st)?(et-st):(1440-st+et);   // wraps past midnight
-    if(span>0&&span<=1440)return _fmtDur(span);
+    // Use the explicit dates when we have them, so a multi-day leg is measured
+    // properly instead of being folded into a single 24-hour wrap.
+    let days=0;
+    const sISO=s.startDate||startISO||'';
+    const eISO=s.endDate||'';
+    if(sISO&&eISO){
+      try{ days=Math.round((new Date(eISO+'T00:00:00')-new Date(sISO+'T00:00:00'))/86400000); }catch(e){ days=0; }
+      if(!(days>=0&&days<=30))days=0;
+    }
+    let span=(days>0)?(days*1440+et-st):((et>st)?(et-st):(1440-st+et));
+    if(span>0&&span<=43200)return _fmtDur(span);
   }
   return s.duration||'';
 }
@@ -1973,6 +2031,7 @@ function openAddStopModal(dayIdx){
   document.getElementById('f-date').value=dayDateStr(dayIdx);
   _wireDurationSync();   // End Time <-> Duration stay in step here too
   const _fl0=document.getElementById('f-locked');if(_fl0)_fl0.checked=false;
+  ['f-enddate','f-tz','f-endtz'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value='auto';
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -2009,6 +2068,9 @@ function openEditStopModal(dayIdx,stopIdx){
   document.getElementById('f-flightnum').value=s.flightNumber||'';
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value=(s.international===true?'1':s.international===false?'0':'auto');
   const _fl=document.getElementById('f-locked');if(_fl)_fl.checked=!!s.locked;
+  const _fed=document.getElementById('f-enddate');if(_fed)_fed.value=s.endDate||'';
+  const _ftz=document.getElementById('f-tz');if(_ftz)_ftz.value=s.tz||_startTz(s)||'';
+  const _fetz=document.getElementById('f-endtz');if(_fetz)_fetz.value=s.endTz||_endTz(s)||'';
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
   // Populate Duration from the stop FIRST. It was never set here, so it kept the
@@ -2137,7 +2199,7 @@ function saveStop(){
   const _audioVal=(document.getElementById('f-audiourl')?.value||'').trim()||undefined;
   const _intlSel=(document.getElementById('f-intl')?.value)||'auto';
   const _intlVal=stopType==='flight'?(_intlSel==='1'?true:_intlSel==='0'?false:undefined):undefined;
-  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
+  const stop={name,lat,lng,type:stopType,time:document.getElementById('f-time').value.trim(),endTime:_endTimeVal,audioUrl:_audioVal,duration:_durVal,stars:document.getElementById('f-stars').value.trim()||null,notes:document.getElementById('f-notes').value.trim(),reservation:document.getElementById('f-reservation').value.trim()||null,url:_urlVal,from:document.getElementById('f-from').value.trim()||null,to:document.getElementById('f-to').value.trim()||null,airline:stopType==='flight'?(document.getElementById('f-airline').value.trim()||null):null,flightNumber:stopType==='flight'?(document.getElementById('f-flightnum').value.trim()||null):null,international:_intlVal,locked:(document.getElementById('f-locked')?.checked||undefined),startDate:(document.getElementById('f-date')?.value||undefined),endDate:(document.getElementById('f-enddate')?.value||undefined),tz:(document.getElementById('f-tz')?.value.trim()||undefined),endTz:(document.getElementById('f-endtz')?.value.trim()||undefined),flightDepart:stopType==='flight'?(document.getElementById('f-time').value.trim()||undefined):undefined,alt:document.getElementById('f-alt').checked,customImage,ticketImage:ticketImage||undefined,ticketFileName:ticketFileName||undefined,transitMode:transitMode||undefined,attendance:attendance};
   // Duration is a CALCULATED field for a normal activity: always the start→end
   // span. If the user typed a duration but no end time, derive the end from it;
   // otherwise the two times define the duration and any typed duration is ignored.

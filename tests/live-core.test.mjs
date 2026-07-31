@@ -577,3 +577,24 @@ test('_recalcDayTimes never moves a locked time', () => {
   recalc(0);
   assert.equal(p(ctx.state.days[0].stops[1].time), p('11:15 AM'), 'locked time held');
 });
+
+// Start/end each carry their own date and time zone (overnight flights).
+test('_endDateOf rolls to the next day when the end time wraps past midnight', () => {
+  const f = fn('_endDateOf');
+  assert.equal(f({ time: '8:30 PM', endTime: '9:35 AM' }, '2026-08-04'), '2026-08-05', 'lands the next morning');
+  assert.equal(f({ time: '9:00 AM', endTime: '11:00 AM' }, '2026-08-04'), '2026-08-04', 'same-day stop');
+  assert.equal(f({ time: '8:30 PM', endTime: '9:35 AM', endDate: '2026-08-06' }, '2026-08-04'), '2026-08-06', 'explicit end date wins');
+});
+
+test('duration measures a real multi-day span, not a 24h wrap', () => {
+  const d = fn('_displayDuration');
+  // Aug 4 8:30 PM -> Aug 5 9:35 AM is 13h 5min.
+  assert.equal(d({ time: '8:30 PM', endTime: '9:35 AM', startDate: '2026-08-04', endDate: '2026-08-05' }), '13h 5min');
+});
+
+test('the time zone falls back to the stop location when not typed', () => {
+  const st = fn('_startTz'), et = fn('_endTz');
+  assert.equal(st({ tz: 'EDT' }), 'EDT', 'an explicit zone is used as typed');
+  assert.equal(et({ tz: 'EDT', endTz: 'BST' }), 'BST', 'the arrival zone is independent');
+  assert.equal(et({ tz: 'EDT' }), 'EDT', 'falls back to the start zone');
+});

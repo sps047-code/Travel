@@ -17,14 +17,14 @@
 //      mcp__github__get_file_contents (ref: refs/heads/gh-pages).
 // =============================================================================
 
-const CACHE = 'seasons-v157';
+const CACHE = 'seasons-v158';
 const PRECACHE = [
   '/Travel/index.html',
   '/Travel/trip.html',
   '/Travel/trip.js',
-  '/Travel/trip.js?v=157',
+  '/Travel/trip.js?v=158',
   '/Travel/trip-extras.js',
-  '/Travel/trip-extras.js?v=157',
+  '/Travel/trip-extras.js?v=158',
   '/Travel/app.webmanifest',
   '/Travel/icon-192.png',
   '/Travel/icon-512.png',

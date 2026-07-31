@@ -915,3 +915,66 @@ test('saving with a Duration but no End Time computes the end time', () => {
     ctx.document.getElementById = realGet; ctx.document.querySelector = realQS; ctx.alert = realAlert;
   }
 });
+
+// ===========================================================================
+// MAP: the drive to the airport must be drawn. A flight stop's coordinates ARE
+// the departure airport, so filtering flights out of the route deleted that
+// endpoint — Day 1 (New Port Richey -> Orlando airport -> fly) drew no line.
+// ===========================================================================
+test('_groundSegments keeps the drive TO the airport', () => {
+  const seg = fn('_groundSegments');
+  const stops = [
+    { name: 'New Port Richey', type: 'hike', lat: 28.2442, lng: -82.7192 },
+    { name: 'Flight ZO 784', type: 'flight', lat: 28.4312, lng: -81.3081 },   // = MCO
+  ];
+  const segs = seg(stops);
+  assert.equal(segs.length, 1, 'one ground segment: the drive to the airport');
+  assert.equal(segs[0].length, 2, 'both endpoints kept');
+  assert.equal(segs[0][0].name, 'New Port Richey');
+  assert.equal(segs[0][1].name, 'Flight ZO 784', 'the airport end must survive');
+});
+
+test('_groundSegments never draws a road line for the flight itself', () => {
+  const seg = fn('_groundSegments');
+  // Drive to the airport, fly, then drive from the arrival airport to a hotel.
+  const stops = [
+    { name: 'Home', type: 'hike', lat: 28.2442, lng: -82.7192 },
+    { name: 'Flight', type: 'flight', lat: 28.4312, lng: -81.3081 },
+    { name: 'Hotel', type: 'lodge', lat: 51.5063, lng: -0.1237 },
+  ];
+  const segs = seg(stops);
+  assert.equal(segs.length, 1, 'the flight ends the segment; the lone hotel starts no new one');
+  const names = segs.flat().map(s => s.name);
+  assert.ok(!(names.includes('Flight') && names.includes('Hotel')),
+    'the flight and the arrival-side stop must never share a road segment');
+});
+
+test('_groundSegments splits a day that drives, flies, then drives again', () => {
+  const seg = fn('_groundSegments');
+  const stops = [
+    { name: 'Home', type: 'hike', lat: 28.24, lng: -82.72 },
+    { name: 'Flight', type: 'flight', lat: 28.43, lng: -81.31 },
+    // The train knows where it arrives (Victoria), so the onward drive is drawable.
+    { name: 'Gatwick Express', type: 'train', lat: 51.1537, lng: -0.1821,
+      to: 'London Victoria', destLat: 51.4952, destLng: -0.1441 },
+    { name: 'Hotel', type: 'lodge', lat: 51.5063, lng: -0.1237 },
+  ];
+  const segs = seg(stops);
+  assert.equal(segs.length, 2, 'two ground segments, split by the flight');
+  assert.deepEqual(JSON.stringify(segs[0].map(s => s.name)), JSON.stringify(['Home', 'Flight']));
+  // The second resumes at the train's ARRIVAL, then drives on to the hotel.
+  assert.equal(segs[1].length, 2);
+  assert.equal(segs[1][0].lat, 51.4952, 'resumes at London Victoria, not Gatwick');
+  assert.equal(segs[1][1].name, 'Hotel');
+});
+
+test('_groundSegments ignores alternates and stops without coordinates', () => {
+  const seg = fn('_groundSegments');
+  const segs = seg([
+    { name: 'A', type: 'hike', lat: 28.24, lng: -82.72 },
+    { name: 'Alt', type: 'hike', lat: 28.3, lng: -82.6, alt: true },
+    { name: 'NoCoords', type: 'hike' },
+    { name: 'B', type: 'hike', lat: 28.43, lng: -81.31 },
+  ]);
+  assert.equal(JSON.stringify(segs.map(x => x.map(s => s.name))), JSON.stringify([['A', 'B']]));
+});

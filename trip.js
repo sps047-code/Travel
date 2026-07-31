@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v168';
+window.APP_CODE_VERSION='v169';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -517,8 +517,34 @@ function _dropCoordOutliers(stops){
   const medLat=_median(withCoord.map(s=>s.lat)),medLng=_median(withCoord.map(s=>s.lng));
   return stops.filter(s=>!s.lat||!s.lng||haversine(medLat,medLng,s.lat,s.lng)<=_ROUTE_OUTLIER_MI);
 }
+// Route a single GROUND segment. Callers pass segments from _groundSegments, so
+// this must NOT drop transit stops: a flight/train stop's coordinates are the
+// airport/station you travel TO by road, and dropping it deleted that endpoint
+// (Day 1 lost the whole New Port Richey -> Orlando airport drive).
+// Split a day into GROUND segments for the map. A transit stop (flight/train/bus)
+// is a place you travel TO on the ground — the airport — so it ENDS a segment.
+// The leg AFTER it is the flight itself and must never be drawn as a road line.
+function _groundSegments(stops){
+  const TR=['flight','train','bus'];
+  const segs=[];let cur=[];
+  for(const s of (stops||[])){
+    if(s.alt||!_validLL(s))continue;
+    cur.push(s);
+    if(TR.includes(s.type)){
+      if(cur.length>1)segs.push(cur);
+      // The next ground segment resumes where this transit ARRIVES, when we know
+      // it (destLat/destLng) — otherwise the onward drive from the arrival
+      // airport/station would be dropped entirely.
+      cur=(s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng}))
+        ?[{name:(s.to||s.name||'Arrival'),type:'arrival',lat:s.destLat,lng:s.destLng}]
+        :[];
+    }
+  }
+  if(cur.length>1)segs.push(cur);
+  return segs;
+}
 async function fetchRoute(stops){
-  let rs=stops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight');
+  let rs=stops.filter(s=>!s.alt&&s.lat&&s.lng);
   rs=_dropCoordOutliers(rs);
   if(rs.length<2)return null;
   const key=rs.map(s=>s.lat+','+s.lng).join('|');
@@ -600,16 +626,20 @@ async function renderDayMap(idx,fit=true){
   // Draw a solid straight connector FIRST so a line is always visible even if the
   // routing service is slow or down. When the road route comes back it's drawn on
   // top and becomes the line you see. No dashed lines.
-  const straight=_dropCoordOutliers(routeStops.filter(s=>!s.alt&&s.lat&&s.lng&&s.type!=='flight')).map(s=>[s.lat,s.lng]);
-  let fallbackLine=null;
-  if(straight.length>1)fallbackLine=L.polyline(straight,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer);
+  const segs=_groundSegments(routeStops);
+  const fallbacks=segs.map(seg=>{
+    const pts=_dropCoordOutliers(seg).map(s=>[s.lat,s.lng]);
+    return pts.length>1?L.polyline(pts,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer):null;
+  });
   try{
-    const rc=await fetchRoute(routeStops);
-    if(gen!==_mapGen)return;
-    if(rc){
-      // Real road route available — replace the straight connector with it.
-      if(fallbackLine)routeLayer.removeLayer(fallbackLine);
-      L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
+    for(let i=0;i<segs.length;i++){
+      const rc=await fetchRoute(segs[i]);
+      if(gen!==_mapGen)return;
+      if(rc){
+        // Real road route available — replace that segment's straight connector.
+        if(fallbacks[i])routeLayer.removeLayer(fallbacks[i]);
+        L.polyline(rc.map(c=>[c[1],c[0]]),{color:'#C1512D',weight:3.5,opacity:0.75}).addTo(routeLayer);
+      }
     }
     st.style.display='none';
   }catch(e){st.style.display='none'}

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v155';
+window.APP_CODE_VERSION='v156';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -870,7 +870,7 @@ function renderPanel(idx){
       (_tr?'<div class="card-notes" style="font-size:12px;font-weight:600;margin-top:3px">'+_escHtml(_tr.from)+' → '+_escHtml(_tr.to)+'</div>':'')+
       _airportArrivalHtml(s)+
       _airportWarningHtml(si>0?day.stops[si-1]:prevLastStop,s)+
-      (s.duration?'<span class="card-duration">&#9201; '+_escHtml(s.duration)+'</span>':'')+
+      (_displayDuration(s)?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s))+'</span>':'')+
       (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:4px;font-size:11.5px;font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
@@ -1456,6 +1456,19 @@ function _fmtDur(mins){
 // How long a stop occupies. The start→end SPAN is the source of truth; the
 // duration string is a calculated mirror of it. Fall back to a stored duration
 // only when there is no usable end time yet, then to a per-type default.
+// The duration to DISPLAY. Always derived from the stop's own start→end times, so
+// a card can never show a duration that contradicts the times printed beside it.
+// (The stored s.duration string is a second source of truth and goes stale — e.g.
+// a 12:03pm–4:12pm stop showing "2hrs". It is used only when there is no end time.)
+function _displayDuration(s){
+  if(!s)return '';
+  const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
+  if(st!=null&&et!=null){
+    const span=(et>st)?(et-st):(1440-st+et);   // wraps past midnight
+    if(span>0&&span<=1440)return _fmtDur(span);
+  }
+  return s.duration||'';
+}
 function _stopVisitMins(s){
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
   const span=(st!=null&&et!=null&&et>st)?et-st:null;
@@ -1700,7 +1713,13 @@ function _healBadEndTimes(){
   const TR=['flight','train','bus'];
   state.days.forEach(day=>{
     (day.stops||[]).forEach(s=>{
-      if(TR.includes(s.type))return;   // transit keeps its own arrival/duration
+      if(TR.includes(s.type)){
+        // Transit keeps its own arrival time, but its stored duration must still
+        // match start→arrival or the card contradicts itself.
+        const ts=_parseTimeMins(s.time),te=_parseTimeMins(s.endTime);
+        if(ts!=null&&te!=null){const sp=(te>ts)?(te-ts):(1440-ts+te);if(sp>0&&sp<=1440)s.duration=_fmtDur(sp);}
+        return;
+      }
       const st=_parseTimeMins(s.time);
       if(st==null)return;              // untimed stop: nothing to compute from
       let et=_parseTimeMins(s.endTime);

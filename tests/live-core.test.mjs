@@ -498,3 +498,25 @@ test('End Time and Duration stay in sync in both directions', () => {
     assert.equal(F['f-duration'].value, '5hrs', 'overnight span is 5 hours, not the stale 2hrs');
   } finally { ctx.document.getElementById = realGet; }
 });
+
+// The displayed duration must ALWAYS agree with the times on the same card.
+test('_displayDuration is derived from the times, never a stale stored string', () => {
+  const d = fn('_displayDuration');
+  // The screenshot case: stored "2hrs" contradicts 12:03pm-4:12pm.
+  assert.equal(d({ time: '12:03pm', endTime: '4:12pm', duration: '2hrs' }), '4h 9min');
+  // Overnight transit.
+  assert.equal(d({ time: '9:00 PM', endTime: '2:00 AM', duration: '45min' }), '5hrs');
+  // No end time: fall back to whatever was stored.
+  assert.equal(d({ time: '9:00 AM', duration: '90min' }), '90min');
+  assert.equal(d({ time: '9:00 AM' }), '');
+});
+
+test('a rendered card never shows a duration that contradicts its times', () => {
+  ctx.state = { title: 'T', days: [{ title: 'D', stops: [
+    { name: 'British Museum', type: 'hike', time: '12:03pm', endTime: '4:12pm', duration: '2hrs', lat: 51.5194, lng: -0.127 },
+  ] }] };
+  ctx.currentDayIdx = 0;
+  const html = fn('renderPanel')(0);
+  assert.ok(!/2hrs/.test(html), 'the stale stored 2hrs must not be rendered');
+  assert.ok(/4h 9min/.test(html), 'the card must show the real 4h 9min span');
+});

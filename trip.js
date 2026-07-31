@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v153';
+window.APP_CODE_VERSION='v154';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1912,6 +1912,7 @@ function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
   ['place-search','f-name','f-date','f-time','f-endtime','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f-date').value=dayDateStr(dayIdx);
+  _wireDurationSync();   // End Time <-> Duration stay in step here too
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value='auto';
   document.getElementById('f-type').value='hike';
   document.getElementById('f-alt').checked=false;
@@ -1949,6 +1950,11 @@ function openEditStopModal(dayIdx,stopIdx){
   const _fi=document.getElementById('f-intl');if(_fi)_fi.value=(s.international===true?'1':s.international===false?'0':'auto');
   const _fu=document.getElementById('f-url');if(_fu)_fu.value=s.url||'';
   const _fet=document.getElementById('f-endtime');if(_fet)_fet.value=s.endTime||'';
+  // Populate Duration from the stop FIRST. It was never set here, so it kept the
+  // value from the previously-edited stop whenever the derive below bailed out —
+  // which is how a 12:03pm–4:12pm stop showed a stale "2hrs".
+  const _fd=document.getElementById('f-duration');if(_fd)_fd.value=s.duration||'';
+  _wireDurationSync();    // listeners survive autofill/dictation/paste
   _fSyncDurFromTimes();   // show the derived duration for the loaded start/end
   document.getElementById('f-alt').checked=!!s.alt;
   document.getElementById('search-results').innerHTML='';
@@ -3238,15 +3244,33 @@ function setTransitMode(mode){
 function _fVal(id){const e=document.getElementById(id);return e?e.value.trim():'';}
 function _fSyncDurFromTimes(){ // Start/End changed → Duration = End − Start
   const s=_parseTimeMins(_fVal('f-time')),en=_parseTimeMins(_fVal('f-endtime')),d=document.getElementById('f-duration');
-  if(d&&s!=null&&en!=null&&en>s)d.value=_fmtDur(en-s);
+  if(!d||s==null||en==null)return;
+  // An end at/before the start means the stop runs past midnight — show the real
+  // elapsed time instead of leaving a stale duration from a previous stop.
+  const span=(en>s)?(en-s):(1440-s+en);
+  if(span>0&&span<=1440)d.value=_fmtDur(span);
 }
 function _fSyncEndFromDur(){ // Duration changed → End = Start + Duration
   const s=_parseTimeMins(_fVal('f-time')),dur=_durationToMins(_fVal('f-duration')),e=document.getElementById('f-endtime');
-  if(e&&s!=null&&dur!=null&&dur>0)e.value=_formatTimeMins(s+dur);
+  if(e&&s!=null&&dur!=null&&dur>0)e.value=_formatTimeMins((s+dur)%1440);
 }
 function _fSyncFromStart(){ // Start changed → keep the Duration if present (move End), else recompute Duration
   const dur=_durationToMins(_fVal('f-duration'));
   if(dur!=null&&dur>0)_fSyncEndFromDur(); else _fSyncDurFromTimes();
+}
+// Wire End Time <-> Duration on EVERY event that can change a field. `oninput`
+// alone missed changes made by autofill, dictation, paste and some mobile
+// keyboards, which left the two fields disagreeing on screen.
+function _wireDurationSync(){
+  const bind=(id,fn)=>{
+    const el=document.getElementById(id);
+    if(!el||el._durWired)return;
+    el._durWired=1;
+    ['input','change','blur','keyup','paste'].forEach(ev=>el.addEventListener(ev,()=>setTimeout(fn,0)));
+  };
+  bind('f-time',_fSyncFromStart);
+  bind('f-endtime',_fSyncDurFromTimes);
+  bind('f-duration',_fSyncEndFromDur);
 }
 function _defaultTransitMode(a,b){
   if(!a||!b)return'drive';

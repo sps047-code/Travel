@@ -475,3 +475,26 @@ test('an unreachable stop is pushed later, never earlier', () => {
   assert.equal(p(ctx.state.days[0].stops[0].time), p('9:30 AM'), 'reachable time untouched');
   assert.ok(p(ctx.state.days[0].stops[1].time) > p('11:15 AM'), 'impossible arrival pushed later');
 });
+
+// ---------------------------------------------------------------------------
+// End Time <-> Duration must always agree (screenshot: 12:03pm–4:12pm showing
+// a stale "2hrs" carried over from a previously-edited stop).
+test('End Time and Duration stay in sync in both directions', () => {
+  const F = { 'f-time': { value: '' }, 'f-endtime': { value: '' }, 'f-duration': { value: '' } };
+  const realGet = ctx.document.getElementById;
+  ctx.document.getElementById = (id) => F[id] || realGet(id);
+  try {
+    // Editing Duration moves End Time.
+    F['f-time'].value = '12:03pm'; F['f-endtime'].value = '4:12pm'; F['f-duration'].value = '2hrs';
+    fn('_fSyncEndFromDur')();
+    assert.equal(ctx._parseTimeMins(F['f-endtime'].value), ctx._parseTimeMins('2:03 PM'), 'End = Start + Duration');
+    // Editing End Time moves Duration.
+    F['f-time'].value = '12:03pm'; F['f-endtime'].value = '4:12pm'; F['f-duration'].value = '2hrs';
+    fn('_fSyncDurFromTimes')();
+    assert.equal(F['f-duration'].value, '4h 9min', 'Duration = End - Start, not the stale 2hrs');
+    // A stop running past midnight must show real elapsed time, not a stale value.
+    F['f-time'].value = '9:00 PM'; F['f-endtime'].value = '2:00 AM'; F['f-duration'].value = '2hrs';
+    fn('_fSyncDurFromTimes')();
+    assert.equal(F['f-duration'].value, '5hrs', 'overnight span is 5 hours, not the stale 2hrs');
+  } finally { ctx.document.getElementById = realGet; }
+});

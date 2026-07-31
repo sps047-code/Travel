@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v158';
+window.APP_CODE_VERSION='v159';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -850,8 +850,9 @@ function renderPanel(idx){
   const WX_OUTDOOR=['hike','drive'];
   const _todayDayIdx=_getTodayDayIdx();
   const _upNextSi=_todayDayIdx===idx?_getUpNextStopIdx(idx):-1;
-  let cards=prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
-    showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'';
+  let cards=_continuationHtml(idx)+
+    (prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
+    showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0]):'');
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
     const _tr=['flight','train','bus'].includes(s.type)?parsedTransitRoute(s):null;
@@ -1468,6 +1469,31 @@ function _fmtDur(mins){
 // The small date line under a stop's time. Shows the start date, and the end
 // date whenever the stop finishes on a DIFFERENT day (an overnight flight), so
 // an arrival is never mistaken for the same morning.
+// A stop that STARTS on an earlier day and ENDS on this one is ONE event. It is
+// shown here as a read-only continuation banner (never a second stop), so the day
+// reads like a calendar without duplicating the event or splitting its data.
+function _continuationHtml(dayIdx){
+  try{
+    if(dayIdx<=0)return '';
+    const prev=state.days[dayIdx-1];
+    if(!prev||!prev.stops||!prev.stops.length)return '';
+    const last=prev.stops[prev.stops.length-1];
+    if(!last)return '';
+    const ls=_parseTimeMins(last.time),le=_parseTimeMins(last.endTime);
+    if(ls==null||le==null||le>=ls)return '';        // did not cross midnight
+    const thisISO=dayDateStr(dayIdx);
+    const endISO=_endDateOf(last,dayDateStr(dayIdx-1));
+    if(thisISO&&endISO&&endISO!==thisISO)return ''; // ends on some other day
+    const tz=_endTz(last);
+    const dur=_displayDuration(last,dayDateStr(dayIdx-1));
+    return '<div style="margin:0 0 12px;padding:10px 13px;border-left:3px solid var(--river,#4a7fa5);background:rgba(74,127,165,0.08);border-radius:0 9px 9px 0;font-family:var(--font-ui);font-size:12.5px;line-height:1.45">'+
+      '<div style="font-weight:700;color:var(--river,#4a7fa5);letter-spacing:0.04em;font-size:10.5px;text-transform:uppercase;margin-bottom:2px">Continues from Day '+dayIdx+'</div>'+
+      '<div><b>'+_escHtml(last.name||'Travel')+'</b> arrives <b>'+_escHtml(last.endTime||'')+'</b>'+(tz?' '+_escHtml(tz):'')+
+      (dur?' &middot; '+_escHtml(dur)+' total':'')+'</div>'+
+      '<div style="color:var(--muted);font-size:11px;margin-top:2px">Edit it on Day '+dayIdx+' — it is one event, not a separate stop.</div>'+
+    '</div>';
+  }catch(e){ return ''; }
+}
 function _startEndDateHtml(s,dayIdx){
   try{
     const startISO=(s&&s.startDate)||(typeof dayDateStr==='function'?dayDateStr(dayIdx):'');

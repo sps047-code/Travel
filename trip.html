@@ -582,8 +582,31 @@ body.offline #audio-discover-btn{display:none!important}
     // TRUTH: the version stamped inside the running trip.js. If the JS is stale
     // (old code running behind a newer cache), this shows the OLD number — so the
     // badge can never claim a version the executing code isn't actually running.
-    if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v158'; // fallback before trip.js loads
+    if(window.APP_CODE_VERSION){
+      el.textContent=window.APP_CODE_VERSION;
+      // The header shows the version of the CODE that is RUNNING. The service
+      // worker may already have downloaded a NEWER build, in which case the page
+      // is stale and every recent fix is invisible. Surface that instead of
+      // letting the two numbers quietly disagree.
+      try{
+        if('caches' in window)caches.keys().then(function(keys){
+          var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
+          if(!vs.length)return;
+          var newest=Math.max.apply(null,vs), running=parseInt(String(window.APP_CODE_VERSION).replace(/\D/g,''),10);
+          if(newest>running){
+            el.textContent=window.APP_CODE_VERSION+' - v'+newest+' ready';
+            el.style.color='#f0a500';el.style.cursor='pointer';
+            el.title='This page is running old code (v'+running+'). Tap to load v'+newest+'.';
+            el.onclick=function(){
+              try{ if('serviceWorker' in navigator)navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.update();});}); }catch(e){}
+              location.reload(true);
+            };
+          }
+        });
+      }catch(e){}
+      return;
+    }
+    if(!el.textContent)el.textContent='v159'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -794,7 +817,7 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=158"></script>
+<script src="trip.js?v=159"></script>
 <script>
 (function(){
   var MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
@@ -812,6 +835,6 @@ body.offline #audio-discover-btn{display:none!important}
   };
 })();
 </script>
-<script src="trip-extras.js?v=158"></script>
+<script src="trip-extras.js?v=159"></script>
 </body>
 </html>

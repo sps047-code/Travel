@@ -258,7 +258,27 @@ function _dismissArrival(name,time){
   const s=_loadDism(); s.add((name||'')+'|'+(time||''));
   try{ localStorage.setItem(_dismKey(),JSON.stringify([...s])); }catch(e){}
 }
+// DISABLED. This used to CREATE a duplicate "arrival" stop at the top of the next
+// day for any overnight travel. That is the wrong model: a stop is ONE event with a
+// start (date + time) and an end (date + time). If it ends on a later date it is
+// still one event, shown as a continuation on the next day — not a second stop the
+// user then has to manage or delete. It now only STRIPS the duplicates it created
+// before, so existing itineraries clean themselves up once.
 function _syncOvernightArrivals(){
+  if(_oaSyncing) return false;
+  if(typeof state==='undefined'||!state||!state.days) return false;
+  _oaSyncing=true;
+  let removed=false;
+  state.days.forEach(day=>{
+    if(!day.stops)return;
+    const before=day.stops.length;
+    day.stops=day.stops.filter(s=>!s._autoArrival);
+    if(day.stops.length!==before)removed=true;
+  });
+  _oaSyncing=false;
+  return removed;
+}
+function _syncOvernightArrivals_DISABLED(){
   if(_oaSyncing) return false;
   if(typeof state==='undefined'||!state||!state.days) return false;
   _oaSyncing=true;

@@ -598,3 +598,22 @@ test('the time zone falls back to the stop location when not typed', () => {
   assert.equal(et({ tz: 'EDT', endTz: 'BST' }), 'BST', 'the arrival zone is independent');
   assert.equal(et({ tz: 'EDT' }), 'EDT', 'falls back to the start zone');
 });
+
+// One stop that spans midnight is ONE event: shown as a continuation on the day
+// it ends, never duplicated as a second stop the user has to manage.
+test('an overnight stop appears as a continuation, not a duplicate stop', () => {
+  ctx.state = { title: 'T', days: [
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Flight MCO-LGW', type: 'flight', time: '8:30 PM', endTime: '9:35 AM', endTz: 'BST', lat: 28.43, lng: -81.31 },
+    ] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '11:00 AM', lat: 51.5194, lng: -0.127 },
+    ] },
+  ] };
+  ctx.currentDayIdx = 1;
+  const html = fn('renderPanel')(1);
+  assert.match(html, /Continues from Day 1/, 'day 2 must show the flight as a continuation');
+  assert.match(html, /9:35 AM/, 'it must state the arrival time');
+  // Day 2 still owns exactly ONE real stop — the flight was not duplicated into it.
+  assert.equal(ctx.state.days[1].stops.length, 1, 'no duplicate arrival stop was added');
+});

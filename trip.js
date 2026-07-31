@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v167';
+window.APP_CODE_VERSION='v168';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -48,15 +48,19 @@ function saveState(changeDesc='',localOnly=false){
     if(_baselineErrKeys===null)_seedLogicBaseline();
     let errs=_logicErrors(state);
     let added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
-    if(added.length){
-      // First TRY to make it fit, rather than refusing and making the user fix it.
-      // 1) Move anything scheduled before the day's arrival to after you land.
-      // 2) Then shrink visit durations if travel still does not fit.
-      const snap=JSON.stringify(state);
-      const shifted=_shiftStopsAfterArrival(state);
-      const changed=_relaxDurationsToFit(state);
-      errs=_logicErrors(state);
-      added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
+    // ALWAYS try to make the day work — not only when this particular edit added
+    // the error. A conflict inherited from earlier data is not the user's chore to
+    // fix by hand; touching anything should tidy the day up.
+    //   1) move anything scheduled before the day's arrival to after you land
+    //   2) trim a previous visit so a later stop stays at the time it was given
+    //   3) only then push a still-unreachable stop later
+    const snap=JSON.stringify(state);
+    const shifted=_shiftStopsAfterArrival(state);
+    const changed=_relaxDurationsToFit(state);
+    const pushed=_pushUnreachableLater(state);
+    errs=_logicErrors(state);
+    added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
+    if(added.length||shifted.length||changed.length||pushed.length){
       if(added.length){
         // Still impossible even after shrinking visits to zero → refuse; roll back
         // the shrink so we don't leave half-adjusted durations.
@@ -66,6 +70,7 @@ function saveState(changeDesc='',localOnly=false){
       }
       if(shifted.length)_showArrivalShiftWarning(shifted);    // moved after landing — warn only
       if(changed.length)_showDurationAdjustWarning(changed);  // fit by trimming — warn only
+      if(pushed.length)_showReachabilityPushWarning(pushed);  // moved later to be reachable
     }
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
@@ -1827,7 +1832,7 @@ function _logicErrors(st){
         if(dist>=1){
           const mode=s.transitMode||_defaultTransitMode(prev,s);
           const mph=_MAX_MPH[mode]||_MAX_MPH.drive;
-          const minTravel=Math.round(dist/mph*60);         // fastest possible, ignoring stops/traffic
+          const minTravel=Math.max(1,Math.round(dist/mph*60));         // fastest possible, ignoring stops/traffic
           const allotted=t-prevDepart;
           if(allotted<minTravel)errs.push({rule:'Impossible travel',msg:D+'"'+s.name+'" ('+s.time+') can’t be reached in time — it is '+Math.round(dist)+' mi from "'+prev.name+'", which takes at least '+minTravel+' min even at top speed, but only '+Math.max(0,allotted)+' min is allowed.'});
         }
@@ -1918,6 +1923,40 @@ function _shiftStopsAfterArrival(st){
   });
   return moved;
 }
+// Distinct from the arrival message: this stop moved because you could not have
+// got there in time, not because you had not landed yet.
+function _showReachabilityPushWarning(moved){
+  if(!moved||!moved.length)return;
+  const one=moved[0];
+  const msg=(moved.length===1)
+    ? 'Moved "'+one.stop+'" to '+one.to+' — there was not enough time to get there.'
+    : 'Moved '+moved.length+' stops later so each can be reached in time (starting with "'+one.stop+'" at '+one.to+').';
+  try{ if(typeof showToast==='function')showToast('&#9201; '+_escHtml(msg)); else alert(msg); }catch(e){}
+}
+// If a stop still cannot be reached after trimming the previous visit, move it to
+// the earliest time it CAN be reached. Never earlier, never a locked reservation.
+function _pushUnreachableLater(st){
+  const moved=[];
+  if(!st||!Array.isArray(st.days))return moved;
+  st.days.forEach(day=>{
+    const stops=day.stops||[];
+    for(let i=1;i<stops.length;i++){
+      const cur=stops[i],prev=stops[i-1];
+      const t=_parseTimeMins(cur.time),ps=_parseTimeMins(prev.time);
+      if(t==null||ps==null)continue;
+      const pe=_parseTimeMins(prev.endTime);
+      const depart=(pe!=null&&pe>ps)?pe:ps+Math.min(_stopVisitMins(prev),_MAX_VISIT_CASCADE);
+      const travel=Math.min(_legTravelMins(prev,cur),_MAX_LEG_TRAVEL);
+      const earliest=depart+travel;
+      if(t>=earliest||cur.locked)continue;
+      const start=Math.min(earliest,_DAY_END_CAP);
+      if(start<=t)continue;
+      moved.push({stop:cur.name,from:cur.time,to:_formatTimeMins(start)});
+      _setStopSlot(cur,start,Math.min(_stopVisitMins(cur),_MAX_VISIT_CASCADE));
+    }
+  });
+  return moved;
+}
 // Tell the user what the app moved for them, and why.
 function _showArrivalShiftWarning(moved){
   if(!moved||!moved.length)return;
@@ -1939,7 +1978,7 @@ function _relaxDurationsToFit(st){
       if(prev){
         const pt=_parseTimeMins(prev.time);
         const dist=haversine(prev.lat,prev.lng,s.lat,s.lng);
-        if(pt!=null&&dist>=1){
+        if(pt!=null&&dist>0){
           const mode=s.transitMode||_defaultTransitMode(prev,s);
           const mph=_MAX_MPH[mode]||_MAX_MPH.drive;
           const minTravel=Math.round(dist/mph*60);
@@ -2478,10 +2517,22 @@ function saveStop(){
   // Start Time and End Time are REQUIRED, and the end must be after the start.
   // The inputs are native 24h time pickers; convert to the canonical stored form.
   const _startVal=_fromTimeInput(document.getElementById('f-time')?.value)||(document.getElementById('f-time')?.value||'').trim();
-  const _endVal=_fromTimeInput(document.getElementById('f-endtime')?.value)||(document.getElementById('f-endtime')?.value||'').trim();
-  const _sMin=_parseTimeMins(_startVal),_eMin=_parseTimeMins(_endVal);
+  let _endVal=_fromTimeInput(document.getElementById('f-endtime')?.value)||(document.getElementById('f-endtime')?.value||'').trim();
+  const _sMin=_parseTimeMins(_startVal);
+  let _eMin=_parseTimeMins(_endVal);
   if(_sMin==null){alert('Please enter a valid Start Time (e.g. 9:00 AM).');return}
-  if(_eMin==null){alert('Please enter a valid End Time (e.g. 11:00 AM).');return}
+  // A Duration with no End Time is complete information — just work the end out
+  // instead of refusing the save and making the user do the arithmetic.
+  if(_eMin==null){
+    const _dMin=_durationToMins((document.getElementById('f-duration')?.value||'').trim());
+    if(_dMin!=null&&_dMin>0){
+      _eMin=(_sMin+_dMin)%1440;
+      _endVal=_formatTimeMins(_eMin);
+      const _ef=document.getElementById('f-endtime');
+      if(_ef)_ef.value=(_ef.type==='time')?_toTimeInput(_endVal):_endVal;
+    }
+  }
+  if(_eMin==null){alert('Please enter an End Time (e.g. 11:00 AM) or a Duration (e.g. 2h).');return}
   // Compare real INSTANTS (date + time), not bare clock minutes. Aug 4 8:00 PM ->
   // Aug 5 10:00 AM is a perfectly ordinary overnight stop; only comparing the
   // clock made it look backwards. If no end date was given, an end time earlier

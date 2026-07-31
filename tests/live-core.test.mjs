@@ -195,11 +195,38 @@ test('saveState GATE: refuses ONLY when travel alone cannot fit (visit would be 
   ctx.localStorage.setItem = (k, v) => { persisted = v; };
   let alerted = '';
   ctx.alert = (m) => { alerted = m; };
-  // Glenfinnan at 12:15 — 77 mi needs ~51 min even with a zero-length lunch. Impossible.
+  // Glenfinnan at 12:15 — 77 mi needs ~51 min even with a zero-length lunch, so
+  // that time is unreachable. The app must now FIX it (push the stop to the
+  // earliest time it can actually be reached) rather than refuse the save and
+  // leave the user to work it out.
   ctx.state.days[0].stops[1].time = '12:15 PM';
   save();
-  assert.equal(persisted, null, 'a truly impossible itinerary must NOT be written');
-  assert.match(alerted, /physical world|Impossible/, 'user is told it cannot be done');
+  assert.ok(persisted, 'the corrected itinerary IS written');
+  assert.equal(alerted, '', 'no error is shown for something the app can fix');
+  const p = fn('_parseTimeMins');
+  const fixed = ctx.state.days[0].stops[1];
+  assert.ok(p(fixed.time) > p('12:15 PM'), 'the unreachable stop was pushed later, got ' + fixed.time);
+  assert.equal(fn('_logicErrors')(ctx.state).length, 0,
+    'after the auto-fix the itinerary is physically possible: ' + JSON.stringify(fn('_logicErrors')(ctx.state)));
+});
+
+test('saveState still REFUSES when even the auto-fix cannot make it work', () => {
+  const save = fn('saveState'), seed = fn('_seedLogicBaseline');
+  // 77 mi apart. The table is LOCKED so it cannot be pushed later, and it starts
+  // only 5 min after lunch — even a zero-length lunch cannot cover the travel.
+  // Nothing the app can do makes this possible, so it must refuse.
+  ctx.state = { tripType: 'solo', days: [{ stops: [
+    { name: 'Lunch', type: 'food', time: '8:00 PM', endTime: '9:00 PM', lat: 56.12, lng: -3.94 },
+    { name: 'Booked table', type: 'food', time: '8:30 PM', endTime: '10:00 PM', locked: true, lat: 56.8758, lng: -5.431 },
+  ] }] };
+  seed();
+  let persisted = null, alerted = '';
+  ctx.localStorage.setItem = (k, v) => { persisted = v; };
+  ctx.alert = (m) => { alerted = m; };
+  ctx.state.days[0].stops[1].time = '8:05 PM';   // 5 minutes for a 77-mile trip
+  save();
+  assert.equal(persisted, null, 'a locked, unreachable stop cannot be auto-fixed → refuse');
+  assert.match(alerted, /physical world|Impossible/, 'and say so');
 });
 
 test('renderPanel draws NO travel-distance leg into a drive stop (kills 77mi/0min)', () => {
@@ -855,4 +882,36 @@ test('the auto-shift does nothing when no travel carries over', () => {
     { name: 'Castle', type: 'hike', time: '9:30 AM', endTime: '11:00 AM', lat: 55.9486, lng: -3.1999 },
   ] }] };
   assert.equal(shift(st).length, 0);
+});
+
+// A Duration with no End Time is complete information — compute the end rather
+// than refusing the save.
+test('saving with a Duration but no End Time computes the end time', () => {
+  const F = {};
+  const mk = (id, v) => (F[id] = { value: v == null ? '' : String(v), checked: false, type: '', dataset: {} });
+  ['f-name','f-lat','f-lng','f-time','f-endtime','f-duration','f-stars','f-notes','f-reservation',
+   'f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl','f-date','f-enddate','f-tz','f-endtz',
+   'f-type','f-alt','f-locked','f-intl','f-photo','f-ticket'].forEach(id => mk(id));
+  F['f-name'].value = 'British Museum';
+  F['f-time'].value = '12:00 PM';
+  F['f-endtime'].value = '';        // deliberately blank
+  F['f-duration'].value = '2h';     // ...but a duration is given
+  F['f-type'].value = 'hike';
+  const realGet = ctx.document.getElementById, realQS = ctx.document.querySelector;
+  ctx.document.getElementById = (id) => (id in F ? F[id] : realGet(id));
+  ctx.document.querySelector = () => ({ textContent: '', classList: { add(){}, remove(){} } });
+  let alerted = '';
+  const realAlert = ctx.alert; ctx.alert = (m) => { alerted = m; };
+  ctx.state = { tripType: 'solo', days: [{ title: 'D', subtitle: 'Wed, Aug 5, 2026', stops: [] }] };
+  ctx.editingStop = null; ctx.addingToDay = 0;
+  ctx.saveState = () => {}; ctx.renderAll = () => {}; ctx.closeModal = () => {}; ctx.renderDayMap = () => {};
+  try {
+    fn('saveStop')();
+    assert.equal(alerted, '', 'no error: a duration is enough to work out the end');
+    const s = ctx.state.days[0].stops[0];
+    assert.ok(s, 'the stop was saved');
+    assert.equal(fn('_parseTimeMins')(s.endTime), fn('_parseTimeMins')('2:00 PM'), 'end = start + 2h, got ' + s.endTime);
+  } finally {
+    ctx.document.getElementById = realGet; ctx.document.querySelector = realQS; ctx.alert = realAlert;
+  }
 });

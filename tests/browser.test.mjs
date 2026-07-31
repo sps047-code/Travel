@@ -574,3 +574,156 @@ test('a day with no stops renders without throwing', async () => {
   assert.deepEqual(errors.filter((e) => !/favicon|Failed to load resource/i.test(e)), []);
   await page.close();
 });
+
+// ===========================================================================
+// THE IMPORT FLOW. It writes a whole itinerary in one shot, and the "append"
+// mode merges into an EXISTING trip — the highest-risk write in the app. The AI
+// call is stubbed so these test the parsing, saving and merging, not the model.
+// ===========================================================================
+async function openHomeForImport(aiResponse, { localTrips = null, tripStates = null } = {}) {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  // Record navigations but LET THEM HAPPEN. window.location cannot be redefined
+  // in modern Chrome, and aborting the navigation leaves the document in a state
+  // where localStorage access is denied. Letting the redirect run is also closer
+  // to what really happens, and same-origin storage survives it.
+  const navs = [];
+  page.on('framenavigated', (f) => { if (f === page.mainFrame()) navs.push(f.url()); });
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+  });
+  await page.addInitScript(([lt, ts]) => {
+    if (lt) localStorage.setItem('localTrips', JSON.stringify(lt));
+    if (ts) for (const [k, v] of Object.entries(ts)) localStorage.setItem('tripState_' + k, JSON.stringify(v));
+  }, [localTrips, tripStates]);
+  await page.goto(`${origin}/Travel/index.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof importTrip === 'function', null, { timeout: 15000 });
+  // Stub the model call; everything downstream is the app's own code.
+  await page.evaluate((resp) => { window.callClaude = async () => resp; }, aiResponse);
+  return { page, errors, navs };
+}
+
+const IMPORTED = JSON.stringify({
+  title: 'Paris Weekend',
+  days: [
+    { title: 'Day 1 — Arrive', subtitle: 'Fri, Sep 4, 2026', stops: [
+      { name: 'Eurostar to Paris', type: 'train', time: '9:00 AM', endTime: '11:30 AM' },
+      { name: 'Hotel Lutetia', type: 'lodge', time: '1:00 PM', reservation: 'LUT-9931' },
+    ] },
+    { title: 'Day 2 — Museums', subtitle: 'Sat, Sep 5, 2026', stops: [
+      { name: 'Louvre', type: 'hike', time: '9:30 AM', endTime: '12:30 PM' },
+    ] },
+  ],
+});
+
+test('import creates a new trip with every stop preserved', async () => {
+  const { page, navs } = await openHomeForImport(IMPORTED);
+  await page.evaluate(async () => {
+    document.getElementById('import-text').value = 'Eurostar 9am, Hotel Lutetia, Louvre Saturday';
+    _importMode = 'new';
+    await importTrip();
+  });
+  await page.waitForURL(/trip\.html/, { timeout: 15000 });
+  const nav = page.url();
+  const res = await page.evaluate((nav) => {
+    const id = (nav.match(/id=([^&]+)/) || [])[1];
+    const saved = id ? JSON.parse(localStorage.getItem('tripState_' + id) || 'null') : null;
+    const listed = JSON.parse(localStorage.getItem('localTrips') || '[]').find((t) => t.id === id);
+    return { nav, id, days: saved && saved.days.length,
+      stops: saved && saved.days.reduce((n, d) => n + d.stops.length, 0),
+      title: saved && saved.title, resv: saved && saved.days[0].stops[1].reservation, listed: !!listed };
+  }, nav);
+  assert.ok(res.id && res.id.startsWith('import-'), 'a new trip id was created: ' + res.nav);
+  assert.equal(res.days, 2, 'both days imported');
+  assert.equal(res.stops, 3, 'all three stops imported');
+  assert.equal(res.title, 'Paris Weekend');
+  assert.equal(res.resv, 'LUT-9931', 'reservation numbers survive the import');
+  assert.ok(res.listed, 'the trip appears in the trips list');
+  await page.close();
+});
+
+test('import survives an AI reply wrapped in markdown fences', async () => {
+  const { page, navs } = await openHomeForImport('```json\n' + IMPORTED + '\n```');
+  await page.evaluate(async () => {
+    document.getElementById('import-text').value = 'anything';
+    _importMode = 'new';
+    await importTrip();
+  });
+  await page.waitForURL(/trip\.html/, { timeout: 15000 });
+  const ok = await page.evaluate((nav) => {
+    const id = ((nav || '').match(/id=([^&]+)/) || [])[1];
+    const saved = id ? JSON.parse(localStorage.getItem('tripState_' + id) || 'null') : null;
+    return saved && saved.days.length;
+  }, page.url());
+  assert.equal(ok, 2, 'fenced JSON is still parsed into a trip');
+  await page.close();
+});
+
+test('import REFUSES an empty result instead of creating a broken trip', async () => {
+  const { page, navs } = await openHomeForImport(JSON.stringify({ title: 'Nothing', days: [] }));
+  const res = await page.evaluate(async () => {
+    const before = JSON.parse(localStorage.getItem('localTrips') || '[]').length;
+    document.getElementById('import-text').value = 'some text';
+    _importMode = 'new';
+    await importTrip();
+    const err = document.getElementById('import-error');
+    return { after: JSON.parse(localStorage.getItem('localTrips') || '[]').length, before,
+      shown: err && err.classList.contains('visible'), msg: err && err.textContent };
+  });
+  await page.waitForTimeout(400);
+  assert.ok(!/trip\.html/.test(page.url()), 'no navigation to a broken trip, still at ' + page.url());
+  assert.equal(res.after, res.before, 'no trip was created');
+  assert.ok(res.shown, 'the user is told why');
+  assert.match(res.msg || '', /No stops found/i);
+  await page.close();
+});
+
+test('import with no text asks for text and creates nothing', async () => {
+  const { page, navs } = await openHomeForImport(IMPORTED);
+  const res = await page.evaluate(async () => {
+    const before = JSON.parse(localStorage.getItem('localTrips') || '[]').length;
+    document.getElementById('import-text').value = '   ';
+    _importMode = 'new';
+    await importTrip();
+    return { after: JSON.parse(localStorage.getItem('localTrips') || '[]').length, before };
+  });
+  await page.waitForTimeout(400);
+  assert.equal(res.after, res.before);
+  assert.ok(!/trip\.html/.test(page.url()), 'nothing was created and we stayed put');
+  await page.close();
+});
+
+test('APPEND import queues the new days without touching the existing trip', async () => {
+  const existing = { tripType: 'solo', title: 'My Trip', days: [
+    { title: 'Day 1', subtitle: 'Fri, Sep 4, 2026', stops: [
+      { name: 'Existing stop', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', _sid: 'keep-me' },
+    ] },
+  ] };
+  const { page, navs } = await openHomeForImport(IMPORTED, {
+    localTrips: [{ id: 'mine', title: 'My Trip', days: 1, local: true, destinations: ['X'] }],
+    tripStates: { mine: existing },
+  });
+  const res = await page.evaluate(async () => {
+    _allTripsCache = [{ id: 'mine', title: 'My Trip', shared: false }];
+    document.getElementById('import-text').value = 'more stops';
+    _importMode = 'append';
+    const sel = document.getElementById('import-target-trip');
+    sel.innerHTML = '<option value="mine">My Trip</option>';
+    sel.value = 'mine';
+    await importTrip();
+    return {
+      queued: JSON.parse(sessionStorage.getItem('pendingImport_mine') || 'null'),
+      // The existing trip must be untouched until trip.js merges it properly.
+      untouched: JSON.parse(localStorage.getItem('tripState_mine')),
+    };
+  });
+  await page.waitForURL(/id=mine/, { timeout: 15000 });
+  assert.ok(Array.isArray(res.queued) && res.queued.length === 2, 'the parsed days are queued for the trip page');
+  assert.equal(res.untouched.days.length, 1, 'the existing trip is NOT overwritten here');
+  assert.equal(res.untouched.days[0].stops[0]._sid, 'keep-me', 'existing stop data is intact');
+  assert.match(page.url(), /id=mine/, 'and we navigate to that trip to do the merge');
+  await page.close();
+});

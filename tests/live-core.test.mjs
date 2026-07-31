@@ -437,8 +437,9 @@ test('_flightDepMins tolerates timezone suffixes and reads notes', () => {
 // because _recalcDayTimes discarded every user-set time and re-packed the day
 // back-to-back from the anchor. A time the user set is DATA: it may be pushed
 // LATER when physically unreachable, but never pulled earlier or invented.
-test('moving a stop preserves every user-set time that is still reachable', () => {
+test('moving a stop starts it at the previous stop\'s end + travel time', () => {
   const move = fn('moveStop');
+  const p = fn('_parseTimeMins');
   ctx.saveState = () => {}; ctx.renderAll = () => {}; ctx.renderDayMap = () => {};
   ctx.currentDayIdx = 0;
   ctx.state = { days: [{ stops: [
@@ -449,18 +450,31 @@ test('moving a stop preserves every user-set time that is still reachable', () =
     { name: 'Hotel', type: 'lodge', time: '9:00 PM', endTime: '9:30 PM', lat: 55.952, lng: -3.188 },
   ] }] };
   move(0, 2, -1);                     // move Holyrood up one slot
-  const byName = {};
-  for (const s of ctx.state.days[0].stops) byName[s.name] = s.time;
-  const p = fn('_parseTimeMins');
-  // A move is a SWAP: only the two stops that traded places change.
-  assert.equal(p(byName['Holyrood Palace']), p('12:00 PM'), 'the moved stop takes its neighbour’s slot');
-  assert.equal(p(byName['Lunch']), p('2:00 PM'), 'the neighbour takes the moved stop’s slot');
-  // Everything else in the day is untouched.
-  assert.equal(p(byName['Dinner']), p('6:30 PM'), 'dinner must stay at 6:30 PM, not slide to the afternoon');
-  assert.equal(p(byName['Hotel']), p('9:00 PM'), 'the hotel must stay at 9:00 PM');
-  assert.equal(p(byName['Edinburgh Castle']), p('9:30 AM'), 'the first stop keeps its time');
-  // ...and the day is still in chronological order after the swap.
-  assert.equal(fn('_firstChronoViolation')(), 0, 'the day must stay chronological');
+  const stops = ctx.state.days[0].stops;
+  const at = (n) => stops.find(s => s.name === n);
+  // Order changed as requested.
+  assert.equal(stops[1].name, 'Holyrood Palace');
+  assert.equal(stops[2].name, 'Lunch');
+  // Each moved stop begins when it can actually be REACHED: prev end + travel.
+  assert.ok(p(at('Holyrood Palace').time) >= p(at('Edinburgh Castle').endTime),
+    'Holyrood starts at/after the castle ends');
+  assert.ok(p(at('Lunch').time) >= p(at('Holyrood Palace').endTime),
+    'Lunch starts at/after Holyrood ends');
+  // Nothing beyond the two swapped positions is touched.
+  assert.equal(p(at('Edinburgh Castle').time), p('9:30 AM'), 'the first stop keeps its time');
+  assert.equal(p(at('Dinner').time), p('6:30 PM'), 'dinner must not move');
+  assert.equal(p(at('Hotel').time), p('9:00 PM'), 'the hotel must not move');
+  assert.equal(fn('_firstChronoViolation')(), 0, 'the day stays chronological');
+});
+
+test('_retimeFromPrev never moves a locked reservation', () => {
+  const rt = fn('_retimeFromPrev'), p = fn('_parseTimeMins');
+  const stops = [
+    { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.94, lng: -3.19 },
+    { name: 'Booked', type: 'food', time: '12:00 PM', endTime: '1:00 PM', locked: true, lat: 55.95, lng: -3.18 },
+  ];
+  assert.equal(rt(stops, 1), false, 'a locked stop is not re-timed');
+  assert.equal(p(stops[1].time), p('12:00 PM'), 'its reserved time holds');
 });
 
 test('an unreachable stop is pushed later, never earlier', () => {

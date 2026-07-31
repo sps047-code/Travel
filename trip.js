@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v166';
+window.APP_CODE_VERSION='v167';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -840,10 +840,20 @@ function hotelBookendHtml(label,lodge,otherStop,where){
     const mapsUrl='https://www.google.com/maps/dir/?api=1&origin='+lodge.lat+','+lodge.lng+'&destination='+otherStop.lat+','+otherStop.lng+'&travelmode='+(tmode==='walk'?'walking':tmode==='train'?'transit':'driving');
     travelHtml='<div class="hotel-bookend-travel"><span class="hotel-bookend-dist">'+mi+' mi · '+tStr+' '+(TM_LABEL[tmode]||'Drive').toLowerCase()+'</span><a class="map-link" href="'+mapsUrl+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a></div>';
   }
-  const editBtn=(where&&where.dayIdx>=0&&where.stopIdx>=0)
+  const hasPos=!!(where&&where.dayIdx>=0&&where.stopIdx>=0);
+  const editBtn=hasPos
     ?'<button class="card-btn edit-btn" onclick="openEditStopModal('+where.dayIdx+','+where.stopIdx+')" title="Edit '+_escHtml(nm)+'" style="flex-shrink:0;align-self:center">&#9998;</button>'
     :'';
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+travelHtml+'</div>'+editBtn+'</div>';
+  // Booking details, right where the hotel is shown: the confirmation number and
+  // a button that opens the stored reservation/ticket. Previously the bookend was
+  // display-only and the ticket could only be reached from the stop's own day.
+  const resvHtml=lodge.reservation
+    ?'<div class="hotel-bookend-resv" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:3px">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
+    :'';
+  const ticketBtn=(hasPos&&lodge.ticketImage)
+    ?'<button class="ticket-view-btn" onclick="showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:6px">&#127903; View Reservation</button>'
+    :'';
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">&#127970;</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+resvHtml+travelHtml+ticketBtn+'</div>'+editBtn+'</div>';
 }
 
 function transitBookendHtml(transitStop,firstStop){
@@ -2266,23 +2276,33 @@ function moveStop(dayIdx,stopIdx,dir){
   const stops=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops.length)return;
-  const a=stops[stopIdx],b=stops[newIdx];
-  const aStart=_parseTimeMins(a.time),bStart=_parseTimeMins(b.time);
-  const canSwap=(aStart!=null&&aStart>=240&&bStart!=null&&bStart>=240);
-  if(canSwap){
-    const aSpan=Math.min(_stopVisitMins(a),_MAX_VISIT_CASCADE);
-    const bSpan=Math.min(_stopVisitMins(b),_MAX_VISIT_CASCADE);
-    // A LOCKED stop keeps its reserved time; only the unlocked one takes a new slot.
-    if(!a.locked)_setStopSlot(a,bStart,aSpan);
-    if(!b.locked)_setStopSlot(b,aStart,bSpan);
-  }
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  // Fill in any stop that has no usable time. Safe to run: _recalcDayTimes keeps
-  // every reachable user-set time as-is and only assigns times to untimed stops.
-  if(!canSwap||stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
+  // Re-time ONLY the two positions that changed. Each now starts when you could
+  // actually get there: the previous stop's end time plus the travel between them.
+  // Nothing else in the day is touched, so a later dinner or hotel stays put.
+  const lo=Math.min(stopIdx,newIdx),hi=Math.max(stopIdx,newIdx);
+  for(let i=lo;i<=hi;i++)_retimeFromPrev(stops,i);
+  // Fill in any stop still missing a usable time (untimed stops carry forward).
+  if(stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
     _recalcDayTimes(dayIdx,_dayStartAnchor(stops));
   }
   saveState();renderAll();
+}
+// Start a stop when it can actually be reached: the PREVIOUS stop's end time plus
+// the travel time between the two. Its own visit length is preserved. The first
+// stop of a day and any LOCKED reservation keep their times.
+function _retimeFromPrev(stops,i){
+  if(i<=0||!stops||!stops[i])return false;
+  const s=stops[i],prev=stops[i-1];
+  if(s.locked)return false;
+  const ps=_parseTimeMins(prev.time);
+  if(ps==null)return false;
+  const pe=_parseTimeMins(prev.endTime);
+  const depart=(pe!=null&&pe>ps)?pe:ps+Math.min(_stopVisitMins(prev),_MAX_VISIT_CASCADE);
+  const travel=Math.min(_legTravelMins(prev,s),_MAX_LEG_TRAVEL);
+  const start=Math.min(Math.max(depart+travel,240),_DAY_END_CAP);
+  _setStopSlot(s,start,Math.min(_stopVisitMins(s),_MAX_VISIT_CASCADE));
+  return true;
 }
 // Place a stop at `start`, preserving its own visit length. Transit keeps its
 // arrival span; an activity's duration mirrors start→end.

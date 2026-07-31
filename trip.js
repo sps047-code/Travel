@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v170';
+window.APP_CODE_VERSION='v171';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -535,6 +535,9 @@ function _groundSegments(stops){
       // The next ground segment resumes where this transit ARRIVES, when we know
       // it (destLat/destLng) — otherwise the onward drive from the arrival
       // airport/station would be dropped entirely.
+      // Resume at the arrival point when we know it. When we do NOT, start the
+      // next segment empty so the following stops still link to each other —
+      // they must never be stranded into an undrawable single point.
       cur=(s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng}))
         ?[{name:(s.to||s.name||'Arrival'),type:'arrival',lat:s.destLat,lng:s.destLng}]
         :[];
@@ -557,6 +560,16 @@ async function fetchRoute(stops){
   }catch(e){return null}
 }
 
+// The segments a day's map should actually draw. Normally the ground segments,
+// but never nothing: segmentation can strand stops (a train/flight with no
+// arrival coordinates ends a segment and leaves the rest as a lone point, which
+// draws no line). When nothing is drawable, connect every located stop in order.
+function _routeSegmentsForDay(routeStops){
+  const segs=_groundSegments(routeStops);
+  if(segs.some(sg=>_dropCoordOutliers(sg).length>1))return segs;
+  const all=(routeStops||[]).filter(x=>!x.alt&&_validLL(x));
+  return (_dropCoordOutliers(all).length>1)?[all]:segs;
+}
 let _mapGen=0;
 async function renderDayMap(idx,fit=true){
   // GENERATION GUARD. Two concurrent renderDayMap calls each cleared the layers
@@ -626,7 +639,7 @@ async function renderDayMap(idx,fit=true){
   // Draw a solid straight connector FIRST so a line is always visible even if the
   // routing service is slow or down. When the road route comes back it's drawn on
   // top and becomes the line you see. No dashed lines.
-  const segs=_groundSegments(routeStops);
+  const segs=_routeSegmentsForDay(routeStops);
   const fallbacks=segs.map(seg=>{
     const pts=_dropCoordOutliers(seg).map(s=>[s.lat,s.lng]);
     return pts.length>1?L.polyline(pts,{color:'#C1512D',weight:3,opacity:0.6}).addTo(routeLayer):null;

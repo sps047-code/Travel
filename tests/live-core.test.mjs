@@ -1005,3 +1005,42 @@ test('non-meal food and other types are unaffected', () => {
   assert.equal(v({ name: 'Borough Market', type: 'food' }), 45, 'generic food falls back to 45');
   assert.equal(v({ name: 'Edinburgh Castle', type: 'hike' }), 120, 'sights unchanged');
 });
+
+// ===========================================================================
+// MAP: a day must NEVER end up with no route line. Segmentation can strand
+// stops — a train/flight with no arrival coordinates ends a segment and leaves
+// the rest as a single undrawable point.
+// ===========================================================================
+test('a day whose segments all collapse still gets a route', () => {
+  const pick = fn('_routeSegmentsForDay');
+  // Transit first (no arrival coords) then ONE stop: normal segmentation yields
+  // nothing drawable, so the safety net must connect the located stops.
+  const stops = [
+    { name: 'Land at Gatwick', type: 'flight', lat: 51.1537, lng: -0.1821 },
+    { name: 'Hotel', type: 'lodge', lat: 51.5063, lng: -0.1237 },
+  ];
+  assert.equal(fn('_groundSegments')(stops).length, 0, 'precondition: segmentation strands them');
+  const segs = pick(stops);
+  assert.ok(segs.length >= 1, 'a route is produced anyway');
+  assert.ok(segs[0].length >= 2, 'with at least two points to draw between');
+});
+
+test('the safety net does not override normal segmentation', () => {
+  const pick = fn('_routeSegmentsForDay');
+  const stops = [
+    { name: 'Home', type: 'hike', lat: 28.24, lng: -82.72 },
+    { name: 'Flight', type: 'flight', lat: 28.43, lng: -81.31 },
+    { name: 'A', type: 'hike', lat: 51.50, lng: -0.12 },
+    { name: 'B', type: 'hike', lat: 51.52, lng: -0.13 },
+  ];
+  const segs = pick(stops);
+  assert.equal(segs.length, 2, 'proper segments are kept, not flattened');
+  assert.ok(!segs.some(sg => sg.some(x => x.name === 'Flight') && sg.some(x => x.name === 'A')),
+    'the flight leg is still never drawn as a road');
+});
+
+test('a day with no usable coordinates draws nothing (and does not throw)', () => {
+  const pick = fn('_routeSegmentsForDay');
+  assert.equal(pick([{ name: 'X', type: 'hike' }]).length, 0);
+  assert.equal(pick([]).length, 0);
+});

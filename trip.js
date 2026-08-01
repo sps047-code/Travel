@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v191';
+window.APP_CODE_VERSION='v192';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -254,6 +254,14 @@ function saveState(changeDesc='',localOnly=false){
       if(shifted.length)_showArrivalShiftWarning(shifted);    // moved after landing — warn only
       if(changed.length)_showDurationAdjustWarning(changed);  // fit by trimming — warn only
       if(pushed.length)_showReachabilityPushWarning(pushed);  // moved later to be reachable
+      // A toast disappears. These are the passes that move stops you did not
+      // touch, so they are recorded as their own entries in the history.
+      try{
+        const nm=(x)=>(x&&(x.name||x.stop||x.title))||'a stop';
+        if(shifted.length)_recordChange({source:WRITE.AUTO,desc:'Moved after arrival: '+shifted.map(nm).join(', ')});
+        if(changed.length)_recordChange({source:WRITE.AUTO,desc:'Shortened to fit: '+changed.map(nm).join(', ')});
+        if(pushed.length)_recordChange({source:WRITE.AUTO,desc:'Pushed later to be reachable: '+pushed.map(nm).join(', ')});
+      }catch(e){}
     }
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
@@ -2479,12 +2487,26 @@ function _dayStartAnchor(stops){
 // Order matters: fix broken end times, then broken timelines, then put the day
 // in chronological order.
 function _healLoadedItinerary(){
-  try{ _canonicalizeTransitModes(); }catch(e){}   // legacy 'subway' -> 'train'
+  // These run once per load and can rewrite times and reorder stops before you
+  // have touched anything, which is one of the ways the itinerary appears to
+  // change on its own. Each pass now says what it did.
+  const snap=(()=>{try{return JSON.stringify(state);}catch(e){return null;}})();
+  const did=[];
+  const step=(label,fn)=>{
+    let a=null;try{a=JSON.stringify(state);}catch(e){}
+    try{ fn(); }catch(e){}
+    try{ if(a!==null&&JSON.stringify(state)!==a)did.push(label); }catch(e){}
+  };
+  step('normalised transit types',()=>_canonicalizeTransitModes());
   try{ if(_migrateGooglePlacesKey())saveState('Moved Places key off shared state'); }catch(e){}
-  try{ _canonicalizeTimes(); }catch(e){}   // make every stored time unambiguous
-  try{ _healBadEndTimes(); }catch(e){}
-  try{ _healEarlyDays(); }catch(e){}
-  try{ _sortAllDaysByTime(); }catch(e){}
+  step('rewrote time formats',()=>_canonicalizeTimes());
+  step('repaired end times that were before their start',()=>_healBadEndTimes());
+  step('recomputed a day whose times ran backwards',()=>_healEarlyDays());
+  step('reordered stops into time order',()=>_sortAllDaysByTime());
+  if(did.length){
+    try{_recordChange({source:WRITE.HEAL,desc:'On opening: '+did.join('; ')});}catch(e){}
+  }
+  return did;
 }
 function _healEarlyDays(){
   if(!state||!state.days)return;
@@ -3439,6 +3461,7 @@ function renderOverview(){
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
     '<button class="ai-action-btn" id="offline-btn" onclick="downloadTripOffline()" style="background:var(--river)" title="Download this itinerary so you can view it without internet">'+(localStorage.getItem("offline_"+tripId)==="1"?"&#10003; Saved Offline":"&#11015; Save Offline")+'</button>'+
+    '<button class="ai-action-btn" onclick="openChangeLog()" style="background:var(--slate,#4A6572)" title="Every change to this itinerary: what changed, when, and what made it">&#128220; History</button>'+
     '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+
@@ -6762,3 +6785,84 @@ async function _requestStructuredChanges(){
   }
 }
 
+
+/* ============================================================================
+   CHANGE LOG VIEWER
+   "Why did the itinerary change by itself" used to be answerable only by
+   reading the source. Every commit now records what changed, when, from which
+   device, and WHICH MECHANISM did it, and this is where you read it back.
+   ========================================================================== */
+const _WRITE_LABEL={
+  'user':{t:'You edited it',c:'var(--pine)'},
+  'ai':{t:'Ask AI applied changes',c:'var(--river)'},
+  'cloud':{t:'Arrived from another device',c:'var(--amber)'},
+  'auto-fix':{t:'Auto-fixed to make the day work',c:'var(--slate,#4A6572)'},
+  'heal':{t:'Repaired on load',c:'var(--slate,#4A6572)'},
+  'import':{t:'Imported',c:'var(--river)'},
+  'system':{t:'Internal',c:'var(--muted)'}
+};
+function _agoText(ms){
+  const s=Math.max(0,Math.round((Date.now()-ms)/1000));
+  if(s<60)return 'just now';
+  const m=Math.round(s/60); if(m<60)return m+' min ago';
+  const h=Math.round(m/60); if(h<24)return h+(h===1?' hour ago':' hours ago');
+  const d=Math.round(h/24); return d+(d===1?' day ago':' days ago');
+}
+function _changeLogHtml(){
+  const log=_loadChangeLog().slice().reverse();
+  if(!log.length){
+    return '<div style="padding:var(--space-4);color:var(--muted);font-family:var(--font-ui);font-size:var(--text-md);line-height:1.5">'+
+      'No changes recorded yet. From now on every change to this itinerary is listed here, '+
+      'including changes that arrive from another device and any the app makes on its own.</div>';
+  }
+  const rows=log.map(e=>{
+    const lab=_WRITE_LABEL[e.source]||_WRITE_LABEL.system;
+    const when=new Date(e.at);
+    const bits=[];
+    if(e.refused)bits.push('<div style="color:var(--ruby);font-size:var(--text-sm);margin-top:2px">Refused: '+_escHtml(e.refused)+'</div>');
+    if(e.untracked)bits.push('<div style="color:var(--amber);font-size:var(--text-sm);margin-top:2px">Changed outside the normal write path</div>');
+    if(e.losses&&e.losses.length)bits.push('<div style="color:var(--ruby);font-size:var(--text-sm);margin-top:2px">Lost: '+_escHtml(e.losses.join(', '))+'</div>');
+    if(e.repaired&&e.repaired.length)bits.push('<div style="color:var(--muted);font-size:var(--text-sm);margin-top:2px">Repaired: '+_escHtml(e.repaired.join(', '))+'</div>');
+    return '<div style="padding:var(--space-3) 0;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:baseline;flex-wrap:wrap">'+
+        '<span style="font-family:var(--font-ui);font-size:var(--text-2xs);font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:'+lab.c+'">'+_escHtml(lab.t)+'</span>'+
+        '<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);white-space:nowrap">'+_escHtml(_agoText(e.at))+' &middot; '+_escHtml(when.toLocaleString())+'</span>'+
+      '</div>'+
+      '<div style="font-family:var(--font-ui);font-size:var(--text-md);color:var(--ink);margin-top:2px">'+_escHtml(e.desc||'(no description)')+'</div>'+
+      bits.join('')+
+    '</div>';
+  }).join('');
+  return '<div style="max-height:60vh;overflow-y:auto">'+rows+'</div>'+
+    '<div style="margin-top:var(--space-3);display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">'+
+      '<button class="ai-action-btn" onclick="_copyChangeLog()" style="background:var(--river)">&#128203; Copy</button>'+
+      '<button class="ai-action-btn" onclick="_clearChangeLog()" style="background:var(--ruby)">Clear</button>'+
+      '<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted)">'+log.length+' recorded on this device</span>'+
+    '</div>';
+}
+function openChangeLog(){
+  const modal=document.getElementById('trip-recap-modal');
+  const body=document.getElementById('trip-recap-content');
+  if(!modal||!body)return;
+  const title=modal.querySelector('.modal-title');
+  if(title)title.innerHTML='&#128220; History';
+  body.innerHTML=_changeLogHtml();
+  modal.classList.add('open');
+}
+function _clearChangeLog(){
+  if(!confirm('Clear the change history on this device?\n\nThe itinerary is not affected.'))return;
+  _changeLog=[];
+  try{localStorage.removeItem(_changeLogKey());}catch(e){}
+  openChangeLog();
+}
+function _copyChangeLog(){
+  const txt=_loadChangeLog().slice().reverse().map(e=>{
+    const lab=(_WRITE_LABEL[e.source]||_WRITE_LABEL.system).t;
+    return new Date(e.at).toISOString()+'  ['+lab+']  '+(e.desc||'')+
+      (e.refused?'  REFUSED: '+e.refused:'')+
+      (e.untracked?'  (outside the write path)':'')+
+      (e.losses&&e.losses.length?'  LOST: '+e.losses.join(', '):'')+
+      (e.repaired&&e.repaired.length?'  REPAIRED: '+e.repaired.join(', '):'');
+  }).join('\n');
+  try{navigator.clipboard.writeText(txt);showToast('History copied');}
+  catch(e){showToast('Could not copy');}
+}

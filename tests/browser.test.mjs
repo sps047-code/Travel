@@ -1683,3 +1683,100 @@ test('a commit whose mutation throws leaves the itinerary untouched', async () =
   assert.ok(out.restored, 'but nothing is half-applied, name was ' + out.name);
   await page.close();
 });
+
+// ===========================================================================
+// THE CHANGE LOG (v192). Every mechanism that can alter the itinerary has to
+// leave a record, including the two that run without you touching anything:
+// the auto-fix gate on save, and the healing pass on load.
+// ===========================================================================
+test('the History button opens a readable log', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('Moved dinner later on Day 1', () => { state.days[0].stops[1].time = '2:00 PM'; }, WRITE.USER);
+  });
+  await page.evaluate(() => openChangeLog());
+  const shown = await page.evaluate(() => ({
+    open: document.getElementById('trip-recap-modal').classList.contains('open'),
+    text: document.getElementById('trip-recap-content').textContent,
+  }));
+  assert.ok(shown.open, 'the history modal opens');
+  assert.match(shown.text, /You edited it/, 'the mechanism is named in plain English');
+  assert.match(shown.text, /Moved dinner later on Day 1/, 'and so is the change');
+  await page.close();
+});
+
+test('the log names the mechanism in plain English, not a code word', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  const text = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('a', () => { state.days[0].stops[0].notes = '1'; }, WRITE.CLOUD);
+    commit('b', () => { state.days[0].stops[0].notes = '2'; }, WRITE.AI);
+    commit('c', () => { state.days[0].stops[0].notes = '3'; }, WRITE.AUTO);
+    openChangeLog();
+    return document.getElementById('trip-recap-content').textContent;
+  });
+  assert.match(text, /Arrived from another device/);
+  assert.match(text, /Ask AI applied changes/);
+  assert.match(text, /Auto-fixed to make the day work/);
+  assert.ok(!/auto-fix<|WRITE\./.test(text), 'no internal identifiers leak into the UI');
+  await page.close();
+});
+
+test('healing on load records what it rewrote', async () => {
+  // Times running backwards on a non-overnight day is the signature that makes
+  // _healEarlyDays recompute the whole day — a change nobody asked for.
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Late start', type: 'hike', time: '2:00 PM', endTime: '3:00 PM', lat: 51.5, lng: -0.12 },
+      { name: 'Earlier somehow', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.51, lng: -0.13 },
+    ] },
+  ], { day: null });
+  // The heal runs during load, so the evidence is in the log by the time the
+  // page is ready — not in a second call, which would find nothing left to do.
+  const out = await page.evaluate(() => ({
+    order: state.days[0].stops.map((s) => s.name),
+    log: _loadChangeLog(),
+  }));
+  const heal = out.log.filter((e) => e.source === 'heal');
+  assert.ok(heal.length > 0,
+    'the load-time rewrite must be in the history, got '
+      + JSON.stringify(out.log.map((e) => e.source + ':' + e.desc)));
+  assert.match(heal[0].desc, /On opening/);
+  // Whichever pass fired, it must NAME itself rather than leaving a bare entry.
+  assert.match(heal[0].desc, /recomputed|reordered|repaired|rewrote/,
+    'the pass must say what it did, got ' + heal[0].desc);
+  await page.close();
+});
+
+test('a refused change is recorded too, so a rejection is never silent', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  const text = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('corrupt it', () => { state.days[0].stops = null; }, WRITE.USER);
+    openChangeLog();
+    return document.getElementById('trip-recap-content').textContent;
+  });
+  assert.match(text, /Refused:/, 'the refusal appears in the history');
+  await page.close();
+});
+
+test('the log survives a reload and is capped', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    for (let i = 0; i < CHANGELOG_MAX + 40; i++) _recordChange({ source: WRITE.USER, desc: 'edit ' + i });
+  });
+  const after = await page.evaluate(() => {
+    _changeLog = null;                       // force a re-read from storage
+    const log = _loadChangeLog();
+    return { n: log.length, first: log[0].desc, last: log[log.length - 1].desc };
+  });
+  assert.equal(after.n, 300, 'the log is capped, got ' + after.n);
+  assert.equal(after.last, 'edit ' + (300 + 40 - 1), 'the newest entries are the ones kept');
+  assert.equal(after.first, 'edit 40', 'and the oldest are dropped');
+  await page.close();
+});

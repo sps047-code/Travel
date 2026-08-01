@@ -57,8 +57,14 @@ sed -i "s/?v=$CURRENT/?v=$NEXT/g" trip.html sw.js
 sed -i "s/el.textContent='v$CURRENT'/el.textContent='v$NEXT'/" trip.html
 
 # Verify they really do agree before anything is committed.
-BAD=$(grep -o "v$CURRENT\b" trip.js sw.js trip.html || true)
-[ -z "$BAD" ] || { echo "STALE VERSION LEFT BEHIND:"; echo "$BAD"; exit 1; }
+# Check the STAMPS, not every mention of the number. A comment that records when
+# something changed ("merged in v190") is history, not a stale stamp, and failing
+# on it made the guard cry wolf.
+STAMPS=$( { grep -o "APP_CODE_VERSION='v[0-9]*'" trip.js
+            grep -o "CACHE = 'seasons-v[0-9]*'" sw.js
+            grep -o "?v=[0-9]*" trip.html sw.js
+            grep -o "el.textContent='v[0-9]*'" trip.html; } | grep -o '[0-9]*$' | sort -u )
+[ "$STAMPS" = "$NEXT" ] || { echo "VERSION STAMPS DISAGREE — expected only $NEXT, found:"; echo "$STAMPS"; exit 1; }
 echo "==> stamped v$NEXT in trip.js, sw.js, trip.html"
 
 git add -A trip.js trip-extras.js vendor/ sw.js trip.html index.html tests/ release.sh CHANGELOG.md 2>/dev/null || true

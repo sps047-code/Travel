@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v190';
+window.APP_CODE_VERSION='v191';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -41,8 +41,191 @@ let _dragDayFrom=-1;
 // can never trap you, but no NEW garbage is ever written. Seeded on load.
 let _baselineErrKeys=null;
 function _seedLogicBaseline(){ try{ _baselineErrKeys=new Set(_logicErrors(state).map(_errKey)); }catch(e){ _baselineErrKeys=new Set(); } }
+
+/* ============================================================================
+   THE WRITE PATH
+   Every change to the itinerary goes through commit(). Before this, 67 places
+   mutated state.days directly and 41 called saveState, so a rule stated once
+   held only where it had been wired in by hand — which is why the same class of
+   bug kept reappearing somewhere new.
+
+   commit() gives one place to: snapshot, apply, validate, roll back, record.
+   ========================================================================== */
+// Who or what is making a change. Recorded with every commit so "the itinerary
+// changed by itself" is answerable rather than a matter of opinion.
+const WRITE={USER:'user',AUTO:'auto-fix',HEAL:'heal',CLOUD:'cloud',AI:'ai',IMPORT:'import',SYSTEM:'system'};
+let _lastCommitted=null;          // serialised state as of the last successful write
+
+// ---- CHANGE LOG -------------------------------------------------------------
+// What changed, when, from which device, and which mechanism did it. The cloud
+// only ever kept {at,by,desc} for the MOST RECENT change, so "why did this move"
+// had no answer. Entries are capped and kept on the device; the log is a record,
+// not itinerary data, so it must never be pushed into the shared trip state.
+const CHANGELOG_KEY_PREFIX='seasons_changelog_';
+const CHANGELOG_MAX=300;
+let _changeLog=null;
+function _changeLogKey(){ return CHANGELOG_KEY_PREFIX+(typeof tripId!=='undefined'?tripId:''); }
+function _loadChangeLog(){
+  if(_changeLog)return _changeLog;
+  try{_changeLog=JSON.parse(localStorage.getItem(_changeLogKey())||'[]');}catch(e){_changeLog=[];}
+  if(!Array.isArray(_changeLog))_changeLog=[];
+  return _changeLog;
+}
+function _recordChange(entry){
+  const log=_loadChangeLog();
+  const e={at:Date.now(),source:entry.source||WRITE.SYSTEM,desc:entry.desc||''};
+  if(entry.refused)e.refused=entry.refused;
+  if(entry.untracked)e.untracked=true;
+  if(entry.losses&&entry.losses.length)e.losses=entry.losses.slice(0,8);
+  if(entry.repaired&&entry.repaired.length)e.repaired=entry.repaired.slice(0,8);
+  try{e.by=_sessionId().slice(0,6);}catch(err){}
+  log.push(e);
+  if(log.length>CHANGELOG_MAX)log.splice(0,log.length-CHANGELOG_MAX);
+  try{localStorage.setItem(_changeLogKey(),JSON.stringify(log));}catch(err){}
+  return e;
+}
+
+// Structural damage that must never reach storage or the cloud. Deliberately
+// narrow: this rejects a WRITE, so a false positive would block saving entirely.
+// Only shapes that make the itinerary unreadable are fatal here.
+function _fatalStateErrors(st){
+  const e=[];
+  if(!st||typeof st!=='object')return['the itinerary is not an object'];
+  if(!Array.isArray(st.days))return['the itinerary has no days list'];
+  st.days.forEach((d,di)=>{
+    if(!d||typeof d!=='object'){e.push('Day '+(di+1)+' is not a day');return;}
+    if(!Array.isArray(d.stops)){e.push('Day '+(di+1)+' has no stops list');return;}
+    d.stops.forEach((s,si)=>{
+      if(!s||typeof s!=='object')e.push('Day '+(di+1)+' stop '+(si+1)+' is not a stop');
+    });
+  });
+  return e;
+}
+// Damage worth REPAIRING rather than refusing: a coordinate off the planet puts
+// a pin in the sea, but it is not a reason to reject the whole edit.
+function _repairState(st){
+  const fixed=[];
+  (st.days||[]).forEach((d,di)=>{
+    (d.stops||[]).forEach((s,si)=>{
+      const where='Day '+(di+1)+' "'+(s.name||'stop '+(si+1))+'"';
+      ['lat','lng'].forEach(k=>{
+        if(s[k]==null)return;
+        const lim=k==='lat'?90:180;
+        if(!Number.isFinite(+s[k])||Math.abs(+s[k])>lim){delete s[k];fixed.push(where+': dropped an impossible '+k);}
+      });
+      ['destLat','destLng'].forEach(k=>{
+        if(s[k]==null)return;
+        const lim=k==='destLat'?90:180;
+        if(!Number.isFinite(+s[k])||Math.abs(+s[k])>lim){delete s[k];fixed.push(where+': dropped an impossible '+k);}
+      });
+      ['startDate','endDate'].forEach(k=>{
+        if(s[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(s[k])){delete s[k];fixed.push(where+': dropped a malformed '+k);}
+      });
+    });
+  });
+  return fixed;
+}
+// Fields a stop should never lose silently. saveStop once rebuilt stops from the
+// form and dropped everything the form had no input for; that is invisible until
+// you look for a reservation number that is gone.
+const _PRECIOUS_FIELDS=['reservation','notes','ticket','ticketName','photo','desc','audioUrl',
+  'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours'];
+// Report values that disappeared from a stop that still exists. Never blocks a
+// write — it records, so a loss can be found after the fact instead of guessed at.
+function _fieldLosses(beforeState,afterState){
+  const out=[];
+  try{
+    const index=(st)=>{const m=new Map();(st.days||[]).forEach((d,di)=>(d.stops||[]).forEach(s=>{
+      if(s&&s.name)m.set(di+'|'+String(s.name).toLowerCase().trim(),s);}));return m;};
+    const a=index(beforeState),b=index(afterState);
+    a.forEach((was,key)=>{
+      const now=b.get(key);if(!now)return;                       // deleted, not silently emptied
+      _PRECIOUS_FIELDS.forEach(f=>{
+        const had=was[f],has=now[f];
+        if(had!=null&&had!==''&&(has==null||has==='')) out.push(key.split('|')[1]+': lost '+f);
+      });
+    });
+  }catch(e){}
+  return out;
+}
+
+// The ONE way to change the itinerary.
+//   commit('Moved dinner later', () => { ...mutate state... }, WRITE.USER)
+// Returns true if the change was written, false if it was refused and rolled back.
+function commit(desc,mutate,source){
+  source=source||WRITE.USER;
+  const before=JSON.stringify(state);
+  // Anything that changed the itinerary WITHOUT coming through here is a bug in
+  // the making. Record it rather than silently absorbing it.
+  if(_lastCommitted!==null&&before!==_lastCommitted){
+    try{_recordChange({source:WRITE.SYSTEM,desc:'changed outside the write path',untracked:true,
+      losses:_fieldLosses(JSON.parse(_lastCommitted),state)});}catch(e){}
+  }
+  try{ if(typeof mutate==='function')mutate(); }
+  catch(err){ try{state=JSON.parse(before);}catch(e){} _lastCommitted=before; throw err; }
+  return _finishCommit(before,desc,source);
+}
+// For a caller that has ALREADY mutated state and needs the same validation,
+// rollback and recording. Taking a fresh snapshot here would compare the new
+// state against itself and conclude nothing had changed, so the last committed
+// snapshot is the baseline instead.
+function commitApplied(desc,source){
+  const before=(_lastCommitted!==null)?_lastCommitted:JSON.stringify(state);
+  return _finishCommit(before,desc,source||WRITE.SYSTEM);
+}
+function _finishCommit(before,desc,source){
+  const fatal=_fatalStateErrors(state);
+  if(fatal.length){
+    try{state=JSON.parse(before);}catch(e){}
+    _lastCommitted=before;
+    try{_recordChange({source:source,desc:desc,refused:fatal[0]});}catch(e){}
+    try{showToast('Change refused: '+fatal[0],5000);}catch(e){}
+    return false;
+  }
+  const repaired=_repairState(state);
+  // A single edit must never quietly destroy the trip.
+  if(_wouldLoseData(JSON.parse(before),state)){
+    try{state=JSON.parse(before);}catch(e){}
+    _lastCommitted=before;
+    try{_recordChange({source:source,desc:desc,refused:'would have removed most of the itinerary'});}catch(e){}
+    try{showToast('Change refused: that would have deleted most of the trip.',6000);}catch(e){}
+    return false;
+  }
+  const after=JSON.stringify(state);
+  if(after===before&&!repaired.length){ _lastCommitted=after; return true; }   // nothing to do
+
+  const losses=_fieldLosses(JSON.parse(before),state);
+  saveState(desc);                       // existing logic gate, persistence, cloud push
+  // saveState's auto-fix gate may itself have adjusted things, so the baseline is
+  // whatever actually ended up stored.
+  _lastCommitted=JSON.stringify(state);
+  try{_recordChange({source:source,desc:desc,losses:losses,repaired:repaired});}catch(e){}
+  return true;
+}
+// Adopting a copy from elsewhere (the cloud, an import, a restore) replaces the
+// whole itinerary, so it is a commit with a different shape: there is nothing to
+// mutate, only a new value to accept.
+function commitReplace(desc,next,source){
+  return commit(desc,()=>{state=next;},source||WRITE.CLOUD);
+}
+// Called after any path that legitimately sets `state` outside commit() — load,
+// restore, cloud adoption — so the next commit does not misreport it as a rogue
+// mutation.
+function _markCommitted(){ try{_lastCommitted=JSON.stringify(state);}catch(e){_lastCommitted=null;} }
+
 function saveState(changeDesc='',localOnly=false){
   if(IS_READONLY)return; // a read-only viewer must never persist or push changes
+  // Structural damage must not reach storage even when something calls saveState
+  // directly rather than through commit().
+  try{
+    const fatal=_fatalStateErrors(state);
+    if(fatal.length){
+      if(_lastCommitted){try{state=JSON.parse(_lastCommitted);}catch(e){}}
+      try{showToast('Not saved: '+fatal[0],5000);}catch(e){}
+      try{_recordChange({source:WRITE.SYSTEM,desc:changeDesc,refused:fatal[0]});}catch(e){}
+      return;
+    }
+  }catch(e){}
   // ---- PHYSICAL-LOGIC GATE: never write an itinerary that adds an impossibility.
   try{
     if(_baselineErrKeys===null)_seedLogicBaseline();
@@ -2509,9 +2692,12 @@ function _recalcDayTimes(dayIdx,anchorMins){
 // dinner around; a move is a swap, so exactly two stops change.
 // Each stop keeps its OWN visit length; only the start slot is exchanged.
 function moveStop(dayIdx,stopIdx,dir){
-  const stops=state.days[dayIdx].stops;
+  const stops0=state.days[dayIdx].stops;
   const newIdx=stopIdx+dir;
-  if(newIdx<0||newIdx>=stops.length)return;
+  if(newIdx<0||newIdx>=stops0.length)return;
+  const _moved=stops0[stopIdx]&&stops0[stopIdx].name||'a stop';
+  commit('Moved '+_moved+(dir<0?' earlier':' later')+' on Day '+(dayIdx+1),()=>{
+  const stops=state.days[dayIdx].stops;
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
   // Re-time ONLY the two positions that changed. Each now starts when you could
   // actually get there: the previous stop's end time plus the travel between them.
@@ -2522,7 +2708,8 @@ function moveStop(dayIdx,stopIdx,dir){
   if(stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
     _recalcDayTimes(dayIdx,_dayStartAnchor(stops));
   }
-  saveState();renderAll();
+  },WRITE.USER);
+  renderAll();
 }
 // Start a stop when it can actually be reached: the PREVIOUS stop's end time plus
 // the travel time between the two. Its own visit length is preserved. The first
@@ -2561,9 +2748,11 @@ function deleteStop(dayIdx,stopIdx){
   // not immediately regenerated by the sync.
   if(_st&&_st._autoArrival&&typeof _dismissArrival==='function')_dismissArrival(_st.name,_st.time);
   const _removedName=_st?_st.name:'';
-  state.days[dayIdx].stops.splice(stopIdx,1);
-  try{ _scrubRemovedStop(dayIdx,_removedName); }catch(e){}   // strip the removed stop from heading + other notes
-  saveState();renderAll();
+  commit('Removed '+_removedName+' from Day '+(dayIdx+1),()=>{
+    state.days[dayIdx].stops.splice(stopIdx,1);
+    try{ _scrubRemovedStop(dayIdx,_removedName); }catch(e){}   // strip it from the heading + other notes
+  },WRITE.USER);
+  renderAll();
 }
 
 function setModalMode(isEdit){
@@ -2843,24 +3032,30 @@ function saveStop(){
   const dateVal=document.getElementById('f-date').value;
   const matched=findDayByDate(dateVal);
   const destDayIdx=matched>=0?matched:srcDayIdx;
-  if(editingStop){
-    if(destDayIdx===srcDayIdx){
-      state.days[srcDayIdx].stops[editingStop.stopIdx]=stop;
+  // One commit for the whole edit. _fieldLosses inside commit() reports any
+  // precious field (reservation, ticket, notes, coordinates) that vanished
+  // between the old stop and the rebuilt one — the exact failure that used to
+  // wipe confirmation numbers with no trace.
+  commit((editingStop?'Edited ':'Added ')+(stop.name||'a stop')+' on Day '+(destDayIdx+1),()=>{
+    if(editingStop){
+      if(destDayIdx===srcDayIdx){
+        state.days[srcDayIdx].stops[editingStop.stopIdx]=stop;
+      }else{
+        state.days[srcDayIdx].stops.splice(editingStop.stopIdx,1);
+        state.days[destDayIdx].stops.push(stop);
+      }
     }else{
-      state.days[srcDayIdx].stops.splice(editingStop.stopIdx,1);
       state.days[destDayIdx].stops.push(stop);
     }
-  }else{
-    state.days[destDayIdx].stops.push(stop);
-  }
-  if(stop.time)_sortDayByTime(destDayIdx);
-  saveState();closeModal();
+    if(stop.time)_sortDayByTime(destDayIdx);
+  },WRITE.USER);
+  closeModal();
   if(destDayIdx!==currentDayIdx&&destDayIdx>=0){switchDay(destDayIdx);}
   else{renderAll();}
   if(!stop.openingHours)lookupPlaceDetails(stop);
   // Was a wrapper in trip-extras.js that reassigned window.saveStop. Inlined so
   // saveStop has exactly one definition and cannot be silently replaced.
-  if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
+  if(_syncOvernightArrivals()){ try{commitApplied('Removed a legacy duplicate arrival',WRITE.HEAL);}catch(e){} try{renderAll();}catch(e){} }
 }
 
 /* ---- Audio Tours ---- */
@@ -3646,6 +3841,8 @@ function _watchFamily(){
       if(!_validTripState(incoming)){ _lastFamilyAt=lc.at; return; }
       _lastFamilyAt=lc.at;
       state=incoming;
+      _markCommitted();   // a legitimate whole-state replacement, not a rogue write
+      try{_recordChange({source:WRITE.CLOUD,desc:(lc.desc||'itinerary updated')+' (from another device)'});}catch(e){}
       // Adopt EXACTLY what the cloud holds. Re-sorting here mutated the adopted
       // copy without pushing it back, so devices silently drifted out of order.
       try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
@@ -3686,6 +3883,8 @@ async function _restoreSavedPlan(){
     return false;
   }
   state=plan;
+  _markCommitted();
+  try{_recordChange({source:WRITE.USER,desc:'Restored the original saved plan'});}catch(e){}
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
   if(fam){
     const ts=Date.now();_lastFamilyAt=ts;
@@ -5852,6 +6051,8 @@ async function init(){
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
               try{ _sortAllDaysByTime(); }catch(e){}
+              _markCommitted();
+              try{_recordChange({source:WRITE.CLOUD,desc:'Adopted a newer shared copy on open'});}catch(e){}
               try{ _seedLogicBaseline(); }catch(e){}   // adopted cloud state is the new baseline
               // NO auto-mutation here. Adopting a cloud copy must never rewrite it and
               // push back — that auto-heal-on-load pattern is what corrupted the trip.
@@ -5898,6 +6099,10 @@ async function init(){
   }
 
   try{ _healLoadedItinerary(); }catch(e){}   // ONCE at load, never on every render
+  // The itinerary as loaded (and healed) is the baseline every later commit is
+  // measured against. Without this the first real edit would be reported as a
+  // rogue mutation, because loading legitimately assigns `state` directly.
+  _markCommitted();
   try{ _seedLogicBaseline(); }catch(e){}   // baseline = the itinerary as loaded (gate blocks only NEW impossibilities)
   // NO auto-mutation of the itinerary on load. Nothing here may rewrite stops/days
   // and save — that on-load auto-heal pattern is what overwrote real data.
@@ -6486,8 +6691,11 @@ function _applyChanges(changes){
   });
   touched.forEach(di=>_sortDayChrono(state.days[di]));
   _syncOvernightArrivals();
-  try{ saveState(); }catch(e){ console.warn('[trip-extras] saveState failed:', e); }
-  try{ renderAll(); }catch(e){ console.warn('[trip-extras] renderAll failed:', e); }
+  // The mutations above already ran, so this commit validates and records the
+  // result rather than applying it. Attributed to the AI so the change log can
+  // tell an AI edit apart from one you made.
+  try{ commitApplied(ok+' change'+(ok!==1?'s':'')+' from Ask AI',WRITE.AI); }catch(e){ console.warn('commit failed:', e); }
+  try{ renderAll(); }catch(e){ console.warn('renderAll failed:', e); }
   const msg = ok+' change'+(ok!==1?'s':'')+' applied'+
     (protectedN?' ('+protectedN+' hotel'+(protectedN!==1?'s':'')+' kept)':'')+
     (fail.length?' ('+fail.length+' failed)':'')+'!';

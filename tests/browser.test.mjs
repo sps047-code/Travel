@@ -1507,3 +1507,179 @@ test('the audio-tour field still pre-fills when editing a stop', async () => {
     'the prefill that lived in the openEditStopModal wrapper must survive the merge');
   await page.close();
 });
+
+// ===========================================================================
+// THE WRITE PATH (v191). 67 places mutated state.days directly and 41 called
+// saveState, so a rule stated once held only where it had been wired in by
+// hand. commit() is now the one way in: snapshot, apply, validate, roll back,
+// record.
+// ===========================================================================
+const WP_DAY = [
+  { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.5194, lng: -0.127, reservation: 'BM-4471', notes: 'Rosetta Stone first' },
+    { name: 'Dishoom', type: 'food', time: '1:00 PM', endTime: '1:45 PM',
+      lat: 51.5115, lng: -0.1265 },
+    { name: 'Royal Horseguards', type: 'lodge', time: '8:00 PM', endTime: '9:00 PM',
+      lat: 51.5063, lng: -0.1237 },
+  ] },
+  { title: 'Day 2', subtitle: 'Thu, Aug 6, 2026', stops: [
+    { name: 'Tower of London', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.5081, lng: -0.0759 },
+  ] },
+];
+
+test('a commit that breaks the itinerary structure is rolled back', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    const before = JSON.stringify(state);
+    const ok = commit('corrupt it', () => { state.days[0].stops = 'not an array'; }, WRITE.USER);
+    return { ok, restored: JSON.stringify(state) === before, stops: state.days[0].stops.length };
+  });
+  assert.equal(out.ok, false, 'the commit must be refused');
+  assert.ok(out.restored, 'and the itinerary must be exactly as it was');
+  assert.equal(out.stops, 3);
+  await page.close();
+});
+
+test('a commit that would delete most of the trip is refused', async () => {
+  // The brake engages at six stops or more: below that, emptying a day is a
+  // plausible edit rather than a catastrophe. Pinned here so the threshold
+  // cannot drift without a test saying so.
+  const big = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+    Array.from({ length: 8 }, (_, i) => ({ name: 'Stop ' + (i + 1), type: 'hike',
+      time: (9 + i) + ':00 AM', endTime: (10 + i) + ':00 AM', lat: 51.5 + i / 100, lng: -0.12 })) }];
+  const { page } = await openTrip(big);
+  const out = await page.evaluate(() => {
+    const ok = commit('wipe it', () => { state.days.forEach((d) => { d.stops = []; }); }, WRITE.USER);
+    return { ok, total: state.days.reduce((n, d) => n + d.stops.length, 0) };
+  });
+  assert.equal(out.ok, false, 'catastrophic loss must not be writable');
+  assert.equal(out.total, 8, 'every stop is still there, got ' + out.total);
+  await page.close();
+});
+
+test('the catastrophic-loss brake does not block an ordinary small edit', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    const ok = commit('tidy day 2', () => { state.days[1].stops = []; }, WRITE.USER);
+    return { ok, d1: state.days[0].stops.length, d2: state.days[1].stops.length };
+  });
+  assert.equal(out.ok, true, 'clearing one small day is a legitimate edit');
+  assert.equal(out.d1, 3, 'and it must not touch the other day');
+  assert.equal(out.d2, 0);
+  await page.close();
+});
+
+test('an impossible coordinate is repaired instead of rejecting the whole edit', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    const ok = commit('rename and break a pin', () => {
+      state.days[0].stops[1].name = 'Dishoom Covent Garden';
+      state.days[0].stops[1].lat = 999;
+    }, WRITE.USER);
+    return { ok, name: state.days[0].stops[1].name, lat: state.days[0].stops[1].lat };
+  });
+  assert.equal(out.ok, true, 'the edit still goes through');
+  assert.equal(out.name, 'Dishoom Covent Garden', 'the good part of the edit is kept');
+  assert.equal(out.lat, undefined, 'the impossible coordinate is dropped, got ' + out.lat);
+  await page.close();
+});
+
+test('losing a reservation number is recorded, not silent', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const log = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    commit('rebuild the museum stop', () => {
+      // Exactly what saveStop used to do: replace the stop with a form-built one
+      // that has no input for reservation or notes.
+      state.days[0].stops[0] = { name: 'British Museum', type: 'hike', time: '10:00 AM',
+        endTime: '12:00 PM', lat: 51.5194, lng: -0.127 };
+    }, WRITE.USER);
+    return _loadChangeLog();
+  });
+  const last = log[log.length - 1];
+  assert.ok(last.losses && last.losses.length, 'the loss must be recorded, got ' + JSON.stringify(last));
+  assert.ok(last.losses.some((l) => /reservation/.test(l)),
+    'the reservation number specifically, got ' + JSON.stringify(last.losses));
+  assert.ok(last.losses.some((l) => /notes/.test(l)));
+  await page.close();
+});
+
+test('a change made outside the write path is caught on the next commit', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const log = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    state.days[0].stops[0].name = 'Sneaky rename';   // bypasses commit entirely
+    commit('an honest edit', () => { state.days[1].stops[0].notes = 'book ahead'; }, WRITE.USER);
+    return _loadChangeLog();
+  });
+  assert.ok(log.some((e) => e.untracked),
+    'the rogue mutation must be flagged, log was ' + JSON.stringify(log));
+  await page.close();
+});
+
+test('every commit records who made it', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const sources = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('user edit', () => { state.days[0].stops[0].notes = 'a'; }, WRITE.USER);
+    commit('ai edit', () => { state.days[0].stops[0].notes = 'b'; }, WRITE.AI);
+    commit('cloud copy', () => { state.days[0].stops[0].notes = 'c'; }, WRITE.CLOUD);
+    return _loadChangeLog().map((e) => e.source);
+  });
+  assert.deepEqual(sources, ['user', 'ai', 'cloud'],
+    'each change is attributed, got ' + JSON.stringify(sources));
+  await page.close();
+});
+
+test('deleting a stop goes through the write path and is logged', async () => {
+  const { page } = await openTrip(WP_DAY);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    deleteStop(0, 1);
+    return { stops: state.days[0].stops.map((s) => s.name), log: _loadChangeLog() };
+  });
+  assert.deepEqual(out.stops, ['British Museum', 'Royal Horseguards']);
+  assert.ok(out.log.some((e) => /Removed Dishoom/.test(e.desc)),
+    'the deletion is named in the log, got ' + JSON.stringify(out.log.map((e) => e.desc)));
+  assert.ok(!out.log.some((e) => e.untracked), 'and it is not reported as a rogue write');
+  await page.close();
+});
+
+test('moving a stop goes through the write path and is logged', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    moveStop(0, 1, -1);
+    return { stops: state.days[0].stops.map((s) => s.name), log: _loadChangeLog() };
+  });
+  assert.equal(out.stops[0], 'Dishoom', 'the move happened');
+  assert.ok(out.log.some((e) => /Moved Dishoom earlier/.test(e.desc)),
+    'and it is named in the log, got ' + JSON.stringify(out.log.map((e) => e.desc)));
+  assert.ok(!out.log.some((e) => e.untracked));
+  await page.close();
+});
+
+test('a commit whose mutation throws leaves the itinerary untouched', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    const before = JSON.stringify(state);
+    let threw = false;
+    try {
+      commit('half an edit', () => {
+        state.days[0].stops[0].name = 'Half applied';
+        throw new Error('boom');
+      }, WRITE.USER);
+    } catch (e) { threw = true; }
+    return { threw, restored: JSON.stringify(state) === before, name: state.days[0].stops[0].name };
+  });
+  assert.ok(out.threw, 'the error still surfaces');
+  assert.ok(out.restored, 'but nothing is half-applied, name was ' + out.name);
+  await page.close();
+});

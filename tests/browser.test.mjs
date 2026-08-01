@@ -2047,3 +2047,217 @@ test('every transit leg on the real trip still draws after the refactor', async 
   assert.ok(perDay[0] >= 1, 'including the Day 1 flight, got ' + perDay[0]);
   await page.close();
 });
+
+// ===========================================================================
+// v195 — four reports from the live app.
+// ===========================================================================
+
+// 1. THE SAME FLIGHT REPORTED TWO DIFFERENT LANDING TIMES. The continuation
+// banner used the flight's own endTime; the transit bookend used the NEXT
+// STOP's start time and called it "arriving".
+const OVERNIGHT = [
+  { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+    { name: 'Flight Z0 784 — MCO to LGW', type: 'flight', time: '8:30 PM', endTime: '10:00 AM',
+      startDate: '2026-08-04', lat: 28.4312, lng: -81.3081, reservation: 'Z0784' },
+  ] },
+  { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'Land at London Gatwick', type: 'flight', time: '11:00 AM', endTime: '11:45 AM',
+      lat: 51.1537, lng: -0.1821 },
+  ] },
+];
+
+test('a flight reports ONE landing time, not two', async () => {
+  const { page } = await openTrip(OVERNIGHT, { day: 1 });
+  const times = await page.evaluate(() => {
+    const panel = document.querySelector('.day-panel.active') || document.getElementById('content-area');
+    const txt = panel.textContent;
+    return { txt, hits: (txt.match(/1[01]:00 AM/g) || []) };
+  });
+  // 11:00 AM is the NEXT stop's start; it must never be presented as the arrival.
+  assert.ok(!/arriv\w*[^.]{0,20}11:00 AM/i.test(times.txt),
+    'the next stop\'s start time must not be labelled as the arrival: ' + times.txt.slice(0, 400));
+  assert.match(times.txt, /10:00 AM/, 'the flight\'s real end time is what is shown');
+  await page.close();
+});
+
+test('an overnight flight is shown once, not as two boxes', async () => {
+  const { page } = await openTrip(OVERNIGHT, { day: 1 });
+  const n = await page.evaluate(() => {
+    const panel = document.querySelector('.day-panel.active') || document.getElementById('content-area');
+    return {
+      bookends: panel.querySelectorAll('.hotel-bookend').length,
+      continues: /Continues from Day/i.test(panel.textContent),
+      inflight: /In flight/i.test(panel.textContent),
+    };
+  });
+  assert.ok(n.continues, 'the continuation banner describes the leg');
+  assert.ok(!n.inflight, 'and the transit bookend must not repeat it');
+  await page.close();
+});
+
+test('the transit bookend, when it does show, reports the journey\'s own arrival', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      // Ends on the SAME day, so no continuation banner: the bookend is the one
+      // that has to be right.
+      { name: 'Train to Edinburgh', type: 'train', time: '2:00 PM', endTime: '6:30 PM',
+        startDate: '2026-08-04', endDate: '2026-08-04', lat: 53.4808, lng: -2.2426,
+        reservation: 'LNER-8891' },
+    ] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Edinburgh Castle', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 55.9486, lng: -3.1999 },
+    ] },
+  ], { day: 1 });
+  const txt = await page.evaluate(() => {
+    const b = document.querySelector('.hotel-bookend');
+    return b ? b.textContent : '';
+  });
+  assert.match(txt, /6:30 PM/, 'the train\'s own arrival, got: ' + txt);
+  assert.ok(!/10:00 AM/.test(txt), 'not the next stop\'s start: ' + txt);
+  await page.close();
+});
+
+// 2. THE BOOKING BELONGS IN EVERY GREEN BOX, not only the hotel ones.
+test('a booked journey shows its confirmation in the green box', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Train to Edinburgh', type: 'train', time: '2:00 PM', endTime: '6:30 PM',
+        startDate: '2026-08-04', endDate: '2026-08-04', lat: 53.4808, lng: -2.2426,
+        reservation: 'LNER-8891' },
+    ] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Edinburgh Castle', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 55.9486, lng: -3.1999 },
+    ] },
+  ], { day: 1 });
+  const txt = await page.evaluate(() => (document.querySelector('.hotel-bookend') || {}).textContent || '');
+  assert.match(txt, /LNER-8891/, 'the confirmation number belongs here too, got: ' + txt);
+  await page.close();
+});
+
+test('every hotel surface shows the confirmation and the ticket button', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Tower of London', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5081, lng: -0.0759 },
+      { name: 'Royal Horseguards Hotel', type: 'lodge', time: '8:00 PM', endTime: '9:00 PM',
+        lat: 51.5063, lng: -0.1237, reservation: '1072991266',
+        ticketImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' },
+    ] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ], { day: 0 });
+  // The stop card itself.
+  const card = await page.evaluate(() => {
+    const c = document.getElementById('stop-card-0-1');
+    return { txt: c ? c.textContent : '', btn: c ? c.querySelectorAll('.ticket-view-btn').length : 0 };
+  });
+  assert.match(card.txt, /1072991266/, 'the card shows the number');
+  assert.equal(card.btn, 1, 'exactly one ticket button, not zero and not two, got ' + card.btn);
+  // And the green bookend on the FOLLOWING day, where you wake up in it.
+  await page.evaluate(() => switchDay(1));
+  await page.waitForTimeout(200);
+  const bookend = await page.evaluate(() => {
+    const b = document.querySelector('.day-panel.active .hotel-bookend');
+    return { txt: b ? b.textContent : '', btn: b ? b.querySelectorAll('.ticket-view-btn').length : 0 };
+  });
+  assert.match(bookend.txt, /1072991266/, 'and so does the next morning\'s box, got: ' + bookend.txt);
+  assert.equal(bookend.btn, 1, 'with its own ticket button');
+  await page.close();
+});
+
+// 3. CHOOSING WHO IS ON A STOP vanished entirely when no travellers were set up.
+test('the who-is-joining control is always offered', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const before = await page.evaluate(() => {
+    state.travelers = [];
+    openEditStopModal(0, 0);
+    const sec = document.getElementById('f-travelers-section');
+    return { visible: getComputedStyle(sec).display !== 'none', text: sec.textContent };
+  });
+  assert.ok(before.visible, 'the section must never hide itself');
+  assert.match(before.text, /Add travellers/i, 'it offers a way to set them up, got: ' + before.text);
+
+  const after = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Alex', 'Jo'];
+    _populateTravelersForm(state.days[0].stops[0]);
+    const boxes = Array.from(document.querySelectorAll('#f-travelers-checkboxes input'));
+    return { n: boxes.length, values: boxes.map((b) => b.value), checked: boxes.filter((b) => b.checked).length };
+  });
+  assert.equal(after.n, 3, 'one checkbox per traveller, got ' + after.n);
+  assert.deepEqual(after.values, ['Sam', 'Alex', 'Jo']);
+  assert.equal(after.checked, 3, 'everyone is on it by default');
+  await page.close();
+});
+
+test('a stop remembers who was selected', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Alex', 'Jo'];
+    _populateTravelersForm({ attendance: ['Sam', 'Jo'] });
+    const boxes = Array.from(document.querySelectorAll('#f-travelers-checkboxes input'));
+    return boxes.filter((b) => b.checked).map((b) => b.value);
+  });
+  assert.deepEqual(out, ['Sam', 'Jo'], 'the stored selection is restored, got ' + JSON.stringify(out));
+  await page.close();
+});
+
+// 4. A YOUTUBE LINK IN THE TOUR FIELD PLAYS WHERE THE PHOTO WOULD BE.
+test('a YouTube tour plays in the stop picture slot', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster Abbey', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.4994, lng: -0.1273, audioUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30' },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => !!document.querySelector('#stopimg-0-0 iframe'), null, { timeout: 15000 });
+  const out = await page.evaluate(() => {
+    const f = document.querySelector('#stopimg-0-0 iframe');
+    const card = document.getElementById('stop-card-0-0');
+    return { src: f.src, allowFs: f.hasAttribute('allowfullscreen'),
+      wrapLoaded: document.getElementById('stopimg-0-0').classList.contains('loaded'),
+      audioEls: card ? card.querySelectorAll('audio').length : -1 };
+  });
+  assert.match(out.src, /youtube-nocookie\.com\/embed\/dQw4w9WgXcQ/, 'got ' + out.src);
+  assert.match(out.src, /start=30/, 'the ?t= timestamp is honoured');
+  assert.ok(!/autoplay=1/.test(out.src), 'a page of stops must never start playing by itself');
+  assert.ok(out.allowFs, 'fullscreen is allowed');
+  assert.ok(out.wrapLoaded, 'the slot opens up for it');
+  assert.equal(out.audioEls, 0, 'and no broken <audio> element is added alongside');
+  await page.close();
+});
+
+test('every YouTube link shape is recognised, and non-YouTube is left alone', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const ids = await page.evaluate(() => [
+    _youTubeId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+    _youTubeId('https://youtu.be/dQw4w9WgXcQ'),
+    _youTubeId('https://www.youtube.com/embed/dQw4w9WgXcQ'),
+    _youTubeId('https://www.youtube.com/shorts/dQw4w9WgXcQ'),
+    _youTubeId('https://m.youtube.com/watch?app=desktop&v=dQw4w9WgXcQ'),
+    _youTubeId('https://podcasts.ricksteves.com/audio-tours/london.mp3'),
+    _youTubeId('javascript:alert(1)'),
+    _youTubeId(''),
+  ]);
+  assert.deepEqual(ids.slice(0, 5), Array(5).fill('dQw4w9WgXcQ'), 'got ' + JSON.stringify(ids));
+  assert.deepEqual(ids.slice(5), ['', '', ''], 'an audio file and a javascript: URL are not videos');
+  await page.close();
+});
+
+test('an ordinary audio tour still gets its player', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster Abbey', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.4994, lng: -0.1273, audioUrl: 'https://example.com/tour.mp3' },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => !!document.querySelector('#stop-card-0-0 audio'), null, { timeout: 15000 });
+  const n = await page.evaluate(() => document.querySelectorAll('#stopimg-0-0 iframe').length);
+  assert.equal(n, 0, 'an mp3 must not become a video embed');
+  await page.close();
+});

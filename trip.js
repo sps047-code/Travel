@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v194';
+window.APP_CODE_VERSION='v195';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1177,22 +1177,26 @@ function _findStopPos(stop){
   }catch(e){}
   return null;
 }
-// THE single definition of how a hotel surfaces its booking: the confirmation
-// number and a button that opens the stored reservation/ticket. Every place that
-// renders a hotel uses this, so adding it to one surface can never again leave
-// the others behind.
-function _lodgeBookingHtml(lodge,where,opts){
-  if(!lodge)return '';
+// THE single definition of how ANY booked stop surfaces its booking: the
+// confirmation number and a button that opens the stored ticket. It was
+// hotel-only, so a flight's green box showed nothing even though the flight had
+// a confirmation number sitting right there in the data. Every surface that
+// renders a bookable stop calls this, so adding it to one place can never again
+// leave the others behind.
+function _bookingHtml(stop,where,opts){
+  if(!stop)return '';
   const o=opts||{};
   const hasPos=!!(where&&where.dayIdx>=0&&where.stopIdx>=0);
-  const resv=lodge.reservation
-    ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:var(--space-1)">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(lodge.reservation)+'</div>'
+  const resv=stop.reservation
+    ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:var(--space-1)">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(stop.reservation)+'</div>'
     :'';
-  const ticket=(hasPos&&lodge.ticketImage)
+  const ticket=(hasPos&&stop.ticketImage)
     ?'<button class="ticket-view-btn" onclick="event.preventDefault();event.stopPropagation();showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:var(--space-2)">&#127903; '+(o.label||'View Reservation')+'</button>'
     :'';
   return resv+ticket;
 }
+// Kept as the hotel-shaped name used by the lodging surfaces.
+function _lodgeBookingHtml(lodge,where,opts){ return _bookingHtml(lodge,where,opts); }
 function hotelBookendHtml(label,lodge,otherStop,where){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
   let travelHtml='';
@@ -1220,9 +1224,16 @@ function transitBookendHtml(transitStop,firstStop){
   const LABELS={flight:'In flight',train:'On train',bus:'On bus'};
   const icon=ICONS[transitStop.type]||'&#128652;';
   const label=LABELS[transitStop.type]||'In transit';
-  const arrTime=firstStop&&firstStop.time?(' &middot; arriving '+firstStop.time):'';
+  // WHEN DOES IT LAND? The journey's own end time. This used to show the NEXT
+  // STOP's start time instead, so the same flight reported two different arrival
+  // times in the same view: "arrives 10:00 AM" in the continuation banner and
+  // "arriving 11:00 AM" here, which was really when the first stop began.
+  const arr=transitStop&&transitStop.endTime?transitStop.endTime:'';
+  const tz=arr?_endTz(transitStop):'';
+  const arrTime=arr?(' &middot; arriving '+_escHtml(arr)+(tz?' '+_escHtml(tz):'')):'';
   const nm=transitStop.name.replace(/^check.?in\s*[—–\-]\s*/i,'').trim();
-  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">'+icon+'</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+arrTime+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div></div></div>';
+  const where=_findStopPos(transitStop);
+  return'<div class="hotel-bookend"><span class="hotel-bookend-icon">'+icon+'</span><div style="flex:1"><div class="hotel-bookend-label">'+_escHtml(label)+arrTime+'</div><div class="hotel-bookend-name">'+_escHtml(nm)+'</div>'+_bookingHtml(transitStop,where,{label:'View Ticket'})+'</div></div>';
 }
 
 function _getTodayDayIdx(){
@@ -1264,8 +1275,13 @@ function renderPanel(idx){
   const WX_OUTDOOR=['hike','drive'];
   const _todayDayIdx=_getTodayDayIdx();
   const _upNextSi=_todayDayIdx===idx?_getUpNextStopIdx(idx):-1;
-  let cards=_continuationHtml(idx)+
-    (prevEndsInTransit&&day.stops.length>0?transitBookendHtml(prevLastStop,day.stops[0]):
+  // A journey that runs past midnight is ONE event. The continuation banner
+  // already names it, when it lands and how long it took, so rendering the
+  // transit bookend as well showed the same flight twice — with two different
+  // arrival times.
+  const _cont=_continuationHtml(idx);
+  let cards=_cont+
+    ((prevEndsInTransit&&day.stops.length>0&&!_cont)?transitBookendHtml(prevLastStop,day.stops[0]):
     showStart?hotelBookendHtml('Starting from',prevHotel,day.stops[0],_findStopPos(prevHotel)):'');
   day.stops.forEach((s,si)=>{
     const isFirst=si===0,isLast=si===day.stops.length-1;
@@ -1294,10 +1310,10 @@ function renderPanel(idx){
       (_displayDuration(s,dayDateStr(idx))?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s,dayDateStr(idx)))+'</span>':'')+
       (s.stars?'<div class="card-stars" title="Rating">&#9733; '+_escHtml(s.stars)+'<span class="card-stars-max">/5</span></div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
-      (s.reservation?'<div class="card-notes" style="margin-top:var(--space-1);font-size:var(--text-sm);font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
+      _bookingHtml(s,{dayIdx:idx,stopIdx:si},{label:s.type==='lodge'?'View Reservation':'View Ticket'})+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
-      (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
+      /* the ticket button is rendered by _bookingHtml above — one definition */
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
       (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link map-link-quiet" onclick="fixStopLocation('+idx+','+si+')" title="Wrong pin on the map? Re-locate this stop from its name">&#128205; Fix pin</button>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
@@ -1413,6 +1429,36 @@ async function fetchStopImage(name){
 }
 
 let _renderGen=0; // bumped on every renderAll — invalidates in-flight image loads
+// ---- VIDEO TOURS -----------------------------------------------------------
+// The Audio Tour field takes a YouTube link as well as an audio file. A video
+// cannot play through an <audio> element, so it takes over the stop's picture
+// slot instead: the walking tour plays exactly where the photo of the place was.
+function _youTubeId(url){
+  if(!url)return '';
+  const u=String(url).trim();
+  if(!/^https?:\/\//i.test(u))return '';
+  let m=/(?:youtube\.com|youtube-nocookie\.com)\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)([A-Za-z0-9_-]{11})/.exec(u);
+  if(!m)m=/youtu\.be\/([A-Za-z0-9_-]{11})/.exec(u);
+  if(!m)return '';
+  return m[1];
+}
+// Start the video at ?t= / &start= when the link carries one.
+function _youTubeStart(url){
+  const m=/[?&](?:t|start)=(\d+)/.exec(String(url||''));
+  return m?+m[1]:0;
+}
+function _youTubeEmbedHtml(url,title){
+  const id=_youTubeId(url);
+  if(!id)return '';
+  const t=_youTubeStart(url);
+  // nocookie host, and no autoplay: a page of stops must never start playing by
+  // itself. rel=0 keeps the end screen to the same channel.
+  const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1'+(t?'&start='+t:'');
+  return '<iframe class="stop-video" src="'+_escHtml(src)+'" title="'+_escHtml(title||'Video tour')+'" '+
+    'loading="lazy" frameborder="0" referrerpolicy="strict-origin-when-cross-origin" '+
+    'allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+}
+
 async function loadStopImages(){
   const gen=_renderGen;
   const allStops=state.days.flatMap((d,di)=>d.stops.map((s,si)=>({stop:s,di,si})));
@@ -1422,6 +1468,12 @@ async function loadStopImages(){
     if(gen!==_renderGen)return;
     const el=document.getElementById('stopimg-'+di+'-'+si);
     if(!el||el.classList.contains('loaded'))continue;
+    // A YouTube tour plays where the photo would have been.
+    const vid=_youTubeEmbedHtml(stop.audioUrl,stop.name);
+    if(vid){
+      el.innerHTML=vid;
+      el.classList.add('loaded');el.classList.add('has-video');continue;
+    }
     if(stop.customImage){
       el.innerHTML='<img class="stop-img" src="'+_escHtml(_safeImgSrc(stop.customImage))+'" alt="'+_escHtml(stop.name)+'" loading="lazy"/>';
       el.classList.add('loaded');continue;
@@ -2162,7 +2214,19 @@ function _startZone(s){
 function _endZone(s){
   // A journey ends where it lands, so the END zone resolves against the
   // DESTINATION coordinates, falling back to the origin for a stationary stop.
-  const end=_stopTo(s,null);      // stated destination, else where it started
+  // Look ahead to where this journey actually delivers you — this day and the
+  // next — so a flight with no stored destination coordinates still resolves its
+  // arrival zone from the airport it lands at rather than the one it left.
+  let after=null;
+  try{
+    const pos=_findStopPos(s);
+    if(pos&&state&&state.days){
+      after=(state.days[pos.dayIdx].stops||[]).slice(pos.stopIdx+1);
+      const nd=state.days[pos.dayIdx+1];
+      if(nd&&nd.stops)after=after.concat(nd.stops);
+    }
+  }catch(e){}
+  const end=_stopTo(s,after);
   if(s&&s.endTz)return _zoneFor(s.endTz,end?end.lat:null,end?end.lng:null);
   try{
     if(end){const t=tzData[tzKey(end.lat,end.lng)];if(t&&t.tz)return t.tz;}
@@ -5255,9 +5319,19 @@ function openTravelersModal(){
 }
 function saveTravelers(){
   const val=document.getElementById('travelers-input').value;
-  state.travelers=val.split('\n').map(t=>t.trim()).filter(Boolean);
-  saveState('Updated travelers');
+  const names=val.split('\n').map(t=>t.trim()).filter(Boolean);
+  commit('Updated who is on the trip',()=>{state.travelers=names;},WRITE.USER);
   document.getElementById('travelers-modal').classList.remove('open');
+  // If the stop modal is open behind this one — which it is when you got here
+  // from "Add travellers" — refresh its checkboxes so the new names appear
+  // immediately instead of only on the next open.
+  try{
+    const mo=document.getElementById('modal-overlay');
+    if(mo&&mo.classList.contains('open')){
+      const s=(editingStop&&state.days[editingStop.dayIdx])?state.days[editingStop.dayIdx].stops[editingStop.stopIdx]:null;
+      _populateTravelersForm(s);
+    }
+  }catch(e){}
   renderAll();
 }
 function _populateTravelersForm(stop){
@@ -5265,8 +5339,17 @@ function _populateTravelersForm(stop){
   const sec=document.getElementById('f-travelers-section');
   const box=document.getElementById('f-travelers-checkboxes');
   if(!sec||!box)return;
-  if(!travelers.length){sec.style.display='none';return;}
   sec.style.display='';
+  // NEVER hide the control. It used to vanish entirely when no travellers had
+  // been set up, so choosing who is on an activity looked like a feature that
+  // had been removed rather than one waiting for a list of names.
+  if(!travelers.length){
+    box.innerHTML='<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);line-height:1.45">'+
+      'No one on the trip list yet. Add the people travelling with you and they will appear here for every stop.'+
+      '<button type="button" class="ai-action-btn" style="display:block;margin-top:var(--space-2);background:var(--slate,#4A6572)" '+
+      'onclick="openTravelersModal()">&#128100; Add travellers</button></div>';
+    return;
+  }
   const att=stop?stop.attendance||travelers:travelers;
   box.innerHTML=travelers.map(t=>
     '<label style="display:flex;align-items:center;gap:var(--space-2);font-family:var(--font-ui);font-size:var(--text-md);cursor:pointer">'+
@@ -6397,13 +6480,8 @@ function _injectFormField(){
     g.innerHTML = '<label class="form-label">End Time</label><input type="text" class="form-input" id="f-endtime" placeholder="e.g. 11:00 AM"/>';
     timeGrp.after(g);
   }
-  const notesGrp = document.querySelector('#f-notes')?.closest('.form-group');
-  if(notesGrp && !document.getElementById('f-audiourl')){
-    const g = document.createElement('div');
-    g.className = 'form-group';
-    g.innerHTML = '<label class="form-label">Audio Tour URL</label><input type="text" class="form-input" id="f-audiourl" placeholder="e.g. https://podcasts.ricksteves.com/audio-tours/..."/>';
-    notesGrp.before(g);
-  }
+  // f-audiourl and f-endtime are both in trip.html now. This injection is kept
+  // only as a safety net for a browser holding an older cached copy of the page.
 }
 
 // [merged into trip.js] the saveStop and openEditStopModal wrappers are now folded into those functions themselves
@@ -6533,6 +6611,9 @@ function _augmentAudioBadges(){
     if(!m) return;
     const stop=state?.days?.[+m[1]]?.stops?.[+m[2]];
     if(!stop||!stop.audioUrl) return;
+    // A YouTube link is played by the embed in the picture slot; an <audio>
+    // element cannot play it and would sit there permanently broken.
+    if(_youTubeId(stop.audioUrl)){ card.dataset.audioBadged='1'; return; }
     card.dataset.audioBadged='1';
     const url=stop.audioUrl;
     const bar=document.createElement('div');

@@ -279,26 +279,40 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
 /* Start / End each occupy one row of three fields so the pairs read together.
    Collapses to a single column on narrow screens. */
 .field-row-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-2)}
-/* Without min-width:0 the inputs keep their intrinsic width and the third column
-   (Time Zone) overflowed past the modal edge. */
-.field-row-3>*{min-width:0}
-.field-row-3 input{width:100%;min-width:0;box-sizing:border-box}
-/* SAFARI: date and time inputs are rendered at their INTRINSIC width and ignore
-   width:100%, so on iPad they spilled out of their grid cell and overlapped the
-   field beside them. Removing the native appearance makes them size like any
-   other input. Chromium was already fine, which is why this was invisible in the
-   test browser and obvious on the user's iPad. */
+/* Three layers of defence, because a native date/time control decides its own
+   width and not every engine can be tested here.
+   1. min-width:0 lets the grid column shrink at all.
+   2. overflow:hidden means a control that refuses to shrink is TRIMMED at its
+      own cell edge instead of being painted on top of the field beside it.
+      Overlap is therefore impossible by construction, in any browser.
+   3. _fitFieldRows() measures the real boxes on the real device and drops the
+      row to one column if anything still does not fit. */
+.field-row-3>*{min-width:0;overflow:hidden}
+.field-row-3 input{width:100%;max-width:100%;min-width:0;box-sizing:border-box;display:block}
+/* iOS SAFARI: date and time inputs render as a NATIVE control — centred value,
+   its own height, intrinsic width — and ignore width:100%, so they spilled out
+   of their grid cell and over the field beside them. The give-away in a
+   screenshot is a centred value: that means these rules are not in effect.
+   Stripping the native appearance makes them size like any other input. */
 input[type=date],input[type=time]{
   -webkit-appearance:none;appearance:none;
   width:100%;min-width:0;max-width:100%;box-sizing:border-box;
   /* Safari also hides the picker button unless it is given room. */
   -webkit-min-logical-width:0;
 }
+/* Safari uses ::-webkit-date-and-time-value; Chrome uses ::-webkit-datetime-edit.
+   Both are pinned so the value is left aligned and carries no extra width. */
 input[type=date]::-webkit-date-and-time-value,
-input[type=time]::-webkit-date-and-time-value{text-align:left;margin:0;min-width:0}
+input[type=time]::-webkit-date-and-time-value{text-align:left;margin:0;min-width:0;width:100%}
+input[type=date]::-webkit-datetime-edit,
+input[type=time]::-webkit-datetime-edit{padding:0;min-width:0;overflow:hidden}
+input[type=date]::-webkit-datetime-edit-fields-wrapper,
+input[type=time]::-webkit-datetime-edit-fields-wrapper{padding:0;min-width:0}
 input[type=date]::-webkit-calendar-picker-indicator,
 input[type=time]::-webkit-calendar-picker-indicator{flex-shrink:0;margin-left:auto;padding:0}
-.field-row-dur>*{min-width:0}
+/* Measured fallback: one field per line can never overlap. */
+.field-row-3.stacked,.field-row-dur.stacked{grid-template-columns:1fr}
+.field-row-dur>*{min-width:0;overflow:hidden}
 .field-row-dur input[type=text]{width:100%;min-width:0;box-sizing:border-box}
 .field-row-dur{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:var(--space-3);align-items:end}
 .lock-toggle{display:flex;align-items:center;gap:var(--space-2);cursor:pointer;padding:var(--space-2) 0;
@@ -662,7 +676,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v186'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v187'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -905,11 +919,11 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=186"></script>
+<script src="trip.js?v=187"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.
      trip.js owns _parseTripDate. -->
-<script src="trip-extras.js?v=186"></script>
+<script src="trip-extras.js?v=187"></script>
 </body>
 </html>

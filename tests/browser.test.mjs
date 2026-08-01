@@ -936,6 +936,97 @@ test('Edit Stop shows BOTH times, and no field is clipped', async () => {
 });
 
 // ===========================================================================
+// FIELDS MUST NOT OVERLAP. This was reported five times and "fixed" twice by
+// eye. Eyes are not a test. These measure the real boxes at several widths and
+// fail on a single pixel of overlap.
+// ===========================================================================
+const OVERLAP_WIDTHS = [1180, 1024, 900, 820, 768, 600, 430, 390];
+
+async function measureRows(page) {
+  return page.evaluate(() => {
+    const rows = [];
+    document.querySelectorAll('.field-row-3,.field-row-dur').forEach((row) => {
+      const cells = Array.prototype.slice.call(row.children);
+      rows.push(cells.map((c) => {
+        const ctl = c.querySelector('input,select') || c;
+        const cb = c.getBoundingClientRect();
+        const ib = ctl.getBoundingClientRect();
+        return { id: ctl.id || ctl.className, top: ib.top, left: ib.left, right: ib.right,
+          escapes: +(ib.width - cb.width).toFixed(1) };
+      }));
+    });
+    return rows;
+  });
+}
+
+test('no two Edit Stop fields ever overlap, at any width', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster Abbey', type: 'hike', time: '3:35 PM', endTime: '4:35 PM',
+        duration: '1h', lat: 51.4994, lng: -0.1273 },
+    ] },
+  ]);
+  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.waitForSelector('#f-endtime', { state: 'attached' });
+  for (const w of OVERLAP_WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await page.evaluate(() => _fitFieldRows());
+    await page.waitForTimeout(60);
+    const rows = await measureRows(page);
+    for (const cells of rows) {
+      for (const c of cells) {
+        assert.ok(c.escapes <= 0.5,
+          `at ${w}px, ${c.id} is ${c.escapes}px wider than the cell holding it`);
+      }
+      for (let i = 0; i < cells.length - 1; i++) {
+        const a = cells[i], b = cells[i + 1];
+        if (Math.abs(a.top - b.top) > 2) continue;   // different visual line
+        assert.ok(a.right <= b.left + 0.5,
+          `at ${w}px, ${a.id} overlaps ${b.id} by ${(a.right - b.left).toFixed(1)}px`);
+      }
+    }
+  }
+  await page.close();
+});
+
+// The runtime fallback must actually engage when a control refuses to shrink —
+// which is exactly what iOS Safari does with a native date/time control and what
+// no browser available here reproduces. Force the condition and assert the row
+// stacks instead of overlapping.
+test('a control that refuses to shrink makes the row stack, not overlap', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster Abbey', type: 'hike', time: '3:35 PM', endTime: '4:35 PM',
+        lat: 51.4994, lng: -0.1273 },
+    ] },
+  ]);
+  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.waitForSelector('#f-date', { state: 'attached' });
+  // Simulate the iOS control: intrinsic width, immune to width:100%.
+  const res = await page.evaluate(() => {
+    const st = document.createElement('style');
+    st.textContent = '#f-date{width:420px !important;min-width:420px !important;max-width:none !important}';
+    document.head.appendChild(st);
+    const row = document.getElementById('f-date').closest('.field-row-3');
+    const before = row.classList.contains('stacked');
+    _fitFieldRows();
+    const after = row.classList.contains('stacked');
+    const cells = Array.prototype.slice.call(row.children)
+      .map((c) => (c.querySelector('input') || c).getBoundingClientRect());
+    let overlap = 0;
+    for (let i = 0; i < cells.length - 1; i++) {
+      if (Math.abs(cells[i].top - cells[i + 1].top) > 2) continue;
+      overlap = Math.max(overlap, cells[i].right - cells[i + 1].left);
+    }
+    return { before, after, overlap: +overlap.toFixed(1) };
+  });
+  assert.equal(res.before, false, 'the row starts un-stacked');
+  assert.equal(res.after, true, 'an oversized control must force the row to stack');
+  assert.ok(res.overlap <= 0.5, 'and after stacking nothing overlaps, got ' + res.overlap + 'px');
+  await page.close();
+});
+
+// ===========================================================================
 // TRANSIT LEGS ON THE MAP. Ground segmentation (v169) excludes flights/trains
 // from ROAD routing — you cannot drive the Atlantic — but that is a routing
 // decision, NOT a reason to hide the journey. Every flight, train and bus gets

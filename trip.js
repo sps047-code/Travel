@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v186';
+window.APP_CODE_VERSION='v187';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2530,6 +2530,38 @@ function setModalMode(isEdit){
   document.querySelector('#modal-overlay .modal-title').textContent=isEdit?'Edit Stop':'Add a Stop';
   document.querySelector('#modal-overlay .btn-primary').textContent=isEdit?'Save Changes':'Add Stop';
 }
+// A native <input type=date>/<input type=time> picks its own width, and iOS
+// Safari ignores width:100% outright, so the Start Date / Start Time / Start
+// Time Zone row could be drawn on top of itself. CSS cannot be verified for an
+// engine that is not available to test in, so this measures the actual boxes on
+// the actual device: if two fields in the same visual row really do overlap, or
+// a control has burst out of its own cell, the row drops to one field per line,
+// which cannot overlap in any browser.
+function _fitFieldRows(){
+  let stacked=0;
+  document.querySelectorAll('.field-row-3,.field-row-dur').forEach(row=>{
+    row.classList.remove('stacked');           // re-measure from the wide layout
+    const cells=Array.prototype.slice.call(row.children);
+    if(cells.length<2)return;
+    const pair=cells.map(c=>({cell:c.getBoundingClientRect(),
+                              ctl:(c.querySelector('input,select')||c).getBoundingClientRect()}));
+    let bad=false;
+    for(let i=0;i<pair.length-1;i++){
+      const a=pair[i].ctl,b=pair[i+1].ctl;
+      if(!a.width||!b.width)continue;
+      if(Math.abs(a.top-b.top)>2)continue;     // wrapped to the next line, not neighbours
+      if(a.right>b.left+0.5)bad=true;
+    }
+    // A control wider than the cell holding it has already escaped, even if the
+    // neighbour happens to sit clear of it.
+    pair.forEach(p=>{ if(p.ctl.width>p.cell.width+0.5)bad=true; });
+    if(bad){row.classList.add('stacked');stacked++;}
+  });
+  return stacked;
+}
+window._fitFieldRows=_fitFieldRows;
+window.addEventListener('resize',()=>{try{_fitFieldRows();}catch(e){}});
+window.addEventListener('orientationchange',()=>{setTimeout(()=>{try{_fitFieldRows();}catch(e){}},150);});
 function openAddStopModal(dayIdx){
   editingStop=null;addingToDay=dayIdx;
   ['place-search','f-name','f-date','f-time','f-endtime','f-duration','f-stars','f-lat','f-lng','f-notes','f-reservation','f-from','f-to','f-airline','f-flightnum','f-url','f-audiourl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
@@ -2552,6 +2584,7 @@ function openAddStopModal(dayIdx){
   _populateTravelersForm(null);
   setModalMode(false);toggleTransitFields();
   document.getElementById('modal-overlay').classList.add('open');
+  try{_fitFieldRows();}catch(e){}
   setTimeout(()=>document.getElementById('place-search').focus(),100);
 }
 function openEditStopModal(dayIdx,stopIdx){
@@ -2597,6 +2630,7 @@ function openEditStopModal(dayIdx,stopIdx){
   const _db2=document.getElementById('f-desc-btn');if(_db2){_db2.textContent=s.desc?'✨ Regenerate Description':'✨ Generate Description';_db2.disabled=false;}
   setModalMode(true);toggleTransitFields();
   document.getElementById('modal-overlay').classList.add('open');
+  try{_fitFieldRows();}catch(e){}
   setTimeout(()=>document.getElementById('f-name').focus(),100);
 }
 

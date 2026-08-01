@@ -847,3 +847,56 @@ test('the blank-trip path creates the right number of empty days', async () => {
   assert.match(res.firstTitle, /Kyoto/, 'days are titled for the destination');
   await page.close();
 });
+
+// ===========================================================================
+// VISUAL CONSISTENCY of the stop card. "Fix pin" carried an inline
+// font:inherit that overrode its chip class, so a maintenance action rendered
+// larger than everything else and dominated the card.
+// ===========================================================================
+test('every action chip on a stop card shares one size', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Royal Horseguards Hotel', type: 'lodge', time: '11:49 AM', endTime: '12:09 PM',
+        reservation: '1072991266', ticketImage: 'data:image/png;base64,iVBORw0KGgo=',
+        lat: 51.5063, lng: -0.1237 },
+    ] },
+  ]);
+  const chips = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.stop-card .map-link, .stop-card .ticket-view-btn').forEach((el) => {
+      const cs = getComputedStyle(el);
+      out.push({ text: (el.textContent || '').trim().slice(0, 16),
+        size: cs.fontSize, h: Math.round(el.getBoundingClientRect().height) });
+    });
+    return out;
+  });
+  assert.ok(chips.length >= 3, 'several chips are present, got ' + chips.length);
+  const sizes = [...new Set(chips.map((c) => c.size))];
+  const heights = [...new Set(chips.map((c) => c.h))];
+  assert.equal(sizes.length, 1, 'chips must share ONE font size, got ' + JSON.stringify(chips));
+  assert.equal(heights.length, 1, 'and one height, got ' + JSON.stringify(chips));
+  await page.close();
+});
+
+test('delete is the last card control and is set apart from the move buttons', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 55.94, lng: -3.19 },
+      { name: 'B', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', lat: 55.95, lng: -3.18 },
+    ] },
+  ]);
+  const info = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.stop-card .card-controls .card-btn')];
+    const last = btns[btns.length - 1];
+    return { count: btns.length, lastIsDelete: last.classList.contains('delete-btn'),
+      gap: parseFloat(getComputedStyle(last).marginLeft),
+      labels: btns.map((b) => b.getAttribute('aria-label') || b.title) };
+  });
+  assert.ok(info.lastIsDelete, 'delete must be last, order was ' + JSON.stringify(info.labels));
+  assert.ok(info.gap >= 8, 'delete needs separation from the other controls, got ' + info.gap + 'px');
+  // The two move buttons should be adjacent to each other, not split by delete.
+  const i1 = info.labels.findIndex((l) => /earlier|up/i.test(l));
+  const i2 = info.labels.findIndex((l) => /later|down/i.test(l));
+  assert.equal(Math.abs(i1 - i2), 1, 'the move controls sit together: ' + JSON.stringify(info.labels));
+  await page.close();
+});

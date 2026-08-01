@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v182';
+window.APP_CODE_VERSION='v183';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -993,12 +993,15 @@ function renderPanel(idx){
     const _isUpNext=si===_upNextSi;
     cards+='<div class="stop-card'+(s.alt?' alt-stop':'')+(_isUpNext?' up-next':'')+'" id="stop-card-'+idx+'-'+si+'" style="animation-delay:'+si*40+'ms">'+
       '<div class="stop-dot dot-'+(s.type||'drive')+'">'+(si+1)+'</div>'+
+      // Grouped by intent: the two MOVE buttons together, then edit/copy, then
+      // DELETE last behind a divider. Delete used to sit between edit and
+      // move-down — an easy mis-tap on a tablet, and destructive.
       '<div class="card-controls" ontouchstart="event.stopPropagation()">'+
       '<button class="card-btn" aria-label="Move stop earlier" onclick="moveStop('+idx+','+si+',-1)" title="Move up" '+(isFirst?'disabled':'')+'>&#9650;</button>'+
-      '<button class="card-btn edit-btn" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
-      '<button class="card-btn" onclick="deleteStop('+idx+','+si+')" title="Remove" style="font-size:var(--text-lg)">&times;</button>'+
       '<button class="card-btn" aria-label="Move stop later" onclick="moveStop('+idx+','+si+',1)" title="Move down" '+(isLast?'disabled':'')+'>&#9660;</button>'+
-      '<button class="card-btn" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:var(--text-xs)">&#8599;</button>'+
+      '<button class="card-btn edit-btn" aria-label="Edit stop" onclick="openEditStopModal('+idx+','+si+')" title="Edit stop">&#9998;</button>'+
+      '<button class="card-btn" aria-label="Copy to another day" onclick="openCopyModal('+idx+','+si+')" title="Copy to another day" style="font-size:var(--text-xs)">&#8599;</button>'+
+      '<button class="card-btn delete-btn" aria-label="Remove stop" onclick="deleteStop('+idx+','+si+')" title="Remove stop">&times;</button>'+
       '</div>'+
       '<div class="card-top">'+(s.time?'<span class="card-time">'+(s.locked?'<span title="Reserved time — locked" style="margin-right:var(--space-1)">&#128274;</span>':'')+_escHtml(s.time)+(_startTz(s)?'<span class="card-tz">'+_escHtml(_startTz(s))+'</span>':'')+_startEndDateHtml(s,idx)+' </span>':'')+'<div class="card-main">'+
       '<div class="card-name">'+(_isUpNext?'<span class="up-next-badge">Up next</span>':'')+_escHtml(s.name)+(s.alt?' <span style="font-weight:400;font-size:var(--text-sm)">(alternate)</span>':'')+(conflicts[si]?'<span class="conflict-badge" tabindex="0">&#9888;<span class="ctip">'+conflicts[si].map(_escHtml).join('<br>')+'</span></span>':'')+(WX_OUTDOOR.includes(s.type)?_wxWarnHtml(wxCache):'')+(s.recentlyChanged?'<span class="recently-changed-dot" title="Recently changed by AI"></span>':'')+'</div>'+
@@ -1009,14 +1012,14 @@ function renderPanel(idx){
       // flight today look unreachable and showed a red impossible warning.
       _airportWarningHtml(si>0?day.stops[si-1]:null,s)+
       (_displayDuration(s,dayDateStr(idx))?'<span class="card-duration">&#9201; '+_escHtml(_displayDuration(s,dayDateStr(idx)))+'</span>':'')+
-      (s.stars?'<div class="card-stars">&#9733; '+_escHtml(s.stars)+'</div>':'')+
+      (s.stars?'<div class="card-stars" title="Rating">&#9733; '+_escHtml(s.stars)+'<span class="card-stars-max">/5</span></div>':'')+
       (s.notes?'<div class="card-notes">'+_escHtml(s.notes)+'</div>':'')+
       (s.reservation?'<div class="card-notes" style="margin-top:var(--space-1);font-size:var(--text-sm);font-weight:600;color:var(--pine);letter-spacing:0.03em">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(s.reservation)+'</div>':'')+
       '</div></div><div class="badges">'+badge(s.type)+(s.alt?'<span class="badge badge-alt">Alternate</span>':'')+(s.reservation?'<span class="badge badge-booked">&#10003; Booked</span>':(['lodge','flight','train','bus'].includes(s.type)||/pre-?book|book in advance|book now|sells out|timed entry|timed slot/i.test(s.notes||''))&&!/^depart\b/i.test(s.name)?'<span class="badge badge-tobook">&#128197; To Book</span>':'')+'</div>'+
       _audioBadgeHtml(s)+
       (s.ticketImage?'<button class="ticket-view-btn" onclick="showTicketViewer('+idx+','+si+')">&#127903; View Ticket</button>':'')+
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
-      (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link" onclick="fixStopLocation('+idx+','+si+')" style="border:none;background:none;cursor:pointer;font:inherit" title="Wrong pin on the map? Re-locate this stop from its name">&#128205; Fix pin</button>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link map-link-quiet" onclick="fixStopLocation('+idx+','+si+')" title="Wrong pin on the map? Re-locate this stop from its name">&#128205; Fix pin</button>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       _bookingLinkHtml(s)+
       (_isUpNext&&s.lat&&s.lng?'<a class="live-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng+'" target="_blank" rel="noopener">&#127907; Navigate Here</a>':'')+

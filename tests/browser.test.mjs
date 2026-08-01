@@ -934,3 +934,58 @@ test('Edit Stop shows BOTH times, and no field is clipped', async () => {
   }
   await page.close();
 });
+
+// ===========================================================================
+// TRANSIT LEGS ON THE MAP. Ground segmentation (v169) deliberately excluded
+// flights/trains from ROAD routing — you cannot drive the Atlantic. But that
+// left a train journey with NO line at all: Day 2 showed a pin at Gatwick and
+// pins in London with nothing joining them.
+// ===========================================================================
+test('a train journey is drawn on the map', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Gatwick Express to London Victoria', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821, destLat: 51.4952, destLng: -0.1441 },
+      { name: 'British Museum', type: 'hike', time: '11:00 AM', endTime: '1:00 PM',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('#map .leaflet-overlay-pane path').length > 0,
+    null, { timeout: 15000 });
+  const legs = await page.evaluate(() => _transitLegs(state.days[0].stops));
+  assert.equal(legs.length, 1, 'the train is one transit leg');
+  assert.equal(legs[0].mode, 'train');
+  assert.equal(legs[0].to[0], 51.4952, 'it ends at Victoria, its stated destination');
+  const paths = await page.evaluate(() => document.querySelectorAll('#map .leaflet-overlay-pane path').length);
+  assert.ok(paths >= 1, 'and a line is actually rendered, got ' + paths);
+  await page.close();
+});
+
+test('a transit leg with no destination coords uses the next stop', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      // No destLat/destLng — this is how most imported trains look.
+      { name: 'Gatwick Express', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821 },
+      { name: 'Royal Horseguards Hotel', type: 'lodge', time: '10:30 AM', endTime: '11:00 AM',
+        lat: 51.5063, lng: -0.1237 },
+    ] },
+  ]);
+  const legs = await page.evaluate(() => _transitLegs(state.days[0].stops));
+  assert.equal(legs.length, 1, 'the train still produces a leg');
+  assert.equal(legs[0].to[0], 51.5063, 'it runs to the next located stop');
+  await page.close();
+});
+
+test('the train leg on the REAL trip Day 2 is drawn', async () => {
+  const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
+  const { page } = await openTrip(trip.days, { day: 1 });
+  const info = await page.evaluate(() => ({
+    legs: _transitLegs(state.days[1].stops).map((l) => l.mode),
+    paths: document.querySelectorAll('#map .leaflet-overlay-pane path').length,
+  }));
+  assert.ok(info.legs.includes('train'), 'Day 2 has a train leg, got ' + JSON.stringify(info.legs));
+  assert.ok(info.paths >= 2, 'the map draws the transit leg AND the ground route, got ' + info.paths);
+  await page.close();
+});

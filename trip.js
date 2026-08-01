@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v184';
+window.APP_CODE_VERSION='v185';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -564,6 +564,35 @@ async function fetchRoute(stops){
 // but never nothing: segmentation can strand stops (a train/flight with no
 // arrival coordinates ends a segment and leaves the rest as a lone point, which
 // draws no line). When nothing is drawable, connect every located stop in order.
+// TRANSIT LEGS for the map. _groundSegments deliberately excludes flights/trains
+// from ROAD routing (you cannot drive the Atlantic). But a train or bus journey is
+// a real line the traveller wants to see — Gatwick to Victoria is the whole reason
+// Day 2 has two clusters of pins. Draw each transit leg as its own connector.
+// Destination = the stop's own destLat/destLng when known, else the NEXT located
+// stop, which is where that journey actually delivers you.
+function _transitLegs(stops){
+  const TR=['flight','train','bus'];
+  const legs=[];
+  const list=(stops||[]);
+  for(let i=0;i<list.length;i++){
+    const s=list[i];
+    if(s.alt||!TR.includes(s.type)||!_validLL(s))continue;
+    let to=null;
+    if(s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng}))to=[s.destLat,s.destLng];
+    else{
+      for(let j=i+1;j<list.length;j++){
+        const n=list[j];
+        if(n.alt||!_validLL(n))continue;
+        to=[n.lat,n.lng];break;
+      }
+    }
+    if(!to)continue;
+    // A leg with no real distance would draw a dot, not a line.
+    try{ if(haversine(s.lat,s.lng,to[0],to[1])<0.3)continue; }catch(e){ continue; }
+    legs.push({from:[s.lat,s.lng],to:to,mode:s.type,name:s.name||''});
+  }
+  return legs;
+}
 function _routeSegmentsForDay(routeStops){
   const segs=_groundSegments(routeStops);
   if(segs.some(sg=>_dropCoordOutliers(sg).length>1))return segs;
@@ -639,6 +668,15 @@ async function renderDayMap(idx,fit=true){
   // Draw a solid straight connector FIRST so a line is always visible even if the
   // routing service is slow or down. When the road route comes back it's drawn on
   // top and becomes the line you see. No dashed lines.
+  // Transit legs (train/bus/flight) get their own line so the journey is visible.
+  // They are NOT road-routed — OSRM cannot drive a rail line or an ocean.
+  const TRANSIT_COLOR={train:'#4A6572',bus:'#2B6CB0',flight:'#7B5EA7'};
+  _transitLegs(routeStops).forEach(l=>{
+    L.polyline([l.from,l.to],{color:TRANSIT_COLOR[l.mode]||'#4A6572',weight:3,opacity:0.75,
+      dashArray:l.mode==='flight'?'6 6':null}).addTo(routeLayer)
+      .bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(l.name)+'</div>',{maxWidth:220});
+    bounds.push(l.from,l.to);
+  });
   const segs=_routeSegmentsForDay(routeStops);
   const fallbacks=segs.map(seg=>{
     const pts=_dropCoordOutliers(seg).map(s=>[s.lat,s.lng]);

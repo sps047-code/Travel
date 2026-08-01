@@ -1423,3 +1423,87 @@ test('the zone picker offers no ambiguous abbreviation', async () => {
   assert.ok(opts.includes('Europe/Dublin') && opts.includes('Asia/Kolkata'),
     'both meanings of IST are offered explicitly instead');
 });
+
+// ===========================================================================
+// THE MERGE (v190). trip-extras.js used to load after trip.js and reassign
+// window.saveStop, window.openEditStopModal and window._planCallAI. A function
+// could therefore have two definitions with only the later one running — which
+// is how the attachment rules added to PLAN_CHAT_SYSTEM never reached the model
+// at all, and how a fix to saveStop could be silently undone.
+// ===========================================================================
+test('the page loads exactly one script that defines app behaviour', async () => {
+  const html = fs.readFileSync(path.join(ROOT, 'trip.html'), 'utf8');
+  assert.ok(!/<script src="trip-extras\.js/.test(html),
+    'trip-extras.js must no longer be loaded');
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'X', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.5, lng: -0.12 },
+    ] },
+  ]);
+  // The functions that used to be reassigned are plain declarations now, and the
+  // window property and the binding must be the same object.
+  const same = await page.evaluate(() => ({
+    saveStop: window.saveStop === saveStop,
+    openEdit: window.openEditStopModal === openEditStopModal,
+    planCall: window._planCallAI === _planCallAI,
+  }));
+  assert.deepEqual(same, { saveStop: true, openEdit: true, planCall: true },
+    'no function may be shadowed by a second definition');
+  await page.close();
+});
+
+test('the system prompt actually sent contains the attachment rules', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ]);
+  await page.evaluate(() => openPlanChat());
+  await page.waitForSelector('#pc-input', { state: 'attached' });
+  await page.evaluate(() => {
+    window.__sent = [];
+    window.fetch = async (u, o) => { window.__sent.push(o && o.body);
+      return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) }; };
+  });
+  await page.evaluate(() => { document.getElementById('pc-input').value = 'hello'; });
+  await page.evaluate(() => _planSendMessage());
+  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
+  const body = await page.evaluate(() => JSON.parse(window.__sent[0]));
+  // Before the merge these rules lived on PLAN_CHAT_SYSTEM, which nothing sent.
+  assert.match(body.system, /ATTACHED FILE markers/,
+    'the attachment rules must be in the prompt that is actually transmitted');
+  assert.match(body.system, /ITINERARY_CHANGES/,
+    'and it must still be the change-capable prompt, not the read-only one');
+  assert.match(body.system, /LIVE ITINERARY/, 'with the itinerary index map appended');
+  await page.close();
+});
+
+test('the card augmentation merged out of trip-extras still runs', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => !!document.querySelector('.stop-card .card-endtime'), null, { timeout: 15000 });
+  const txt = await page.evaluate(() => document.querySelector('.card-endtime').textContent);
+  assert.match(txt, /12:00 PM/, 'the end time is still drawn on the card, got ' + txt);
+  await page.close();
+});
+
+test('the audio-tour field still pre-fills when editing a stop', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.4994, lng: -0.1273, audioUrl: 'https://example.com/tour.mp3' },
+    ] },
+  ]);
+  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.waitForSelector('#f-audiourl', { state: 'attached' });
+  const v = await page.evaluate(() => document.getElementById('f-audiourl').value);
+  assert.equal(v, 'https://example.com/tour.mp3',
+    'the prefill that lived in the openEditStopModal wrapper must survive the merge');
+  await page.close();
+});

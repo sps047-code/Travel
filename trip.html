@@ -697,7 +697,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v189'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v190'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -940,11 +940,13 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=189"></script>
+<script src="trip.js?v=190"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.
      trip.js owns _parseTripDate. -->
-<script src="trip-extras.js?v=189"></script>
+<!-- trip-extras.js was merged into trip.js in v190. It reassigned window.saveStop,
+     window.openEditStopModal and window._planCallAI at load, so a function could have
+     two definitions and only one of them ran. Nothing loads it now. -->
 </body>
 </html>

@@ -19,7 +19,6 @@ echo "==> v$CURRENT -> v$NEXT"
 
 # Never ship a build that fails its own tests or cannot be parsed.
 node -e "new Function(require('fs').readFileSync('trip.js','utf8'))"
-node -e "new Function(require('fs').readFileSync('trip-extras.js','utf8'))"
 node -e "new Function(require('fs').readFileSync('sw.js','utf8'))"
 # STATIC CHECK: every CSS custom property referenced must be declared. A token
 # used but never defined resolves to nothing and silently collapses layout —
@@ -62,7 +61,7 @@ BAD=$(grep -o "v$CURRENT\b" trip.js sw.js trip.html || true)
 [ -z "$BAD" ] || { echo "STALE VERSION LEFT BEHIND:"; echo "$BAD"; exit 1; }
 echo "==> stamped v$NEXT in trip.js, sw.js, trip.html"
 
-git add -A trip.js trip-extras.js sw.js trip.html index.html tests/ release.sh CHANGELOG.md 2>/dev/null || true
+git add -A trip.js trip-extras.js vendor/ sw.js trip.html index.html tests/ release.sh CHANGELOG.md 2>/dev/null || true
 git commit -q -m "v$NEXT: $MSG"
 git tag -f "v$NEXT" -m "v$NEXT: $MSG"
 

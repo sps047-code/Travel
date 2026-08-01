@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v192';
+window.APP_CODE_VERSION='v193';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -183,6 +183,9 @@ function _finishCommit(before,desc,source){
     return false;
   }
   const repaired=_repairState(state);
+  // Canonical times are maintained here, at the one write path, rather than by
+  // each caller remembering to do it.
+  try{ _normalizeTimes(state); }catch(e){}
   // A single edit must never quietly destroy the trip.
   if(_wouldLoseData(JSON.parse(before),state)){
     try{state=JSON.parse(before);}catch(e){}
@@ -2130,8 +2133,130 @@ function _endZone(s){
   }catch(e){}
   return _startZone(s);
 }
+/* ============================================================================
+   CANONICAL TIME MODEL (v193)
+
+   A stop's time is a WALL CLOCK plus the IANA zone it is read in:
+
+       s.start = { local:'2026-08-04T18:55', zone:'America/New_York' }
+       s.end   = { local:'2026-08-05T08:45', zone:'Europe/London'   }
+
+   The INSTANT is derived, never stored. For a trip in the future the wall clock
+   is the fact and the instant follows from it: you booked a 6:55 PM departure,
+   and it stays 6:55 PM local whatever a government later does to daylight
+   saving. Storing an offset (-04:00) instead would freeze today's rule into the
+   data and silently drift; storing only a UTC instant would lose the intent.
+
+   Everything that does ARITHMETIC uses the instant. Everything that DISPLAYS a
+   time uses the wall clock. That is the whole point: parsing happens once, at
+   the boundary, instead of in every function that wants to compare two times.
+
+   The legacy fields (time, endTime, startDate, endDate, tz, endTz) are kept and
+   rewritten from the canonical pair on every write, so a phone still running an
+   older build reads the same shared itinerary correctly.
+   ========================================================================== */
+const _LOCAL_RE=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+function _localStr(iso,mins){
+  if(!iso||mins==null)return '';
+  return iso+'T'+String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');
+}
+function _localParts(local){
+  const m=_LOCAL_RE.exec(String(local||''));
+  return m?{iso:m[1]+'-'+m[2]+'-'+m[3],mins:(+m[4])*60+(+m[5])}:null;
+}
+// Epoch milliseconds for a wall clock read in a zone. Null when the zone cannot
+// be resolved — unknown is reported, never guessed.
+function _instantOf(t){
+  const p=t&&_localParts(t.local);
+  if(!p)return null;
+  const off=_zoneOffsetMins(t.zone,p.iso,_formatTimeMins(p.mins));
+  if(off==null)return null;
+  const [y,mo,d]=p.iso.split('-').map(Number);
+  return Date.UTC(y,mo-1,d,Math.floor(p.mins/60),p.mins%60)-off*60000;
+}
+// Read a stop's canonical start/end, falling back to the legacy fields so this
+// works on data written before the migration and on anything a peer device sends.
+// DIRECTION OF TRUTH: the legacy fields are the INPUT and the canonical pair is
+// DERIVED from them. Sixty-seven places in this file write s.time directly; if
+// the canonical value won instead, every one of those edits would be silently
+// reverted the next time times were normalised. (It was — a test caught it.)
+// Canonical wins only when there is no legacy value to read.
+function _stopStart(s,dayISO){
+  const mins=_parseTimeMins(s&&s.time);
+  const iso=(s&&s.startDate)||dayISO||'';
+  if(mins!=null&&iso)return {local:_localStr(iso,mins),zone:_startZone(s)};
+  if(s&&s.start&&_localParts(s.start.local))return s.start;
+  return null;
+}
+function _stopEnd(s,dayISO){
+  const mins=_parseTimeMins(s&&s.endTime);
+  if(mins!=null){
+    const sISO=(s&&s.startDate)||dayISO||'';
+    const iso=(s&&s.endDate)||_endDateOf(s,sISO)||sISO;
+    if(iso)return {local:_localStr(iso,mins),zone:_endZone(s)};
+  }
+  if(s&&s.end&&_localParts(s.end.local))return s.end;
+  return null;
+}
+function _stopStartInstant(s,dayISO){ return _instantOf(_stopStart(s,dayISO)); }
+function _stopEndInstant(s,dayISO){ return _instantOf(_stopEnd(s,dayISO)); }
+// Elapsed minutes between the two instants. No midnight-wrap heuristic and no
+// date-line special case: subtracting two points on the timeline cannot produce
+// the 37-hour Sydney-to-Los-Angeles answer that clock arithmetic did.
+function _stopDurationMins(s,dayISO){
+  const a=_stopStartInstant(s,dayISO),b=_stopEndInstant(s,dayISO);
+  if(a==null||b==null)return null;
+  const mins=Math.round((b-a)/60000);
+  return (mins>0&&mins<=43200)?mins:null;      // 30 days is not a stop
+}
+// Build the canonical pair from the legacy fields. Returns true if it wrote
+// anything. Idempotent, so it is safe to run on every load and every write.
+function _ensureStopTimes(s,dayISO){
+  if(!s)return false;
+  let changed=false;
+  const st=_stopStart(s,dayISO);   // recomputed from the legacy fields every time
+  if(st&&(!s.start||s.start.local!==st.local||s.start.zone!==st.zone)){s.start={local:st.local,zone:st.zone||''};changed=true;}
+  const en=_stopEnd(s,dayISO);
+  if(en&&(!s.end||s.end.local!==en.local||s.end.zone!==en.zone)){s.end={local:en.local,zone:en.zone||''};changed=true;}
+  return changed;
+}
+// Project the canonical pair back onto the legacy fields, so an older build
+// reading the same cloud copy sees exactly the same times.
+// FILL IN the legacy fields the canonical pair can supply — never overwrite one
+// that already has a value. A stop that only ever had a bare "6:55 PM" gains the
+// date it belongs to, which is what made an overnight leg ambiguous; a stop
+// somebody just edited keeps exactly what they typed.
+function _syncLegacyTimeFields(s){
+  if(!s)return false;
+  let changed=false;
+  const fill=(k,v)=>{ if(v&&!s[k]){s[k]=v;changed=true;} };
+  const a=s.start&&_localParts(s.start.local);
+  if(a){ fill('time',_formatTimeMins(a.mins)); fill('startDate',a.iso); }
+  const b=s.end&&_localParts(s.end.local);
+  if(b){ fill('endTime',_formatTimeMins(b.mins)); fill('endDate',b.iso); }
+  return changed;
+}
+// One pass over the whole itinerary: derive what is missing, then keep the two
+// representations in step. Called from the load-time heal and from every commit.
+function _normalizeTimes(st){
+  st=st||state;
+  let changed=false;
+  (st.days||[]).forEach((d,di)=>{
+    const dayISO=(typeof dayDateStr==='function')?dayDateStr(di):'';
+    (d.stops||[]).forEach(s=>{
+      if(_ensureStopTimes(s,dayISO))changed=true;
+      if(_syncLegacyTimeFields(s))changed=true;
+    });
+  });
+  return changed;
+}
+
 function _displayDuration(s,startISO){
   if(!s)return '';
+  // Two instants subtracted. Only when a zone cannot be resolved does this fall
+  // through to the older wall-clock reasoning below.
+  const exact=_stopDurationMins(s,startISO);
+  if(exact!=null)return _fmtDur(exact);
   const st=_parseTimeMins(s.time),et=_parseTimeMins(s.endTime);
   if(st==null||et==null)return s.duration||'';
   const sISO=s.startDate||startISO||'';
@@ -2503,6 +2628,9 @@ function _healLoadedItinerary(){
   step('repaired end times that were before their start',()=>_healBadEndTimes());
   step('recomputed a day whose times ran backwards',()=>_healEarlyDays());
   step('reordered stops into time order',()=>_sortAllDaysByTime());
+  // Last, so it sees the healed values: give every stop a canonical
+  // {local, zone} start and end, and keep the legacy fields in step with it.
+  step('gave every stop a dated, zoned start and end',()=>_normalizeTimes(state));
   if(did.length){
     try{_recordChange({source:WRITE.HEAL,desc:'On opening: '+did.join('; ')});}catch(e){}
   }

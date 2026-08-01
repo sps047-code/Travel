@@ -1780,3 +1780,140 @@ test('the log survives a reload and is capped', async () => {
   assert.equal(after.first, 'edit 40', 'and the oldest are dropped');
   await page.close();
 });
+
+// ===========================================================================
+// CANONICAL TIME MODEL (v193). A stop's time is a wall clock plus the IANA zone
+// it is read in; the instant is derived. Durations are two instants subtracted,
+// which is why the midnight-wrap and date-line special cases can go.
+// ===========================================================================
+async function withZones(page, pairs) {
+  await page.evaluate((ps) => { ps.forEach(([la, ln, tz]) => { tzData[tzKey(la, ln)] = { tz }; }); }, pairs);
+}
+
+test('a stop carries a dated, zoned start and end after loading', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Flight MCO to LGW', type: 'flight', time: '6:55 PM', endTime: '8:45 AM',
+        startDate: '2026-08-04', tz: 'America/New_York', endTz: 'Europe/London',
+        lat: 28.4312, lng: -81.3081 },
+    ] },
+  ]);
+  const s = await page.evaluate(() => {
+    const st = state.days[0].stops[0];
+    return { start: _stopStart(st, '2026-08-04'), end: _stopEnd(st, '2026-08-04') };
+  });
+  assert.equal(s.start.local, '2026-08-04T18:55');
+  assert.equal(s.start.zone, 'America/New_York');
+  assert.equal(s.end.local, '2026-08-05T08:45', 'the end rolls onto the next day by itself');
+  assert.equal(s.end.zone, 'Europe/London');
+  await page.close();
+});
+
+test('a transatlantic flight duration is the real elapsed time', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Flight MCO to LGW', type: 'flight', time: '6:55 PM', endTime: '8:45 AM',
+        startDate: '2026-08-04', tz: 'America/New_York', endTz: 'Europe/London',
+        lat: 28.4312, lng: -81.3081 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => ({
+    mins: _stopDurationMins(state.days[0].stops[0], '2026-08-04'),
+    text: _displayDuration(state.days[0].stops[0], '2026-08-04'),
+  }));
+  // 18:55 EDT is 22:55 UTC; 08:45 BST is 07:45 UTC the next day. 8h 50min.
+  assert.equal(out.mins, 530, 'got ' + out.mins + ' minutes');
+  assert.equal(out.text, '8h 50min');
+  await page.close();
+});
+
+test('crossing the date line does not produce a 37-hour flight', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      // Sydney to Los Angeles ARRIVES at an earlier clock time on the SAME date.
+      { name: 'SYD to LAX', type: 'flight', time: '11:00 AM', endTime: '6:30 AM',
+        startDate: '2026-08-04', endDate: '2026-08-04',
+        tz: 'Australia/Sydney', endTz: 'America/Los_Angeles', lat: -33.94, lng: 151.18 },
+    ] },
+  ]);
+  const mins = await page.evaluate(() => _stopDurationMins(state.days[0].stops[0], '2026-08-04'));
+  assert.ok(mins > 700 && mins < 900, 'about 13 hours, got ' + mins + ' minutes');
+  await page.close();
+});
+
+test('a same-zone stop is unaffected by any of this', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:30 PM',
+        startDate: '2026-08-05', tz: 'Europe/London', endTz: 'Europe/London',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => _displayDuration(state.days[0].stops[0], '2026-08-05'));
+  assert.equal(out, '2h 30min');
+  await page.close();
+});
+
+test('an unresolvable zone gives no instant rather than a wrong one', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Nowhere', type: 'hike', time: '10:00 AM', endTime: '11:30 AM',
+        startDate: '2026-08-05', tz: 'ZZZ', endTz: 'ZZZ' },
+    ] },
+  ]);
+  const out = await page.evaluate(() => ({
+    inst: _stopStartInstant(state.days[0].stops[0], '2026-08-05'),
+    // The display still has to say something sensible.
+    text: _displayDuration(state.days[0].stops[0], '2026-08-05'),
+  }));
+  assert.equal(out.inst, null, 'no instant is claimed');
+  assert.equal(out.text, '1h 30min', 'but the wall-clock fallback still answers');
+  await page.close();
+});
+
+test('editing a time the ordinary way is NOT reverted by the canonical copy', async () => {
+  // The canonical pair is DERIVED. If it won instead, all 67 places that write
+  // s.time directly would have their edits silently undone.
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    _markCommitted();
+    commit('retime lunch', () => { state.days[0].stops[1].time = '2:00 PM'; }, WRITE.USER);
+    const s = state.days[0].stops[1];
+    return { time: s.time, canonical: s.start && s.start.local };
+  });
+  assert.equal(out.time, '2:00 PM', 'the edit stands');
+  assert.match(out.canonical, /T14:00$/, 'and the canonical copy followed it, got ' + out.canonical);
+  await page.close();
+});
+
+test('a stop with only a bare time gains the date it belongs to', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'No date on me', type: 'hike', time: '9:00 AM', endTime: '10:00 AM',
+        lat: 51.5, lng: -0.12 },
+    ] },
+  ]);
+  const s = await page.evaluate(() => {
+    const st = state.days[0].stops[0];
+    return { start: st.start && st.start.local, startDate: st.startDate };
+  });
+  assert.match(s.start || '', /^\d{4}-\d{2}-\d{2}T09:00$/,
+    'the canonical start is dated, got ' + s.start);
+  assert.ok(s.startDate, 'and the legacy date field was filled in, got ' + s.startDate);
+  await page.close();
+});
+
+test('the legacy fields still describe the trip, for a device on an older build', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const stops = await page.evaluate(() => {
+    _markCommitted();
+    commit('touch it', () => { state.days[0].stops[0].notes = 'x'; }, WRITE.USER);
+    return state.days[0].stops.map((s) => ({ time: s.time, endTime: s.endTime, date: s.startDate }));
+  });
+  for (const s of stops) {
+    assert.match(s.time, /^\d{1,2}:\d{2} (AM|PM)$/, 'time stays readable: ' + s.time);
+    assert.match(s.endTime, /^\d{1,2}:\d{2} (AM|PM)$/, 'end time stays readable: ' + s.endTime);
+    assert.match(s.date, /^\d{4}-\d{2}-\d{2}$/, 'and carries its date: ' + s.date);
+  }
+  await page.close();
+});

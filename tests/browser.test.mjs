@@ -1323,3 +1323,103 @@ test('a file alone, with no typed question, is still a valid message', async () 
   assert.match(body.user, /RJ4419/);
   await page.close();
 });
+
+// ===========================================================================
+// TIME ZONES. A three-letter abbreviation cannot identify a zone. "IST" is
+// Irish Standard Time (+1) in Dublin and India Standard Time (+5:30) in Delhi,
+// and the app resolved it to India — a silent 4.5-hour error on a UK and
+// Ireland trip. The guard entry written to prevent that (IST_IE) could never
+// match, because the lookup strips non-letters. Location decides now.
+// ===========================================================================
+test('IST on a stop in Ireland is Irish time, not Indian time', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Dublin Airport', type: 'flight', tz: 'IST', endTz: 'IST',
+        time: '9:00 AM', endTime: '10:30 AM', startDate: '2026-08-05', endDate: '2026-08-05',
+        lat: 53.4264, lng: -6.2499 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    // Teach the app where this stop is, the same way its own lookup would.
+    tzData[tzKey(53.4264, -6.2499)] = { tz: 'Europe/Dublin' };
+    const s = state.days[0].stops[0];
+    return { zone: _startZone(s), offset: _zoneOffsetMins(_startZone(s), '2026-08-05', '9:00 AM') };
+  });
+  assert.equal(out.zone, 'Europe/Dublin', 'IST in Dublin must resolve to Ireland, got ' + out.zone);
+  assert.equal(out.offset, 60, 'Irish Summer Time is +1:00, got ' + out.offset + ' minutes');
+});
+
+test('IST on a stop in India is still Indian time', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Delhi', type: 'hike', tz: 'IST', time: '9:00 AM', endTime: '10:30 AM',
+        startDate: '2026-08-05', lat: 28.6139, lng: 77.209 },
+    ] },
+  ]);
+  const off = await page.evaluate(() => {
+    tzData[tzKey(28.6139, 77.209)] = { tz: 'Asia/Kolkata' };
+    return _zoneOffsetMins(_startZone(state.days[0].stops[0]), '2026-08-05', '9:00 AM');
+  });
+  assert.equal(off, 330, 'India is +5:30, got ' + off);
+});
+
+test('an ambiguous zone with no location gives no offset rather than a wrong one', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Somewhere', type: 'hike', tz: 'IST', time: '9:00 AM', endTime: '10:00 AM' },
+    ] },
+  ]);
+  const off = await page.evaluate(() =>
+    _zoneOffsetMins(_startZone(state.days[0].stops[0]), '2026-08-05', '9:00 AM'));
+  assert.equal(off, null, 'unknown must be null, not a confident guess, got ' + off);
+});
+
+test('the end zone of a journey resolves at the DESTINATION, not the origin', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      // Leaves Chicago (CST) and lands in Shanghai (also called CST).
+      { name: 'ORD to PVG', type: 'flight', tz: 'CST', endTz: 'CST',
+        time: '1:00 PM', endTime: '4:00 PM', startDate: '2026-08-04', endDate: '2026-08-05',
+        lat: 41.9742, lng: -87.9073, destLat: 31.1443, destLng: 121.8083 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    tzData[tzKey(41.9742, -87.9073)] = { tz: 'America/Chicago' };
+    tzData[tzKey(31.1443, 121.8083)] = { tz: 'Asia/Shanghai' };
+    const s = state.days[0].stops[0];
+    return { start: _startZone(s), end: _endZone(s) };
+  });
+  assert.equal(out.start, 'America/Chicago');
+  assert.equal(out.end, 'Asia/Shanghai', 'the same letters mean China at the far end, got ' + out.end);
+});
+
+test('an unambiguous abbreviation is still honoured as typed', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'London', type: 'hike', tz: 'BST', time: '9:00 AM', endTime: '10:00 AM',
+        startDate: '2026-08-05', lat: 51.5, lng: -0.12 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => ({
+    zone: _startZone(state.days[0].stops[0]),
+    off: _zoneOffsetMins('BST', '2026-08-05', '9:00 AM'),
+  }));
+  assert.equal(out.zone, 'BST', 'BST is unambiguous and must not be rewritten');
+  assert.equal(out.off, 60);
+});
+
+test('the zone picker offers no ambiguous abbreviation', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'X', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.5, lng: -0.12 },
+    ] },
+  ]);
+  const opts = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#tz-list option')).map((o) => o.value));
+  assert.ok(opts.length > 5, 'the picker still offers zones, got ' + opts.length);
+  for (const bad of ['IST', 'CST', 'AST', 'GST']) {
+    assert.ok(!opts.includes(bad), bad + ' is ambiguous and must not be offered as a choice');
+  }
+  assert.ok(opts.includes('Europe/Dublin') && opts.includes('Asia/Kolkata'),
+    'both meanings of IST are offered explicitly instead');
+});

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v188';
+window.APP_CODE_VERSION='v189';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1841,9 +1841,14 @@ function _safeImgSrc(u){ return (typeof u==='string'&&/^(https?:|data:image\/)/i
 // clocks. Orlando 8:30 PM EDT -> London 10:00 AM BST is 8h 30min, but clock
 // arithmetic says 13h 30min because it ignores the 5-hour offset change. Every
 // cross-zone leg was wrong by exactly that difference.
-const _TZ_ABBR_OFFSET={UTC:0,GMT:0,WET:0,BST:60,IST_IE:60,WEST:60,CET:60,CEST:120,EET:120,EEST:180,MSK:180,
-  EST:-300,EDT:-240,CST:-360,CDT:-300,MST:-420,MDT:-360,PST:-480,PDT:-420,AKST:-540,AKDT:-480,HST:-600,
-  AST:-240,ADT:-180,NST:-210,NDT:-150,IST:330,PKT:300,GST:240,ICT:420,WIB:420,SGT:480,HKT:480,CSTA:480,
+// Last-resort offsets for UNAMBIGUOUS abbreviations only. The IST_IE and CSTA
+// entries that used to live here could never be matched (the sanitiser strips
+// non-letters), so they silently did nothing while IST resolved to India and
+// CST to US Central. Ambiguous abbreviations are now resolved from the stop's
+// coordinates by _zoneFor; the ones listed here have a single meaning.
+const _TZ_ABBR_OFFSET={UTC:0,GMT:0,WET:0,BST:60,WEST:60,CET:60,CEST:120,EET:120,EEST:180,MSK:180,
+  EST:-300,EDT:-240,CDT:-300,MST:-420,MDT:-360,PST:-480,PDT:-420,AKST:-540,AKDT:-480,HST:-600,
+  ADT:-180,NST:-210,NDT:-150,PKT:300,ICT:420,WIB:420,SGT:480,HKT:480,
   JST:540,KST:540,AEST:600,AEDT:660,ACST:570,ACDT:630,AWST:480,NZST:720,NZDT:780,BRT:-180,ART:-180};
 // Offset (minutes east of UTC) an IANA zone was at a given instant — DST aware.
 function _ianaOffsetMins(zone,date){
@@ -1887,13 +1892,48 @@ function _tzLabel(zone,dateISO){
     return (n&&n.value)?n.value:z;
   }catch(e){ return z; }
 }
+// Abbreviations that mean different things in different parts of the world.
+// The letters alone CANNOT identify the zone, so they must never be trusted:
+//   IST = Irish Standard Time (+1:00) in Dublin, India Standard Time (+5:30) in Delhi
+//   CST = US Central (-6:00), China Standard (+8:00), Cuba Standard (-5:00)
+//   AST = Atlantic (-4:00) in Halifax, Arabia (+3:00) in Riyadh
+//   GST = Gulf (+4:00) in Dubai, South Georgia (-2:00)
+// Storing one of these was a silent 4.5-hour error on a UK/Ireland trip: the
+// lookup table resolved IST to India, and the IST_IE entry meant to prevent
+// exactly that was unreachable (the sanitiser strips "_", so it never matched).
+// Where a stop actually IS always beats what its label could mean.
+// Deliberately short: only abbreviations that genuinely collide in everyday travel.
+// An ambiguous one with NO coordinates to resolve against returns no offset at all,
+// because 'unknown' is safer than an authoritative-looking 4.5-hour error.
+const _TZ_AMBIGUOUS_ABBR=['IST','CST','AST','GST'];
+function _isAmbiguousAbbr(z){
+  if(!z||String(z).indexOf('/')>=0)return false;              // an IANA id is never ambiguous
+  return _TZ_AMBIGUOUS_ABBR.includes(String(z).toUpperCase().replace(/[^A-Z]/g,''));
+}
+// Resolve a stored zone against the coordinates it belongs to. An unambiguous
+// abbreviation is kept as typed; an ambiguous one defers to the real location.
+function _zoneFor(stored,lat,lng){
+  if(stored&&!_isAmbiguousAbbr(stored))return stored;
+  try{
+    if(lat!=null&&lng!=null){
+      const t=tzData[tzKey(lat,lng)];
+      if(t&&t.tz)return t.tz;                                  // e.g. Europe/Dublin
+    }
+  }catch(e){}
+  return stored||'';    // no location to resolve against: keep what we were given
+}
 function _startZone(s){
-  if(s&&s.tz)return s.tz;
+  if(s&&s.tz)return _zoneFor(s.tz,s.lat,s.lng);
   try{const t=stopTz(s);if(t&&t.tz)return t.tz;}catch(e){}
   return '';
 }
 function _endZone(s){
-  if(s&&s.endTz)return s.endTz;
+  // A journey ends where it lands, so the END zone resolves against the
+  // DESTINATION coordinates, falling back to the origin for a stationary stop.
+  if(s&&s.endTz){
+    const hasDest=s.destLat!=null&&s.destLng!=null;
+    return _zoneFor(s.endTz,hasDest?s.destLat:s.lat,hasDest?s.destLng:s.lng);
+  }
   try{
     if(s&&s.destLat&&s.destLng){const t=tzData[tzKey(s.destLat,s.destLng)];if(t&&t.tz)return t.tz;}
   }catch(e){}

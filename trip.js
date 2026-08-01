@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v187';
+window.APP_CODE_VERSION='v188';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -5467,9 +5467,160 @@ function shareRecap(){
 /* ============================================================
    PLANNING CHAT — Ask AI about your trip
    ============================================================ */
-const PLAN_CHAT_SYSTEM='You are an expert travel planning assistant. You have full knowledge of the user\'s itinerary and answer questions about logistics, timing, attractions, restaurants, transportation, and trip improvements. Be specific, practical, and concise. No em dashes.';
+const PLAN_CHAT_SYSTEM='You are an expert travel planning assistant. You have full knowledge of the user\'s itinerary and answer questions about logistics, timing, attractions, restaurants, transportation, and trip improvements. The user may attach documents (booking confirmations, tickets, spreadsheets, emails, calendar files). Their text is given to you between ATTACHED FILE markers. Read them carefully and use the real confirmation numbers, times, addresses and prices they contain rather than inventing any. If an attachment is truncated you will see a truncation notice; say so rather than guessing at the missing part. Be specific, practical, and concise. No em dashes.';
 
 let _pcHistory=[];
+
+/* ------------------------------------------------------------------
+   ATTACHMENTS FOR ASK AI
+   Paste, drag or pick a file and its TEXT is extracted here, in the
+   browser, then handed to the model with the question. Nothing is
+   uploaded anywhere except as part of the prompt.
+   The AI proxy accepts a plain {system,user} text payload, so anything
+   that is not reducible to text (a photo, a scan) genuinely cannot be
+   read. Those are reported to the user instead of being dropped.
+   ------------------------------------------------------------------ */
+let _pcFiles=[];                       // {name,size,text,error,chars,truncated}
+const PC_FILE_MAX=60000;               // chars kept from any one file
+const PC_TOTAL_MAX=150000;             // chars kept across all attachments
+const PC_BYTES_MAX=25*1024*1024;       // refuse absurd files before reading them
+
+function _pcExt(name){const m=/\.([a-z0-9]+)$/i.exec(name||'');return m?m[1].toLowerCase():'';}
+
+// Types whose bytes ARE text. Kept explicit: sniffing a mystery binary and
+// pasting its mojibake into the prompt is worse than saying "I can't read this".
+const PC_TEXT_EXT=['txt','md','markdown','csv','tsv','json','ics','ical','eml','log',
+  'html','htm','xml','yaml','yml','vcf','rtf','srt','gpx','kml'];
+
+function _pcHtmlToText(html){
+  try{
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    doc.querySelectorAll('script,style,noscript').forEach(n=>n.remove());
+    return (doc.body?doc.body.innerText||doc.body.textContent:'')||'';
+  }catch(e){ return html.replace(/<[^>]*>/g,' '); }
+}
+
+// A .ics is machine formatted and unfolds across lines; flatten it so the model
+// sees one field per line instead of arbitrary 75-character wraps.
+function _pcIcsToText(raw){
+  return String(raw).replace(/\r\n[ \t]/g,'').replace(/\r\n/g,'\n');
+}
+
+async function _pcXlsxToText(file){
+  if(typeof XLSX==='undefined')throw new Error('the spreadsheet reader has not loaded yet, try again in a moment');
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  return wb.SheetNames.map(n=>'--- sheet: '+n+' ---\n'+XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n');
+}
+
+let _pdfLibPromise=null;
+function _pcLoadPdfLib(){
+  if(_pdfLibPromise)return _pdfLibPromise;
+  // Vendored into the repo rather than pulled from a CDN so it also works
+  // offline, and so it is the exact build these tests run against.
+  _pdfLibPromise=import('./vendor/pdf.min.mjs').then(lib=>{
+    lib.GlobalWorkerOptions.workerSrc=new URL('./vendor/pdf.worker.min.mjs',document.baseURI).href;
+    return lib;
+  }).catch(e=>{_pdfLibPromise=null;throw new Error('could not load the PDF reader');});
+  return _pdfLibPromise;
+}
+
+async function _pcPdfToText(file){
+  const lib=await _pcLoadPdfLib();
+  const doc=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  const out=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const tc=await page.getTextContent();
+    out.push(tc.items.map(i=>i.str).join(' ').replace(/[ \t]+/g,' ').trim());
+    if(out.join('\n').length>PC_FILE_MAX)break;      // stop early on a huge PDF
+  }
+  const text=out.join('\n\n').trim();
+  if(!text)throw new Error('this PDF has no selectable text, it is probably a scan');
+  return text;
+}
+
+async function _pcExtract(file){
+  const rec={name:file.name||'pasted file',size:file.size||0,text:'',error:'',truncated:false};
+  const ext=_pcExt(rec.name),mime=(file.type||'').toLowerCase();
+  try{
+    if(rec.size>PC_BYTES_MAX)throw new Error('too large, the limit is 25 MB');
+    if(mime.startsWith('image/')||['png','jpg','jpeg','gif','webp','heic','heif','bmp','tif','tiff'].includes(ext))
+      throw new Error('images cannot be read, the AI connection is text only. A PDF or a copy of the text works');
+    if(ext==='pdf'||mime==='application/pdf')rec.text=await _pcPdfToText(file);
+    else if(['xlsx','xlsm','xls','ods'].includes(ext)||mime.includes('spreadsheet')||mime.includes('excel'))
+      rec.text=await _pcXlsxToText(file);
+    else if(ext==='html'||ext==='htm'||mime==='text/html')rec.text=_pcHtmlToText(await file.text());
+    else if(ext==='ics'||ext==='ical'||mime.includes('calendar'))rec.text=_pcIcsToText(await file.text());
+    else if(ext==='json'||mime==='application/json'){
+      const raw=await file.text();
+      try{rec.text=JSON.stringify(JSON.parse(raw),null,1);}catch(e){rec.text=raw;}
+    }
+    else if(PC_TEXT_EXT.includes(ext)||mime.startsWith('text/'))rec.text=await file.text();
+    else if(['docx','doc','pages','key','numbers','zip'].includes(ext))
+      throw new Error('this format cannot be read here. Save it as PDF, or paste the text');
+    else{
+      // Unknown extension: accept it only if it really is text.
+      const raw=await file.text();
+      if(/[\x00-\x08\x0E-\x1F]/.test(raw.slice(0,4000)))throw new Error('this is not a text file');
+      rec.text=raw;
+    }
+    rec.text=String(rec.text||'').replace(/\n{3,}/g,'\n\n').trim();
+    if(!rec.text)throw new Error('no readable text found');
+    if(rec.text.length>PC_FILE_MAX){rec.text=rec.text.slice(0,PC_FILE_MAX);rec.truncated=true;}
+  }catch(e){ rec.error=(e&&e.message)||'could not be read'; rec.text=''; }
+  rec.chars=rec.text.length;
+  return rec;
+}
+
+async function _pcAddFiles(fileList){
+  const files=Array.prototype.slice.call(fileList||[]);
+  if(!files.length)return;
+  const tray=document.getElementById('pc-attach');
+  if(tray)tray.dataset.busy='1';
+  _pcRenderAttachments(files.length);
+  for(const f of files){
+    // Same name and size twice is the same file; pasting twice is a common slip.
+    if(_pcFiles.some(x=>x.name===(f.name||'pasted file')&&x.size===(f.size||0)))continue;
+    _pcFiles.push(await _pcExtract(f));
+  }
+  if(tray)delete tray.dataset.busy;
+  _pcRenderAttachments(0);
+}
+
+function _pcRemoveFile(i){ _pcFiles.splice(i,1); _pcRenderAttachments(0); }
+
+function _pcRenderAttachments(pending){
+  const tray=document.getElementById('pc-attach');if(!tray)return;
+  const parts=_pcFiles.map((f,i)=>{
+    const bad=!!f.error;
+    const detail=bad?f.error:(f.truncated?_pcKb(f.chars)+' of text, trimmed to fit':_pcKb(f.chars)+' of text');
+    return '<span class="pc-file'+(bad?' pc-file-bad':'')+'" title="'+_escHtml(f.name+' — '+detail)+'">'+
+      '<span class="pc-file-name">'+_escHtml(f.name)+'</span>'+
+      '<span class="pc-file-meta">'+_escHtml(detail)+'</span>'+
+      '<button type="button" class="pc-file-x" aria-label="Remove '+_escHtml(f.name)+'" data-pcrm="'+i+'">&#215;</button></span>';
+  });
+  for(let i=0;i<(pending||0);i++)parts.push('<span class="pc-file pc-file-load">Reading...</span>');
+  tray.innerHTML=parts.join('');
+  tray.style.display=parts.length?'flex':'none';
+}
+function _pcKb(n){ return n<1000?(n+' characters'):(Math.round(n/100)/10+'k characters'); }
+
+// Fold the attachments into the message the model actually receives.
+function _pcComposeMessage(question){
+  const usable=_pcFiles.filter(f=>f.text);
+  if(!usable.length)return question;
+  let budget=PC_TOTAL_MAX,blocks=[];
+  for(const f of usable){
+    let t=f.text,trimmed=f.truncated;
+    if(t.length>budget){t=t.slice(0,Math.max(0,budget));trimmed=true;}
+    budget-=t.length;
+    blocks.push('=== ATTACHED FILE: '+f.name+' ===\n'+t+
+      (trimmed?'\n[...truncated, the file is longer than shown]':'')+'\n=== END OF '+f.name+' ===');
+    if(budget<=0)break;
+  }
+  return blocks.join('\n\n')+'\n\n'+question;
+}
 
 function _buildTripContext(){
   if(!state?.days?.length)return'Trip has no days yet.';
@@ -5502,6 +5653,7 @@ function openPlanChat(){
       {role:'assistant',content:'I have your full itinerary. What would you like to know about your trip?'}];
   }
   const chips=['Is my pacing realistic?','What am I missing?','Any booking deadlines I should know?'];
+  _pcFiles=[];
   content.innerHTML=
     '<div class="plan-ctx">&#9432; AI has your full '+state.days.length+'-day itinerary as context.</div>'+
     '<div class="tg-messages" id="pc-messages">'+
@@ -5510,26 +5662,74 @@ function openPlanChat(){
     '<div class="tg-chips" id="pc-chips">'+
     chips.map(c=>'<button class="tg-chip" onclick="_pcChip(this,'+JSON.stringify(c)+')">'+_escHtml(c)+'</button>').join('')+
     '</div>'+
+    '<div class="pc-attach" id="pc-attach" style="display:none"></div>'+
     '<div class="tg-input-row">'+
-    '<input class="tg-input" id="pc-input" placeholder="Ask anything about your trip..." onkeydown="if(event.key===\'Enter\')_planSendMessage()"/>'+
+    '<button class="pc-clip" id="pc-clip" type="button" title="Attach a file" aria-label="Attach a file">&#128206;</button>'+
+    '<input type="file" id="pc-file" multiple style="display:none" '+
+      'accept=".pdf,.txt,.md,.csv,.tsv,.json,.ics,.eml,.html,.htm,.xml,.log,.xlsx,.xls,.xlsm,text/*,application/pdf"/>'+
+    '<input class="tg-input" id="pc-input" placeholder="Ask anything, or paste a confirmation..." onkeydown="if(event.key===\'Enter\')_planSendMessage()"/>'+
     '<button class="tg-send" onclick="_planSendMessage()">&#10148;</button>'+
-    '</div>';
+    '</div>'+
+    '<div class="pc-hint">Paste, drop or attach a booking confirmation: PDF, email, spreadsheet, calendar invite or plain text.</div>';
+  _pcWireAttachments(content);
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('pc-input')?.focus(),120);
 }
 
+// Three ways in, because on a phone you attach, on a laptop you paste, and on a
+// desktop you drag. All three land in the same place.
+function _pcWireAttachments(content){
+  const picker=content.querySelector('#pc-file');
+  content.querySelector('#pc-clip')?.addEventListener('click',()=>picker&&picker.click());
+  picker?.addEventListener('change',e=>{_pcAddFiles(e.target.files);e.target.value='';});
+  content.querySelector('#pc-attach')?.addEventListener('click',e=>{
+    const b=e.target.closest('[data-pcrm]');if(b)_pcRemoveFile(+b.getAttribute('data-pcrm'));
+  });
+  // Paste: a file on the clipboard becomes an attachment; text stays text so
+  // pasting a confirmation email into the box still just types it.
+  content.addEventListener('paste',e=>{
+    const files=e.clipboardData&&e.clipboardData.files;
+    if(files&&files.length){e.preventDefault();_pcAddFiles(files);}
+  });
+  ['dragenter','dragover'].forEach(t=>content.addEventListener(t,e=>{
+    if(!e.dataTransfer||!Array.prototype.includes.call(e.dataTransfer.types||[],'Files'))return;
+    e.preventDefault();content.classList.add('pc-drop');
+  }));
+  ['dragleave','dragend'].forEach(t=>content.addEventListener(t,e=>{
+    if(e.target===content)content.classList.remove('pc-drop');
+  }));
+  content.addEventListener('drop',e=>{
+    if(!e.dataTransfer||!e.dataTransfer.files||!e.dataTransfer.files.length)return;
+    e.preventDefault();content.classList.remove('pc-drop');_pcAddFiles(e.dataTransfer.files);
+  });
+}
+
 function _pcChip(btn,text){
   document.getElementById('pc-chips')?.remove();
-  _pcAddMessage('user',text);
-  _planCallAI(text);
+  const usable=_pcFiles.filter(f=>f.text);
+  _pcAddMessage('user',text,usable.map(f=>f.name));
+  const payload=_pcComposeMessage(text);
+  _pcFiles=[];_pcRenderAttachments(0);
+  _planCallAI(payload);
 }
 
 function _planSendMessage(){
   const input=document.getElementById('pc-input');if(!input)return;
-  const text=input.value.trim();if(!text)return;
+  const text=input.value.trim();
+  const usable=_pcFiles.filter(f=>f.text);
+  const failed=_pcFiles.filter(f=>f.error);
+  // A file on its own is a valid message: "here, look at this".
+  if(!text&&!usable.length){
+    if(failed.length)_pcAddMessage('error','Nothing readable was attached. '+failed.map(f=>f.name+': '+f.error).join('; '));
+    return;
+  }
+  const question=text||'I have attached a document. Read it and tell me what it means for my trip, including anything I should add to the itinerary.';
   input.value='';
-  _pcAddMessage('user',text);
-  _planCallAI(text);
+  _pcAddMessage('user',question,usable.map(f=>f.name));
+  if(failed.length)_pcAddMessage('error','Not sent: '+failed.map(f=>f.name+' ('+f.error+')').join('; '));
+  const payload=_pcComposeMessage(question);
+  _pcFiles=[];_pcRenderAttachments(0);      // attached once; it stays in the history
+  _planCallAI(payload);
 }
 
 async function _planCallAI(userText){
@@ -5553,11 +5753,17 @@ async function _planCallAI(userText){
   }
 }
 
-function _pcAddMessage(role,text){
+function _pcAddMessage(role,text,fileNames){
   const msgs=document.getElementById('pc-messages');if(!msgs)return;
   const div=document.createElement('div');
   div.className='tg-msg '+(role==='user'?'tg-msg-user':role==='error'?'tg-msg-err':'tg-msg-ai');
   div.textContent=text;
+  if(fileNames&&fileNames.length){
+    const tag=document.createElement('div');
+    tag.className='tg-msg-files';
+    tag.textContent='📎 '+fileNames.join(', ');
+    div.appendChild(tag);
+  }
   msgs.appendChild(div);
   msgs.scrollTop=msgs.scrollHeight;
 }

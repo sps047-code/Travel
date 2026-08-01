@@ -595,7 +595,28 @@ body.offline #audio-discover-btn{display:none!important}
 .tg-chips{display:flex;flex-wrap:wrap;gap:var(--space-1);margin:var(--space-3) 0 var(--space-1)}
 .tg-chip{padding:var(--space-1) var(--space-3);background:var(--paper);border:1.5px solid var(--border);border-radius:20px;font-family:var(--font-ui);font-size:var(--text-sm);font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.18s}
 .tg-chip:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-tint)}
-.tg-input-row{display:flex;gap:var(--space-2);margin-top:var(--space-3)}
+.tg-input-row{display:flex;gap:var(--space-2);margin-top:var(--space-3);align-items:center}
+/* Ask AI attachments */
+.pc-attach{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
+.pc-file{display:inline-flex;align-items:center;gap:var(--space-2);max-width:100%;
+  padding:var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  background:var(--pine-tint);border:1px solid var(--pine-border);border-radius:var(--radius-md);
+  font-family:var(--font-ui);font-size:var(--text-sm);color:var(--ink)}
+.pc-file-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:min(60vw,260px)}
+.pc-file-meta{font-size:var(--text-xs);color:var(--muted);white-space:nowrap}
+.pc-file-bad{background:var(--ruby-tint);border-color:var(--ruby-border)}
+.pc-file-bad .pc-file-meta{color:var(--ruby)}
+.pc-file-load{background:var(--paper);border-style:dashed;color:var(--muted)}
+.pc-file-x{background:none;border:none;cursor:pointer;color:var(--muted);font-size:var(--text-lg);
+  line-height:1;padding:0 var(--space-1);flex-shrink:0}
+.pc-file-x:hover{color:var(--ruby)}
+.pc-clip{flex-shrink:0;background:var(--paper);border:1.5px solid var(--border);border-radius:var(--radius-md);
+  padding:var(--space-2) var(--space-3);font-size:var(--text-md);cursor:pointer;line-height:1;
+  transition:border-color 0.18s,background 0.18s}
+.pc-clip:hover{border-color:var(--pine);background:var(--pine-tint)}
+.pc-hint{margin-top:var(--space-2);font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);line-height:1.45}
+.tg-msg-files{margin-top:var(--space-1);font-size:var(--text-xs);opacity:0.85;word-break:break-word}
+#pc-content.pc-drop{outline:2px dashed var(--pine);outline-offset:6px;border-radius:var(--radius-md)}
 .tg-input{flex:1;padding:var(--space-2) var(--space-3);border:1.5px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-ui);font-size:var(--text-md);outline:none;background:var(--paper);color:var(--ink);transition:border-color 0.2s}
 .tg-input:focus{border-color:var(--pine)}
 .tg-send{padding:var(--space-2) var(--space-4);background:var(--pine);color:white;border:none;border-radius:var(--radius-md);font-family:var(--font-ui);font-size:var(--text-md);font-weight:600;cursor:pointer;transition:background 0.2s;flex-shrink:0}
@@ -676,7 +697,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v187'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v188'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -919,11 +940,11 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=187"></script>
+<script src="trip.js?v=188"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.
      trip.js owns _parseTripDate. -->
-<script src="trip-extras.js?v=187"></script>
+<script src="trip-extras.js?v=188"></script>
 </body>
 </html>

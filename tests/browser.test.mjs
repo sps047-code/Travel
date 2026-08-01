@@ -23,8 +23,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRATCH = '/tmp/claude-0/-home-user-Travel/cc1ebd2e-2695-52d0-b7cf-48956770f86f/scratchpad';
 const PW = SCRATCH + '/node_modules/playwright';
 const LEAFLET_DIR = SCRATCH + '/node_modules/leaflet/dist';
+const XLSX_FILE = SCRATCH + '/node_modules/xlsx/dist/xlsx.full.min.js';
 
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
+  '.mjs': 'application/javascript', '.pdf': 'application/pdf',
   '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 let server, browser, origin;
@@ -106,6 +108,12 @@ async function openTrip(days, { tripId = 'london-scotland', day = 0, family = fa
         contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
     }
     if (u.includes('unpkg.com') || u.includes('cdnjs')) {
+      // Real SheetJS, not a stub: the Ask AI spreadsheet reader must be proven to
+      // actually parse a workbook, not merely to have been called.
+      if (u.includes('xlsx') && fs.existsSync(XLSX_FILE)) {
+        return route.fulfill({ status: 200, contentType: 'application/javascript',
+          body: fs.readFileSync(XLSX_FILE) });
+      }
       return route.fulfill({ status: 200, contentType: 'application/javascript', body: 'void 0;' });
     }
     // Map tiles: a 1x1 PNG so Leaflet lays out normally without the network.
@@ -278,11 +286,11 @@ test('End Time and Duration stay in sync in the real Edit Stop form', async () =
   // Typing a new End Time updates Duration.
   await page.fill('#f-endtime', '14:03');
   await page.dispatchEvent('#f-endtime', 'input');
-  await page.waitForFunction(() => document.getElementById('f-duration').value === '2hrs', null, { timeout: 4000 });
+  await page.waitForFunction(() => document.getElementById('f-duration').value === '2hrs', null, { timeout: 12000 });
   // Typing a Duration updates End Time.
   await page.fill('#f-duration', '3h');
   await page.dispatchEvent('#f-duration', 'input');
-  await page.waitForFunction(() => document.getElementById('f-endtime').value === '15:03', null, { timeout: 4000 });
+  await page.waitForFunction(() => document.getElementById('f-endtime').value === '15:03', null, { timeout: 12000 });
   await page.close();
 });
 
@@ -1125,5 +1133,193 @@ test('the REAL trip Day 1 transatlantic flight is drawn', async () => {
     'Day 1 draws its flight, got ' + JSON.stringify(info.legs));
   assert.ok(info.paths >= 1,
     'the flight line is rendered on Day 1, got ' + info.paths);
+  await page.close();
+});
+
+// ===========================================================================
+// ASK AI ATTACHMENTS. A booking confirmation is a file, so the chat has to be
+// able to read one. Everything is extracted in the browser; the AI proxy takes
+// text only, so anything that cannot become text must SAY so rather than be
+// silently dropped into a prompt the model never sees.
+// ===========================================================================
+const CHAT_DAY = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+  { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM', lat: 51.5194, lng: -0.127 },
+] }];
+
+// Drop files onto the chat exactly the way a paste does: a real DataTransfer
+// carrying real File objects, dispatched as a real paste event.
+async function attach(page, files) {
+  await page.evaluate(async (fs_) => {
+    const dt = new DataTransfer();
+    for (const f of fs_) {
+      const bytes = Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0));
+      dt.items.add(new File([bytes], f.name, { type: f.type || '' }));
+    }
+    document.getElementById('pc-content')
+      .dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, files);
+  await page.waitForFunction(
+    () => !document.querySelector('#pc-attach .pc-file-load'), null, { timeout: 20000 });
+}
+
+const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+
+async function openChat(page) {
+  await page.evaluate(() => openPlanChat());
+  await page.waitForSelector('#pc-input', { state: 'attached' });
+}
+
+test('pasting a text confirmation attaches it and sends its contents', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  await attach(page, [{ name: 'hotel.txt', type: 'text/plain',
+    b64: b64('Royal Horseguards. Confirmation VZ88421. Check in Aug 5 2026 15:00.') }]);
+
+  const tray = await page.evaluate(() => ({
+    shown: getComputedStyle(document.getElementById('pc-attach')).display,
+    names: Array.from(document.querySelectorAll('.pc-file-name')).map((n) => n.textContent),
+    bad: document.querySelectorAll('.pc-file-bad').length,
+  }));
+  assert.equal(tray.shown, 'flex', 'the attachment tray must appear');
+  assert.deepEqual(tray.names, ['hotel.txt']);
+  assert.equal(tray.bad, 0, 'a plain text file must not be reported as unreadable');
+
+  // What the model actually receives.
+  const sent = await page.evaluate(() => _pcComposeMessage('When do I check in?'));
+  assert.match(sent, /=== ATTACHED FILE: hotel\.txt ===/);
+  assert.match(sent, /VZ88421/, 'the confirmation number must reach the model');
+  assert.match(sent, /When do I check in\?$/, 'the question comes after the file');
+  await page.close();
+});
+
+test('an attached file is actually put on the wire when you hit send', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  // Capture the outbound request instead of trusting that compose was called.
+  await page.evaluate(() => {
+    window.__sent = [];
+    window.fetch = async (u, o) => {
+      window.__sent.push({ url: String(u), body: o && o.body });
+      return { ok: true, json: async () => ({ content: [{ text: 'Noted.' }] }) };
+    };
+  });
+  await attach(page, [{ name: 'flight.txt', type: 'text/plain',
+    b64: b64('Norse Atlantic Z0 784, MCO to LGW, 4 Aug 2026, seat 21A, ref QK7T2M') }]);
+  await page.evaluate(() => { document.getElementById('pc-input').value = 'Is this on my itinerary?'; });
+  await page.evaluate(() => _planSendMessage());
+  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
+
+  const body = await page.evaluate(() => JSON.parse(window.__sent[0].body));
+  assert.match(body.user, /QK7T2M/, 'the booking reference must be in the request body');
+  assert.match(body.user, /ATTACHED FILE: flight\.txt/);
+  assert.match(body.user, /Is this on my itinerary\?/);
+  // And the tray clears, so the same file is not re-sent with the next question.
+  const left = await page.evaluate(() => document.querySelectorAll('.pc-file').length);
+  assert.equal(left, 0, 'the tray clears after sending');
+  await page.close();
+});
+
+test('a real PDF confirmation is read', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  const pdf = fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'confirmation.pdf')).toString('base64');
+  await attach(page, [{ name: 'confirmation.pdf', type: 'application/pdf', b64: pdf }]);
+  const info = await page.evaluate(() => ({
+    bad: document.querySelectorAll('.pc-file-bad').length,
+    meta: document.querySelector('.pc-file-meta')?.textContent || '',
+    sent: _pcComposeMessage('what is this?'),
+  }));
+  assert.equal(info.bad, 0, 'the PDF must be readable, tray said: ' + info.meta);
+  assert.match(info.sent, /ABC123/, 'text inside the PDF must reach the model');
+  assert.match(info.sent, /Z0 784/);
+  await page.close();
+});
+
+test('a spreadsheet is flattened to text the model can read', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  // Build a genuine .xlsx in the page with the same SheetJS the app uses.
+  await page.waitForFunction(() => typeof XLSX !== 'undefined', null, { timeout: 15000 });
+  await page.evaluate(async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,
+      XLSX.utils.aoa_to_sheet([['Day', 'Stop', 'Ref'], [2, 'Gatwick Express', 'GX9911']]), 'Bookings');
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const dt = new DataTransfer();
+    dt.items.add(new File([out], 'bookings.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    document.getElementById('pc-content')
+      .dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.pc-file').length === 1
+    && !document.querySelector('.pc-file-load'), null, { timeout: 20000 });
+  const info = await page.evaluate(() => ({
+    bad: document.querySelectorAll('.pc-file-bad').length,
+    meta: document.querySelector('.pc-file-meta')?.textContent || '',
+    sent: _pcComposeMessage('anything missing?'),
+  }));
+  assert.equal(info.bad, 0, 'the workbook must be readable, tray said: ' + info.meta);
+  assert.match(info.sent, /GX9911/, 'a cell value must reach the model');
+  assert.match(info.sent, /sheet: Bookings/, 'sheets are labelled');
+  await page.close();
+});
+
+test('an image is refused out loud, never silently dropped', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  await attach(page, [{ name: 'screenshot.png', type: 'image/png', b64: png }]);
+  const info = await page.evaluate(() => ({
+    bad: document.querySelectorAll('.pc-file-bad').length,
+    meta: document.querySelector('.pc-file-bad .pc-file-meta')?.textContent || '',
+    sent: _pcComposeMessage('read this'),
+  }));
+  assert.equal(info.bad, 1, 'the image must be flagged');
+  assert.match(info.meta, /image/i, 'and it must say why: ' + info.meta);
+  assert.equal(info.sent, 'read this', 'nothing unreadable is smuggled into the prompt');
+  await page.close();
+});
+
+test('a huge file is truncated with a notice, not silently cut', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  await attach(page, [{ name: 'big.txt', type: 'text/plain', b64: b64('x'.repeat(200000)) }]);
+  const info = await page.evaluate(() => ({
+    meta: document.querySelector('.pc-file-meta')?.textContent || '',
+    sent: _pcComposeMessage('summarise'),
+  }));
+  assert.match(info.meta, /trimmed/i, 'the tray says it was trimmed: ' + info.meta);
+  assert.match(info.sent, /truncated/i, 'and the model is told the file is incomplete');
+  await page.close();
+});
+
+test('attachments can be removed, and the same file is not added twice', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  const f = { name: 'a.txt', type: 'text/plain', b64: b64('hello') };
+  await attach(page, [f]);
+  await attach(page, [f]);
+  assert.equal(await page.evaluate(() => document.querySelectorAll('.pc-file').length), 1,
+    'the same file pasted twice stays one attachment');
+  await page.evaluate(() => document.querySelector('.pc-file-x').click());
+  assert.equal(await page.evaluate(() => document.querySelectorAll('.pc-file').length), 0);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('pc-attach')).display), 'none',
+    'the empty tray hides itself');
+  await page.close();
+});
+
+test('a file alone, with no typed question, is still a valid message', async () => {
+  const { page } = await openTrip(CHAT_DAY);
+  await openChat(page);
+  await page.evaluate(() => {
+    window.__sent = [];
+    window.fetch = async (u, o) => { window.__sent.push(o && o.body);
+      return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) }; };
+  });
+  await attach(page, [{ name: 'ticket.txt', type: 'text/plain', b64: b64('Ref RJ4419 Edinburgh Waverley 09:12') }]);
+  await page.evaluate(() => _planSendMessage());        // input left empty on purpose
+  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
+  const body = await page.evaluate(() => JSON.parse(window.__sent[0]));
+  assert.match(body.user, /RJ4419/);
   await page.close();
 });

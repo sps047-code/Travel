@@ -647,7 +647,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v183'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v184'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -725,12 +725,12 @@ body.offline #audio-discover-btn{display:none!important}
       <div class="form-group full"><div class="field-row-3">
         <div><label class="form-label">Start Date</label><input type="date" class="form-input" id="f-date"/></div>
         <div><label class="form-label">Start Time <span style="color:var(--ruby)">*</span></label><input type="time" class="form-input" id="f-time" oninput="_fSyncFromStart()"/></div>
-        <div><label class="form-label">Start Time Zone</label><input type="text" class="form-input" id="f-tz" list="tz-list" placeholder="auto from location" autocomplete="off"/></div>
+        <div><label class="form-label">Start Time Zone</label><input type="text" class="form-input" id="f-tz" list="tz-list" placeholder="auto" autocomplete="off"/></div>
       </div></div>
       <div class="form-group full"><div class="field-row-3">
         <div><label class="form-label">End Date</label><input type="date" class="form-input" id="f-enddate"/></div>
         <div><label class="form-label">End Time <span style="color:var(--ruby)">*</span></label><input type="time" class="form-input" id="f-endtime" oninput="_fSyncDurFromTimes()"/></div>
-        <div><label class="form-label">End Time Zone</label><input type="text" class="form-input" id="f-endtz" list="tz-list" placeholder="auto from location" autocomplete="off"/><datalist id="tz-list"><option value="EDT"><option value="EST"><option value="CDT"><option value="CST"><option value="MDT"><option value="MST"><option value="PDT"><option value="PST"><option value="AKDT"><option value="HST"><option value="GMT"><option value="BST"><option value="CET"><option value="CEST"><option value="EET"><option value="EEST"><option value="IST"><option value="JST"><option value="AEST"><option value="AEDT"><option value="NZST"><option value="UTC"></datalist></div>
+        <div><label class="form-label">End Time Zone</label><input type="text" class="form-input" id="f-endtz" list="tz-list" placeholder="auto" autocomplete="off"/><datalist id="tz-list"><option value="EDT"><option value="EST"><option value="CDT"><option value="CST"><option value="MDT"><option value="MST"><option value="PDT"><option value="PST"><option value="AKDT"><option value="HST"><option value="GMT"><option value="BST"><option value="CET"><option value="CEST"><option value="EET"><option value="EEST"><option value="IST"><option value="JST"><option value="AEST"><option value="AEDT"><option value="NZST"><option value="UTC"></datalist></div>
       </div></div>
       <div class="form-group full"><div class="field-row-dur">
         <div><label class="form-label">Duration</label><input type="text" class="form-input" id="f-duration" placeholder="e.g. 2h, 45 min" oninput="_fSyncEndFromDur()"/></div>
@@ -890,11 +890,11 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=183"></script>
+<script src="trip.js?v=184"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.
      trip.js owns _parseTripDate. -->
-<script src="trip-extras.js?v=183"></script>
+<script src="trip-extras.js?v=184"></script>
 </body>
 </html>

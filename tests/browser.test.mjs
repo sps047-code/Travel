@@ -900,3 +900,37 @@ test('delete is the last card control and is set apart from the move buttons', a
   assert.equal(Math.abs(i1 - i2), 1, 'the move controls sit together: ' + JSON.stringify(info.labels));
   await page.close();
 });
+
+// ===========================================================================
+// The Edit Stop TIME fields. trip-extras.js monkey-patches openEditStopModal and
+// used to overwrite End Time with the stored 12-hour string ("6:29 PM"). Once the
+// field became a native <input type="time"> — which only accepts 24h "HH:MM" —
+// the browser rejected that value, so End Time appeared EMPTY on every edit.
+// ===========================================================================
+test('Edit Stop shows BOTH times, and no field is clipped', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Westminster Abbey Lates', type: 'hike', time: '5:09 PM', endTime: '6:29 PM',
+        duration: '1h 20min', lat: 51.4994, lng: -0.1273 },
+    ] },
+  ]);
+  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.waitForSelector('#f-endtime', { state: 'attached' });
+  await page.waitForTimeout(300);
+  const f = await page.evaluate(() => {
+    const out = {};
+    ['f-time', 'f-endtime', 'f-date', 'f-enddate', 'f-duration', 'f-tz', 'f-endtz'].forEach((id) => {
+      const el = document.getElementById(id);
+      out[id] = { value: el.value, clipped: el.scrollWidth - el.clientWidth };
+    });
+    return out;
+  });
+  assert.equal(f['f-time'].value, '17:09', 'start time is populated');
+  assert.equal(f['f-endtime'].value, '18:29', 'END TIME must be populated, got "' + f['f-endtime'].value + '"');
+  assert.equal(f['f-date'].value, '2026-08-05');
+  assert.equal(f['f-enddate'].value, '2026-08-05');
+  for (const [id, v] of Object.entries(f)) {
+    assert.ok(v.clipped <= 0, id + ' content is clipped by ' + v.clipped + 'px');
+  }
+  await page.close();
+});

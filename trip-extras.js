@@ -46,8 +46,10 @@ window.openEditStopModal = function(dayIdx, stopIdx){
   _origOpenEdit.apply(this, arguments);
   try{
     const s = state.days[dayIdx].stops[stopIdx];
-    const el = document.getElementById('f-endtime');
-    if(el) el.value = (s && s.endTime) || '';
+    // NOTE: do NOT touch f-endtime here. trip.js already fills it, and since the
+    // field became a native <input type="time"> it only accepts 24h "HH:MM".
+    // Writing the stored 12-hour string ("6:29 PM") made the browser reject the
+    // value, so End Time appeared EMPTY on every edit even though the stop had one.
     const au = document.getElementById('f-audiourl');
     if(au) au.value = (s && s.audioUrl) || '';
   }catch(e){}

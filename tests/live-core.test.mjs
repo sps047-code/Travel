@@ -731,7 +731,7 @@ test('editing a stop preserves fields the form never exposes', () => {
   const existing = {
     name: 'British Museum', type: 'hike', time: '12:03 PM', endTime: '4:12 PM',
     _sid: 'sid-keep-me', guidebook: 'GUIDEBOOK TEXT', dayHours: '10:00 AM - 5:00 PM',
-    dayHoursSrc: 'osm', destLat: 51.5, destLng: -0.12, recentlyChanged: true,
+    dayHoursSrc: 'osm', recentlyChanged: true,
     lat: 51.5194, lng: -0.127,
   };
   ctx.state = { tripType: 'solo', days: [{ title: 'D', subtitle: 'Wed, Aug 5, 2026', stops: [existing] }] };
@@ -745,12 +745,29 @@ test('editing a stop preserves fields the form never exposes', () => {
     assert.equal(s.guidebook, 'GUIDEBOOK TEXT', 'guidebook must survive');
     assert.equal(s.dayHours, '10:00 AM - 5:00 PM', 'dayHours must survive');
     assert.equal(s.dayHoursSrc, 'osm', 'dayHoursSrc must survive');
-    assert.equal(s.destLat, 51.5, 'destLat must survive');
-    assert.equal(s.destLng, -0.12, 'destLng must survive');
+    // A destination is meaningful only on a journey. A museum carrying destLat
+    // was nonsense the map and the time-zone lookup both honoured, so the write
+    // path drops it now; the transit case is asserted in its own test below.
+    assert.equal(s.destLat, undefined, 'a museum must not carry a destination');
   } finally {
     ctx.document.getElementById = realGet; ctx.document.querySelector = realQS;
     ctx.editingStop = null;
   }
+});
+
+// A JOURNEY, unlike a place, genuinely has a far end and must keep it.
+test('a transit stop keeps its destination coordinates', () => {
+  const repair = fn('_repairState');
+  const st = { days: [{ title: 'D', stops: [
+    { name: 'Gatwick Express', type: 'train', lat: 51.1537, lng: -0.1821, destLat: 51.4952, destLng: -0.1441 },
+    { name: 'British Museum', type: 'hike', lat: 51.5194, lng: -0.127, destLat: 51.5, destLng: -0.12 },
+  ] }] };
+  const fixed = repair(st);
+  const [train, museum] = st.days[0].stops;
+  assert.equal(train.destLat, 51.4952, 'the train keeps where it is going');
+  assert.equal(train.destLng, -0.1441);
+  assert.equal(museum.destLat, undefined, 'the museum does not');
+  assert.ok(fixed.some((f) => /not a journey/.test(f)), 'and the repair is reported: ' + JSON.stringify(fixed));
 });
 
 // REVIEW FIX P0-2: local dates must not be serialized through UTC.

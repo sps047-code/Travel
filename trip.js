@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v193';
+window.APP_CODE_VERSION='v194';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -118,6 +118,13 @@ function _repairState(st){
         const lim=k==='destLat'?90:180;
         if(!Number.isFinite(+s[k])||Math.abs(+s[k])>lim){delete s[k];fixed.push(where+': dropped an impossible '+k);}
       });
+      // A destination only means something on a journey. A stray one on a museum
+      // used to be honoured by the map and the time-zone lookup. Enforced here,
+      // on every write, rather than at the single call site that remembered to.
+      if((s.destLat!=null||s.destLng!=null)&&!JOURNEY_TYPES.includes(s.type)){
+        delete s.destLat;delete s.destLng;
+        fixed.push(where+': dropped a destination from a stop that is not a journey');
+      }
       ['startDate','endDate'].forEach(k=>{
         if(s[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(s[k])){delete s[k];fixed.push(where+': dropped a malformed '+k);}
       });
@@ -587,8 +594,9 @@ function _minsToClock(mins){
 // needed because many flights store no destination coordinates.
 function _isIntlFlight(s){
   if(s&&typeof s.international==='boolean')return s.international;
-  if(s&&_validLL(s)&&s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng})){
-    try{ if(haversine(s.lat,s.lng,s.destLat,s.destLng)>1500)return true; }catch(e){}
+  const a=_stopFrom(s),b=_stopTo(s,null);
+  if(a&&b&&(a.lat!==b.lat||a.lng!==b.lng)){
+    try{ if(haversine(a.lat,a.lng,b.lat,b.lng)>1500)return true; }catch(e){}
   }
   const txt=(((s&&s.name)||'')+' '+((s&&s.from)||'')+' '+((s&&s.to)||'')+' '+((s&&s.notes)||'')).toLowerCase();
   if(/transatlantic|transpacific|international|\bintl\b|overseas|long.?haul/.test(txt))return true;
@@ -717,6 +725,52 @@ function _dropCoordOutliers(stops){
 // (Day 1 lost the whole New Port Richey -> Orlando airport drive).
 // Split a day into GROUND segments for the map. A transit stop (flight/train/bus)
 // is a place you travel TO on the ground — the airport — so it ENDS a segment.
+/* ============================================================================
+   WHERE A STOP BEGINS AND ENDS (v194)
+
+   A stop was stored as a POINT — lat/lng — with destLat/destLng bolted on for
+   the few journeys that happened to know their far end. 215 references treated
+   lat/lng as "the location" against 28 for the destination, so most code saw a
+   flight as a pin rather than a line. That asymmetry is why trains drew no
+   route, why a day-ending flight drew nothing, and why the arrival airport's
+   time zone was read from the departure airport.
+
+   These three functions are now the ONLY interpretation of a stop's geography.
+   A journey has a from and a to; a place has one point that serves as both.
+   ========================================================================== */
+const JOURNEY_TYPES=['flight','train','bus','drive'];
+// A drive is a journey too, but it is drawn by road routing rather than as a
+// straight leg, so the map keeps its own narrower list.
+const DRAWN_LEG_TYPES=['flight','train','bus'];
+function _isJourney(s){ return !!s&&JOURNEY_TYPES.includes(s.type); }
+// Where the stop begins. Null when there is no usable coordinate.
+function _stopFrom(s){ return (s&&_validLL(s))?{lat:+s.lat,lng:+s.lng,name:(s.from||s.name||'')}:null; }
+// Where the stop ends.
+//   - its own stated destination when it has one
+//   - else, for a journey, wherever the next located stop is: that is where the
+//     journey actually delivers you
+//   - else the start, because a place ends where it begins
+// `after` is the stops that follow it, in order, and may span into the next day.
+function _stopTo(s,after){
+  if(!s)return null;
+  if(_validLL({lat:s.destLat,lng:s.destLng}))
+    return {lat:+s.destLat,lng:+s.destLng,name:(s.to||s.name||'Arrival')};
+  if(_isJourney(s)&&Array.isArray(after)){
+    for(const n of after){
+      if(!n||n.alt||!_validLL(n))continue;
+      return {lat:+n.lat,lng:+n.lng,name:(n.name||'')};
+    }
+  }
+  return _stopFrom(s);
+}
+// The stops that follow `i`, this day then the next — the search space _stopTo
+// uses to find where a journey lands.
+function _stopsAfter(stops,i,nextDayStops){
+  const out=(stops||[]).slice(i+1);
+  if(Array.isArray(nextDayStops))out.push.apply(out,nextDayStops);
+  return out;
+}
+
 // The leg AFTER it is the flight itself and must never be drawn as a road line.
 function _groundSegments(stops){
   const TR=['flight','train','bus'];
@@ -732,9 +786,8 @@ function _groundSegments(stops){
       // Resume at the arrival point when we know it. When we do NOT, start the
       // next segment empty so the following stops still link to each other —
       // they must never be stranded into an undrawable single point.
-      cur=(s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng}))
-        ?[{name:(s.to||s.name||'Arrival'),type:'arrival',lat:s.destLat,lng:s.destLng}]
-        :[];
+      const arr=_validLL({lat:s.destLat,lng:s.destLng})?_stopTo(s,null):null;
+      cur=arr?[{name:arr.name||'Arrival',type:'arrival',lat:arr.lat,lng:arr.lng}]:[];
     }
   }
   if(cur.length>1)segs.push(cur);
@@ -765,38 +818,23 @@ async function fetchRoute(stops){
 // Destination = the stop's own destLat/destLng when known, else the NEXT located
 // stop, which is where that journey actually delivers you.
 function _transitLegs(stops,nextDayStops){
-  const TR=['flight','train','bus'];
   const legs=[];
   const list=(stops||[]);
   for(let i=0;i<list.length;i++){
     const s=list[i];
-    if(s.alt||!TR.includes(s.type)||!_validLL(s))continue;
-    let to=null;
-    if(s.destLat&&s.destLng&&_validLL({lat:s.destLat,lng:s.destLng}))to=[s.destLat,s.destLng];
-    else{
-      for(let j=i+1;j<list.length;j++){
-        const n=list[j];
-        if(n.alt||!_validLL(n))continue;
-        to=[n.lat,n.lng];break;
-      }
-      // A leg that ENDS the day — an overnight flight, the last train — has no
-      // later stop to aim at, so it used to draw nothing at all. It still has a
-      // known destination: wherever the NEXT day begins. That is precisely the
-      // transatlantic crossing the traveller most wants to see on the map.
-      if(!to&&Array.isArray(nextDayStops)){
-        for(const n of nextDayStops){
-          if(n.alt||!_validLL(n))continue;
-          to=[n.lat,n.lng];break;
-        }
-      }
-    }
-    if(!to)continue;
-    // A leg with no real distance would draw a dot, not a line.
-    try{ if(haversine(s.lat,s.lng,to[0],to[1])<0.3)continue; }catch(e){ continue; }
-    legs.push({from:[s.lat,s.lng],to:to,mode:s.type,name:s.name||''});
+    if(s.alt||!DRAWN_LEG_TYPES.includes(s.type))continue;
+    // One interpretation of a journey's two ends: its stated destination, else
+    // the next located stop — including one on the FOLLOWING day, which is what
+    // an overnight flight or the last train of the evening actually reaches.
+    const a=_stopFrom(s),b=_stopTo(s,_stopsAfter(list,i,nextDayStops));
+    if(!a||!b)continue;
+    if(a.lat===b.lat&&a.lng===b.lng)continue;      // it goes nowhere we can draw
+    try{ if(haversine(a.lat,a.lng,b.lat,b.lng)<0.3)continue; }catch(e){ continue; }
+    legs.push({from:[a.lat,a.lng],to:[b.lat,b.lng],mode:s.type,name:s.name||''});
   }
   return legs;
 }
+
 function _routeSegmentsForDay(routeStops){
   const segs=_groundSegments(routeStops);
   if(segs.some(sg=>_dropCoordOutliers(sg).length>1))return segs;
@@ -2124,12 +2162,10 @@ function _startZone(s){
 function _endZone(s){
   // A journey ends where it lands, so the END zone resolves against the
   // DESTINATION coordinates, falling back to the origin for a stationary stop.
-  if(s&&s.endTz){
-    const hasDest=s.destLat!=null&&s.destLng!=null;
-    return _zoneFor(s.endTz,hasDest?s.destLat:s.lat,hasDest?s.destLng:s.lng);
-  }
+  const end=_stopTo(s,null);      // stated destination, else where it started
+  if(s&&s.endTz)return _zoneFor(s.endTz,end?end.lat:null,end?end.lng:null);
   try{
-    if(s&&s.destLat&&s.destLng){const t=tzData[tzKey(s.destLat,s.destLng)];if(t&&t.tz)return t.tz;}
+    if(end){const t=tzData[tzKey(end.lat,end.lng)];if(t&&t.tz)return t.tz;}
   }catch(e){}
   return _startZone(s);
 }
@@ -6431,10 +6467,13 @@ function _patchLegConnectors(){
     if(!m) return;
     const di=+m[1], si=+m[2];
     const stop=state.days[di]?.stops[si];
-    if(!stop||!stop.destLat||!stop.destLng) return;
+    if(!stop) return;
     const next=state.days[di]?.stops[si+1];
-    if(!next||!next.lat||!next.lng) return;
-    const dist=haversine(stop.destLat,stop.destLng,next.lat,next.lng);
+    if(!next||!_validLL(next)) return;
+    // Distance from where this stop ENDS, not from where it started.
+    const end=_stopTo(stop,(state.days[di]?.stops||[]).slice(si+1));
+    if(!end) return;
+    const dist=haversine(end.lat,end.lng,next.lat,next.lng);
     const mode=stop.transitMode||(stop.type==='train'?'train':stop.type==='bus'?'bus':'drive');
     for(const node of conn.childNodes){
       if(node.nodeType===Node.TEXT_NODE&&/\d+\.?\d*\s*mi/.test(node.textContent)){

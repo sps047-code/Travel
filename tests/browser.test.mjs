@@ -486,7 +486,7 @@ function richStop(over) {
   return Object.assign({
     name: 'British Museum', type: 'hike', time: '12:00 PM', endTime: '2:00 PM',
     lat: 51.5194, lng: -0.127, _sid: 'sid-keep', guidebook: 'GUIDEBOOK TEXT',
-    dayHours: '10:00 AM - 5:00 PM', dayHoursSrc: 'osm', destLat: 51.5, destLng: -0.12,
+    dayHours: '10:00 AM - 5:00 PM', dayHoursSrc: 'osm',
     reservation: 'ABC123', notes: 'Rosetta Stone.', url: 'https://example.com',
   }, over || {});
 }
@@ -523,13 +523,13 @@ test('moving a stop keeps every hidden field intact', async () => {
     moveStop(0, 1, -1);
     const s = state.days[0].stops.find((x) => x.name === 'British Museum');
     return { sid: s._sid, guidebook: s.guidebook, dayHours: s.dayHours,
-      dayHoursSrc: s.dayHoursSrc, destLat: s.destLat, reservation: s.reservation, url: s.url };
+      dayHoursSrc: s.dayHoursSrc, lat: s.lat, reservation: s.reservation, url: s.url };
   });
   assert.equal(after.sid, 'sid-keep');
   assert.equal(after.guidebook, 'GUIDEBOOK TEXT');
   assert.equal(after.dayHours, '10:00 AM - 5:00 PM');
   assert.equal(after.dayHoursSrc, 'osm');
-  assert.equal(after.destLat, 51.5);
+  assert.equal(after.lat, 51.5194);
   assert.equal(after.reservation, 'ABC123');
   assert.equal(after.url, 'https://example.com');
   await page.close();
@@ -1915,5 +1915,135 @@ test('the legacy fields still describe the trip, for a device on an older build'
     assert.match(s.endTime, /^\d{1,2}:\d{2} (AM|PM)$/, 'end time stays readable: ' + s.endTime);
     assert.match(s.date, /^\d{4}-\d{2}-\d{2}$/, 'and carries its date: ' + s.date);
   }
+  await page.close();
+});
+
+// ===========================================================================
+// WHERE A STOP BEGINS AND ENDS (v194). _stopFrom / _stopTo are now the only
+// interpretation of a stop's geography, so the map, the distance labels and the
+// time-zone lookup all agree about where a journey lands.
+// ===========================================================================
+test('moving a JOURNEY keeps where it is going', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Coffee', type: 'food', time: '8:00 AM', endTime: '8:30 AM', lat: 51.15, lng: -0.18 },
+      { name: 'Gatwick Express', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821, destLat: 51.4952, destLng: -0.1441, reservation: 'GX-991' },
+    ] },
+  ]);
+  const after = await page.evaluate(() => {
+    moveStop(0, 1, -1);
+    const s = state.days[0].stops.find((x) => x.name === 'Gatwick Express');
+    return { destLat: s.destLat, destLng: s.destLng, reservation: s.reservation };
+  });
+  assert.equal(after.destLat, 51.4952, 'a real destination must survive a move');
+  assert.equal(after.destLng, -0.1441);
+  assert.equal(after.reservation, 'GX-991');
+  await page.close();
+});
+
+test('a journey ends at its stated destination', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Gatwick Express', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821, destLat: 51.4952, destLng: -0.1441 },
+      { name: 'British Museum', type: 'hike', time: '11:00 AM', endTime: '1:00 PM',
+        lat: 51.5194, lng: -0.127 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    const s = state.days[0].stops[0];
+    return { from: _stopFrom(s), to: _stopTo(s, state.days[0].stops.slice(1)) };
+  });
+  assert.equal(out.from.lat, 51.1537);
+  assert.equal(out.to.lat, 51.4952, 'Victoria, not the museum, got ' + out.to.lat);
+  await page.close();
+});
+
+test('a journey with no stated destination ends where it delivers you', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Gatwick Express', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821 },
+      { name: 'Royal Horseguards', type: 'lodge', time: '10:30 AM', endTime: '11:00 AM',
+        lat: 51.5063, lng: -0.1237 },
+    ] },
+  ]);
+  const to = await page.evaluate(() =>
+    _stopTo(state.days[0].stops[0], state.days[0].stops.slice(1)));
+  assert.equal(to.lat, 51.5063, 'the next located stop, got ' + to.lat);
+  await page.close();
+});
+
+test('a place ends where it begins', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+      { name: 'Dishoom', type: 'food', time: '1:00 PM', endTime: '1:45 PM',
+        lat: 51.5115, lng: -0.1265 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    const s = state.days[0].stops[0];
+    const to = _stopTo(s, state.days[0].stops.slice(1));
+    return { to, from: _stopFrom(s) };
+  });
+  assert.equal(out.to.lat, out.from.lat, 'a museum does not travel to the restaurant');
+  assert.equal(out.to.lng, out.from.lng);
+  await page.close();
+});
+
+test('a destination on a stop that is not a journey is dropped on write', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+      { name: 'Dishoom', type: 'food', time: '1:00 PM', endTime: '1:45 PM',
+        lat: 51.5115, lng: -0.1265 },
+      { name: 'Royal Horseguards', type: 'lodge', time: '8:00 PM', endTime: '9:00 PM',
+        lat: 51.5063, lng: -0.1237 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('give a museum a destination', () => {
+      state.days[0].stops[0].destLat = 40.0; state.days[0].stops[0].destLng = -74.0;
+    }, WRITE.USER);
+    return { destLat: state.days[0].stops[0].destLat, log: _loadChangeLog() };
+  });
+  assert.equal(out.destLat, undefined, 'the stray destination is removed');
+  assert.ok(out.log.some((e) => (e.repaired || []).some((r) => /not a journey/.test(r))),
+    'and the repair is recorded, got ' + JSON.stringify(out.log.map((e) => e.repaired)));
+  await page.close();
+});
+
+test('the end time zone is read at the arrival airport, not the departure one', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'MCO to LGW', type: 'flight', time: '6:55 PM', endTime: '8:45 AM',
+        lat: 28.4312, lng: -81.3081, destLat: 51.1537, destLng: -0.1821 },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    tzData[tzKey(28.4312, -81.3081)] = { tz: 'America/New_York' };
+    tzData[tzKey(51.1537, -0.1821)] = { tz: 'Europe/London' };
+    const s = state.days[0].stops[0];
+    return { start: _startZone(s), end: _endZone(s) };
+  });
+  assert.equal(out.start, 'America/New_York');
+  assert.equal(out.end, 'Europe/London', 'the far end decides, got ' + out.end);
+  await page.close();
+});
+
+test('every transit leg on the real trip still draws after the refactor', async () => {
+  const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
+  const { page } = await openTrip(trip.days, { day: 0 });
+  const perDay = await page.evaluate(() => state.days.map((d, i) =>
+    _transitLegs(d.stops, (state.days[i + 1] || {}).stops).length));
+  const total = perDay.reduce((a, b) => a + b, 0);
+  assert.ok(total >= 10, 'the trip still draws its journeys, got ' + JSON.stringify(perDay));
+  assert.ok(perDay[0] >= 1, 'including the Day 1 flight, got ' + perDay[0]);
   await page.close();
 });

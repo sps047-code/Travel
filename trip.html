@@ -283,6 +283,21 @@ header{background:radial-gradient(ellipse 55% 60% at 15% 50%,rgba(194,59,59,0.10
    (Time Zone) overflowed past the modal edge. */
 .field-row-3>*{min-width:0}
 .field-row-3 input{width:100%;min-width:0;box-sizing:border-box}
+/* SAFARI: date and time inputs are rendered at their INTRINSIC width and ignore
+   width:100%, so on iPad they spilled out of their grid cell and overlapped the
+   field beside them. Removing the native appearance makes them size like any
+   other input. Chromium was already fine, which is why this was invisible in the
+   test browser and obvious on the user's iPad. */
+input[type=date],input[type=time]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+  /* Safari also hides the picker button unless it is given room. */
+  -webkit-min-logical-width:0;
+}
+input[type=date]::-webkit-date-and-time-value,
+input[type=time]::-webkit-date-and-time-value{text-align:left;margin:0;min-width:0}
+input[type=date]::-webkit-calendar-picker-indicator,
+input[type=time]::-webkit-calendar-picker-indicator{flex-shrink:0;margin-left:auto;padding:0}
 .field-row-dur>*{min-width:0}
 .field-row-dur input[type=text]{width:100%;min-width:0;box-sizing:border-box}
 .field-row-dur{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:var(--space-3);align-items:end}
@@ -647,7 +662,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v185'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v186'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -890,11 +905,11 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=185"></script>
+<script src="trip.js?v=186"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.
      trip.js owns _parseTripDate. -->
-<script src="trip-extras.js?v=185"></script>
+<script src="trip-extras.js?v=186"></script>
 </body>
 </html>

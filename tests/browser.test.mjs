@@ -936,10 +936,10 @@ test('Edit Stop shows BOTH times, and no field is clipped', async () => {
 });
 
 // ===========================================================================
-// TRANSIT LEGS ON THE MAP. Ground segmentation (v169) deliberately excluded
-// flights/trains from ROAD routing — you cannot drive the Atlantic. But that
-// left a train journey with NO line at all: Day 2 showed a pin at Gatwick and
-// pins in London with nothing joining them.
+// TRANSIT LEGS ON THE MAP. Ground segmentation (v169) excludes flights/trains
+// from ROAD routing — you cannot drive the Atlantic — but that is a routing
+// decision, NOT a reason to hide the journey. Every flight, train and bus gets
+// its own straight leg. Anything else leaves pins with nothing joining them.
 // ===========================================================================
 test('a train journey is drawn on the map', async () => {
   const { page } = await openTrip([
@@ -987,5 +987,52 @@ test('the train leg on the REAL trip Day 2 is drawn', async () => {
   }));
   assert.ok(info.legs.includes('train'), 'Day 2 has a train leg, got ' + JSON.stringify(info.legs));
   assert.ok(info.paths >= 2, 'the map draws the transit leg AND the ground route, got ' + info.paths);
+  await page.close();
+});
+
+// A flight that ENDS the day has no later stop on its own day to draw to, so
+// it silently produced zero legs: the Day 1 transatlantic flight was invisible.
+// The destination is where the NEXT day begins.
+test('a flight that ends the day draws to where the next day starts', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Drive to MCO', type: 'drive', time: '2:00 PM', endTime: '3:30 PM',
+        lat: 28.2442, lng: -82.7193 },
+      { name: 'Flight MCO to LGW', type: 'flight', time: '6:55 PM', endTime: '8:45 AM',
+        lat: 28.4312, lng: -81.3081 },
+    ] },
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Gatwick Arrival', type: 'sight', time: '8:45 AM', endTime: '9:30 AM',
+        lat: 51.1537, lng: -0.1821 },
+    ] },
+  ]);
+  const legs = await page.evaluate(
+    () => _transitLegs(state.days[0].stops, state.days[1].stops));
+  assert.equal(legs.length, 1, 'the ocean crossing is one leg, got ' + legs.length);
+  assert.equal(legs[0].mode, 'flight');
+  assert.ok(Math.abs(legs[0].to[0] - 51.1537) < 0.01,
+    'it lands at Gatwick, day 2\'s first stop, got ' + legs[0].to[0]);
+  const paths = await page.evaluate(
+    () => document.querySelectorAll('#map .leaflet-overlay-pane path').length);
+  assert.ok(paths >= 1, 'and the flight line is actually rendered, got ' + paths);
+  await page.close();
+});
+
+test('the REAL trip Day 1 transatlantic flight is drawn', async () => {
+  const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
+  const { page } = await openTrip(trip.days, { day: 0 });
+  // Day 1 is a single stop: the flight itself. Before v186 that meant NO line
+  // at all — the leg had no later stop on its own day to end at.
+  await page.waitForFunction(
+    () => document.querySelectorAll('#map .leaflet-overlay-pane path').length > 0,
+    null, { timeout: 15000 });
+  const info = await page.evaluate(() => ({
+    legs: _transitLegs(state.days[0].stops, (state.days[1] || {}).stops).map((l) => l.mode),
+    paths: document.querySelectorAll('#map .leaflet-overlay-pane path').length,
+  }));
+  assert.ok(info.legs.includes('flight'),
+    'Day 1 draws its flight, got ' + JSON.stringify(info.legs));
+  assert.ok(info.paths >= 1,
+    'the flight line is rendered on Day 1, got ' + info.paths);
   await page.close();
 });

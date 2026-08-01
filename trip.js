@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v185';
+window.APP_CODE_VERSION='v186';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -570,7 +570,7 @@ async function fetchRoute(stops){
 // Day 2 has two clusters of pins. Draw each transit leg as its own connector.
 // Destination = the stop's own destLat/destLng when known, else the NEXT located
 // stop, which is where that journey actually delivers you.
-function _transitLegs(stops){
+function _transitLegs(stops,nextDayStops){
   const TR=['flight','train','bus'];
   const legs=[];
   const list=(stops||[]);
@@ -584,6 +584,16 @@ function _transitLegs(stops){
         const n=list[j];
         if(n.alt||!_validLL(n))continue;
         to=[n.lat,n.lng];break;
+      }
+      // A leg that ENDS the day — an overnight flight, the last train — has no
+      // later stop to aim at, so it used to draw nothing at all. It still has a
+      // known destination: wherever the NEXT day begins. That is precisely the
+      // transatlantic crossing the traveller most wants to see on the map.
+      if(!to&&Array.isArray(nextDayStops)){
+        for(const n of nextDayStops){
+          if(n.alt||!_validLL(n))continue;
+          to=[n.lat,n.lng];break;
+        }
       }
     }
     if(!to)continue;
@@ -671,7 +681,7 @@ async function renderDayMap(idx,fit=true){
   // Transit legs (train/bus/flight) get their own line so the journey is visible.
   // They are NOT road-routed — OSRM cannot drive a rail line or an ocean.
   const TRANSIT_COLOR={train:'#4A6572',bus:'#2B6CB0',flight:'#7B5EA7'};
-  _transitLegs(routeStops).forEach(l=>{
+  _transitLegs(routeStops,(state.days[idx+1]||{}).stops).forEach(l=>{
     L.polyline([l.from,l.to],{color:TRANSIT_COLOR[l.mode]||'#4A6572',weight:3,opacity:0.75,
       dashArray:l.mode==='flight'?'6 6':null}).addTo(routeLayer)
       .bindPopup('<div style="font-weight:700;font-size:13px">'+_escHtml(l.name)+'</div>',{maxWidth:220});

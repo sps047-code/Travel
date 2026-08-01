@@ -727,3 +727,123 @@ test('APPEND import queues the new days without touching the existing trip', asy
   assert.match(page.url(), /id=mine/, 'and we navigate to that trip to do the merge');
   await page.close();
 });
+
+// ===========================================================================
+// THE WIZARD. The other path that writes a whole trip in one shot: it asks a few
+// questions, calls the model, and saves the result. The model call is stubbed so
+// these test the app's parsing, saving and error handling — not the model.
+// ===========================================================================
+const WIZ_TRIP = JSON.stringify({
+  title: 'Kyoto Trip',
+  mapCenter: [35.01, 135.77], mapZoom: 10,
+  days: [
+    { title: 'Day 1 — Arrive', subtitle: 'Mon Apr 6 • Kyoto', stops: [
+      { name: 'Fushimi Inari', type: 'hike', time: '9:00 AM', endTime: '11:00 AM', lat: 34.967, lng: 135.772 },
+      { name: 'Lunch — Nishiki', type: 'food', time: '12:30 PM', endTime: '1:15 PM' },
+    ] },
+    { title: 'Day 2 — Temples', subtitle: 'Tue Apr 7 • Kyoto', stops: [
+      { name: 'Kinkaku-ji', type: 'hike', time: '9:30 AM', endTime: '11:00 AM' },
+    ] },
+  ],
+});
+
+async function openWizard(aiResponse) {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    // Nominatim (geocoding) and anything else outbound.
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await page.goto(`${origin}/Travel/index.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof generateTrip === 'function', null, { timeout: 15000 });
+  await page.evaluate((resp) => {
+    window.callClaude = async () => resp;
+    // Fill in what the wizard would have collected from the user.
+    wizData = { dest: 'Kyoto', startDate: '2026-04-06', endDate: '2026-04-08', days: 3,
+      who: 'family', activities: ['culture', 'food'], pace: 'relaxed', budget: 'mid',
+      notes: 'kids in tow', budgetTotal: 2400, budgetAmtType: 'total' };
+  }, aiResponse);
+  return { page, errors };
+}
+
+test('the wizard saves a generated trip with all its days and stops', async () => {
+  const { page } = await openWizard(WIZ_TRIP);
+  await page.evaluate(async () => { await generateTrip(); });
+  await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  const res = await page.evaluate((nav) => {
+    const id = (nav.match(/id=([^&]+)/) || [])[1];
+    const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
+    const listed = JSON.parse(localStorage.getItem('localTrips') || '[]').find((x) => x.id === id);
+    return { id, days: t && t.days.length, stops: t && t.days.reduce((n, d) => n + d.stops.length, 0),
+      title: t && t.title, listed: !!listed };
+  }, page.url());
+  assert.ok(res.id && res.id.startsWith('ai-'), 'an AI trip id was created: ' + res.id);
+  assert.equal(res.days, 2);
+  assert.equal(res.stops, 3, 'every generated stop was saved');
+  assert.equal(res.title, 'Kyoto Trip');
+  assert.ok(res.listed, 'and it appears in the trips list');
+  await page.close();
+});
+
+test('the wizard keeps the answers you gave it on the trip', async () => {
+  const { page } = await openWizard(WIZ_TRIP);
+  await page.evaluate(async () => { await generateTrip(); });
+  await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  const meta = await page.evaluate((nav) => {
+    const id = (nav.match(/id=([^&]+)/) || [])[1];
+    const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
+    return t && { meta: t._meta, budget: t.budget };
+  }, page.url());
+  assert.equal(meta.meta.who, 'family', 'who it is for is remembered');
+  assert.equal(meta.meta.pace, 'relaxed');
+  assert.equal(JSON.stringify(meta.meta.activities), JSON.stringify(['culture', 'food']));
+  assert.equal(meta.budget.total, 2400, 'the budget is carried onto the trip');
+  await page.close();
+});
+
+test('a malformed AI reply shows an error and creates NO trip', async () => {
+  const { page } = await openWizard('Sorry, I could not do that.');
+  const res = await page.evaluate(async () => {
+    const before = JSON.parse(localStorage.getItem('localTrips') || '[]').length;
+    await generateTrip();
+    return { before, after: JSON.parse(localStorage.getItem('localTrips') || '[]').length,
+      url: location.href };
+  });
+  await page.waitForTimeout(400);
+  assert.equal(res.after, res.before, 'no half-built trip was saved');
+  assert.ok(!/trip\.html/.test(page.url()), 'and we did not navigate into one');
+  await page.close();
+});
+
+test('an AI reply with zero days is refused', async () => {
+  const { page } = await openWizard(JSON.stringify({ title: 'Empty', days: [] }));
+  const res = await page.evaluate(async () => {
+    const before = JSON.parse(localStorage.getItem('localTrips') || '[]').length;
+    await generateTrip();
+    return { before, after: JSON.parse(localStorage.getItem('localTrips') || '[]').length };
+  });
+  await page.waitForTimeout(400);
+  assert.equal(res.after, res.before, 'a trip with no days must not be saved');
+  assert.ok(!/trip\.html/.test(page.url()));
+  await page.close();
+});
+
+test('the blank-trip path creates the right number of empty days', async () => {
+  const { page } = await openWizard(WIZ_TRIP);
+  await page.evaluate(async () => { await generateSkeleton(); });
+  await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  const res = await page.evaluate((nav) => {
+    const id = (nav.match(/id=([^&]+)/) || [])[1];
+    const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
+    return { id, days: t && t.days.length, stops: t && t.days.reduce((n, d) => n + d.stops.length, 0),
+      firstTitle: t && t.days[0].title };
+  }, page.url());
+  assert.ok(res.id && res.id.startsWith('trip-'), 'a blank trip id was created');
+  assert.equal(res.days, 3, 'one day per requested day');
+  assert.equal(res.stops, 0, 'and no invented stops');
+  assert.match(res.firstTitle, /Kyoto/, 'days are titled for the destination');
+  await page.close();
+});

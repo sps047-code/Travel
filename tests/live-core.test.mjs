@@ -1178,6 +1178,97 @@ test('_isOpenAt answers open, closed, or unknown', () => {
   assert.equal(at('Closed Monday', p('2:00 PM')), false);
   assert.equal(at('', p('2:00 PM')), null, 'unknown must not be reported as closed');
   assert.equal(at('Open 24 hours', p('3:00 AM')), true);
+  // The closing minute itself: too late to walk in, exactly right to walk out.
+  assert.equal(at('9:00 AM - 9:00 PM', p('9:00 PM'), 'arriving'), false);
+  assert.equal(at('9:00 AM - 9:00 PM', p('9:00 PM'), 'leaving'), true,
+    'leaving AT closing time is what closing time means');
+});
+
+// THE TWO FALSE POSITIVES THE FIRST VERSION PRODUCED ON A REAL ITINERARY.
+test('leaving exactly at closing time is not a conflict', () => {
+  const conflicts = fn('_hoursConflicts');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Bettys Cafe Tea Rooms', type: 'food', time: '8:30 PM', endTime: '9:00 PM',
+      dayHours: '9:00 AM - 9:00 PM' },
+  ] }] };
+  const out = conflicts();
+  assert.equal(out.length, 0,
+    'a visit that ends when the place closes is exactly right, got '
+      + JSON.stringify(out.map((c) => c.issue)));
+});
+
+test('arriving a couple of minutes before opening is minor, not a hard conflict', () => {
+  const conflicts = fn('_hoursConflicts');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Patty & Bun', type: 'food', time: '11:58 AM', endTime: '12:45 PM',
+      dayHours: '12:00 PM - 10:00 PM' },
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+      dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const out = conflicts();
+  const patty = out.find((c) => /Patty/.test(c.stop_name));
+  const tate = out.find((c) => /Tate/.test(c.stop_name));
+  assert.ok(patty, 'it is still mentioned');
+  assert.equal(patty.severity, 'minor', 'but two minutes early is not a broken plan');
+  assert.match(patty.issue, /short wait/);
+  assert.equal(tate.severity, 'hard', 'turning up two hours after closing is');
+});
+
+test('a closed-that-day stop is always hard', () => {
+  const conflicts = fn('_hoursConflicts');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Sir John Soane\'s Museum', type: 'hike', time: '11:00 AM', endTime: '12:00 PM',
+      dayHours: 'Closed Monday' },
+  ] }] };
+  const out = conflicts();
+  assert.equal(out.length, 1);
+  assert.equal(out[0].severity, 'hard');
+  assert.match(out[0].issue, /Closed that day/);
+});
+
+// CAN AN A EVER BE EARNED? The first version capped at C for ANY stop outside
+// its hours, and the conflict list contained false positives — so no real
+// itinerary could reach an A.
+test('a clean itinerary is not capped at all', () => {
+  const cap = fn('_gradeCapForConflicts');
+  const apply = fn('_applyGradeCap');
+  assert.equal(cap(0), null, 'nothing holds back an itinerary that works');
+  assert.equal(apply('A', 0), 'A', 'an A stands');
+  assert.equal(apply('A+', 0), 'A+');
+});
+
+test('hard conflicts cap the grade proportionately', () => {
+  const apply = fn('_applyGradeCap');
+  assert.equal(apply('A', 1), 'B+', 'one thing you cannot do costs a step');
+  assert.equal(apply('A', 2), 'B-');
+  assert.equal(apply('A', 5), 'C+');
+  assert.equal(apply('C', 1), 'C', 'a cap never RAISES a grade');
+  assert.equal(apply('B-', 1), 'B-', 'and never moves one already below it');
+});
+
+test('minor issues alone leave an A reachable', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Patty & Bun', type: 'food', time: '11:58 AM', endTime: '12:45 PM',
+      dayHours: '12:00 PM - 10:00 PM' },
+    { name: 'Bettys', type: 'food', time: '8:30 PM', endTime: '9:00 PM',
+      dayHours: '9:00 AM - 9:00 PM' },
+  ] }] };
+  const data = vet({ overall_grade: { letter: 'A', rationale: 'Excellent' } });
+  assert.equal(data.overall_grade.letter, 'A',
+    'a two-minute early arrival must not cost an A');
+  assert.equal(data._hardConflicts.length, 0);
+});
+
+test('the letter is docked to match the problems listed under it', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+      dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const data = vet({ overall_grade: { letter: 'A', rationale: 'Flawless' } });
+  assert.equal(data.overall_grade.letter, 'B+', 'the model cannot award an A over a hard conflict');
+  assert.equal(data._gradeCappedFrom, 'A', 'and the original is kept so it can be explained');
 });
 
 test('_hoursConflicts finds stops scheduled when they are shut', () => {

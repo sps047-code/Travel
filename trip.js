@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v199';
+window.APP_CODE_VERSION='v200';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -5048,15 +5048,36 @@ function _hoursWindows(line){
   }
   return out.length?out:null;
 }
-// true / false / null(unknown) — is this place open at that many minutes past midnight?
-function _isOpenAt(hoursLine,mins){
+// true / false / null(unknown) — is this place open at that many minutes past
+// midnight? `edge` decides what the closing minute itself means: an ARRIVAL at
+// closing time is too late, but LEAVING at closing time is exactly right.
+function _isOpenAt(hoursLine,mins,edge){
   const w=_hoursWindows(hoursLine);
   if(w===null||mins==null)return null;
   if(!w.length)return false;                                 // closed today
-  return w.some(x=>(mins>=x.open&&mins<x.close)||(mins+1440>=x.open&&mins+1440<x.close));
+  const inWin=(m,x)=>m>=x.open&&(edge==='leaving'?m<=x.close:m<x.close);
+  return w.some(x=>inWin(mins,x)||inWin(mins+1440,x));
 }
+// How far outside the hours a time falls, in minutes (0 when inside).
+function _minsOutsideHours(hoursLine,mins){
+  const w=_hoursWindows(hoursLine);
+  if(w===null||mins==null||!w.length)return null;
+  let best=Infinity;
+  w.forEach(x=>{
+    if(mins>=x.open&&mins<=x.close)best=0;
+    else best=Math.min(best,mins<x.open?(x.open-mins):(mins-x.close));
+  });
+  return best===Infinity?null:best;
+}
+// Turning up a couple of minutes before the doors open is not a planning error.
+const HOURS_GRACE_MINS=15;
 // Every stop in the itinerary that is scheduled when it is shut. Computed here,
 // from the hours the app already holds, so it appears whatever the model says.
+// Every stop scheduled outside its hours, split by how much it actually matters.
+//   hard  — you cannot do this: shut that day, or you arrive after closing
+//   minor — worth knowing: a few minutes early, or you overstay slightly
+// The split exists because a single pedantic finding used to cap the whole
+// grade. Arriving at 11:58 for a midday opening is not a broken itinerary.
 function _hoursConflicts(){
   const out=[];
   (state.days||[]).forEach((d,di)=>{
@@ -5065,21 +5086,50 @@ function _hoursConflicts(){
       if(!line)return;
       const start=_parseTimeMins(s.time);
       if(start==null)return;
-      const open=_isOpenAt(line,start);
-      if(open===false){
-        out.push({day:di+1,stop_name:s.name,
-          issue:'Scheduled at '+s.time+' but the hours are "'+line+'".'});
+      const windows=_hoursWindows(line);
+      if(windows&&!windows.length){
+        out.push({day:di+1,stop_name:s.name,severity:'hard',
+          issue:'Closed that day ("'+line+'"), but scheduled at '+s.time+'.'});
         return;
       }
-      // Still open on arrival, shut before you leave.
+      if(_isOpenAt(line,start,'arriving')===false){
+        const off=_minsOutsideHours(line,start);
+        const early=off!=null&&off<=HOURS_GRACE_MINS&&_minsOutsideHours(line,start+off)===0&&start<(windows&&windows[0]?windows[0].open:0);
+        out.push({day:di+1,stop_name:s.name,severity:early?'minor':'hard',
+          issue:early
+            ?('Arrives '+off+' min before opening at '+s.time+' ("'+line+'") — a short wait.')
+            :('Scheduled at '+s.time+' but the hours are "'+line+'".')});
+        return;
+      }
+      // Open on arrival, shut before you leave. Leaving exactly AT closing time
+      // is fine — that is what closing time means.
       const end=_parseTimeMins(s.endTime);
-      if(open===true&&end!=null&&_isOpenAt(line,end)===false){
-        out.push({day:di+1,stop_name:s.name,
-          issue:'Open at '+s.time+' but closes before '+s.endTime+' ("'+line+'").'});
+      if(end!=null&&_isOpenAt(line,end,'leaving')===false){
+        const over=_minsOutsideHours(line,end);
+        out.push({day:di+1,stop_name:s.name,severity:(over!=null&&over<=HOURS_GRACE_MINS)?'minor':'hard',
+          issue:'Stays until '+s.endTime+' but it closes'+(over!=null?' '+over+' min earlier':'')+' ("'+line+'").'});
       }
     });
   });
   return out;
+}
+// The best letter an itinerary with these problems can honestly carry. A grade
+// is only useful if an A is reachable: a hard conflict caps it, a minor one
+// does not, and a clean itinerary is capped by nothing.
+const _GRADE_ORDER=['A+','A','A-','B+','B','B-','C+','C','C-','D','F'];
+function _gradeCapForConflicts(hardCount){
+  if(hardCount>=3)return 'C+';
+  if(hardCount===2)return 'B-';
+  if(hardCount===1)return 'B+';
+  return null;                                    // nothing is holding it back
+}
+function _applyGradeCap(letter,hardCount){
+  const cap=_gradeCapForConflicts(hardCount);
+  if(!cap)return letter;
+  const li=_GRADE_ORDER.indexOf(String(letter||'').trim().toUpperCase());
+  const ci=_GRADE_ORDER.indexOf(cap);
+  if(li<0)return letter;
+  return li<ci?cap:letter;                        // never raise, only cap
 }
 // Check the grader's OWN answer. Every suggested addition has to state the
 // hours it believes and the time it proposes; if those two disagree, the
@@ -5115,11 +5165,22 @@ function _vetGradeSuggestions(data){
   const have=new Set((data.timing_conflicts||[]).map(c=>String(c.day)+'|'+String(c.stop_name||'').toLowerCase()));
   data.timing_conflicts=(data.timing_conflicts||[]).concat(
     local.filter(c=>!have.has(String(c.day)+'|'+String(c.stop_name||'').toLowerCase())));
+  // The letter must agree with the problems listed underneath it. Applied here
+  // rather than left to the model, which cannot be relied on to dock itself.
+  const hard=local.filter(c=>c.severity==='hard');
+  data._hardConflicts=hard;
+  if(data.overall_grade&&data.overall_grade.letter){
+    const capped=_applyGradeCap(data.overall_grade.letter,hard.length);
+    if(capped!==data.overall_grade.letter){
+      data._gradeCappedFrom=data.overall_grade.letter;
+      data.overall_grade.letter=capped;
+    }
+  }
   data._droppedForHours=dropped;
   return data;
 }
 
-const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields \u2014 no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts MUST include any EXISTING stop scheduled when it is closed \u2014 arriving after closing, or staying past it \u2014 and any stop on a weekday that place is shut.\n8. The grade itself must reflect this: an itinerary with stops scheduled when they are closed cannot score above a C, however good the choices are.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
+const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields \u2014 no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts MUST include any EXISTING stop scheduled when it is closed \u2014 arriving after closing, or staying past it \u2014 and any stop on a weekday that place is shut.\n8. The grade must reflect this. A HARD conflict is a stop you cannot do at all: shut that day, or arrived at after closing. Those cap the grade \u2014 one caps it at B+, two at B-, three or more at C+ \u2014 and the cap is applied automatically, so do not double-dock for it. Arriving a few minutes before opening, or leaving exactly at closing time, is NOT a conflict and must not be reported as one. An itinerary with no hard conflicts can and should score an A when the choices are genuinely excellent \u2014 do not withhold an A out of caution.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
 
 async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
@@ -5179,7 +5240,26 @@ function _renderGradeResult(d){
   }
   if(d.timing_conflicts?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#9888;&#65039; Timing Issues</div>';
-    d.timing_conflicts.forEach(c=>h+='<div class="ai-item ai-item-warn"><strong>Day '+c.day+': '+_escHtml(c.stop_name||'')+'</strong> &mdash; '+_escHtml(c.issue||'')+'</div>');h+='</div>';
+    d.timing_conflicts.forEach(c=>{
+      const minor=c.severity==='minor';
+      h+='<div class="ai-item'+(minor?'':' ai-item-warn')+'"'+(minor?' style="color:var(--muted)"':'')+'>'+
+        '<strong>Day '+c.day+': '+_escHtml(c.stop_name||'')+'</strong>'+
+        (minor?' <span style="font-size:var(--text-2xs);font-weight:700;letter-spacing:0.06em;text-transform:uppercase">minor</span>':'')+
+        ' &mdash; '+_escHtml(c.issue||'')+'</div>';
+    });h+='</div>';
+  }
+  // Answer the obvious question: what is stopping this being an A?
+  if(d._hardConflicts&&d._hardConflicts.length){
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#127942; What is holding the grade back</div>'+
+      '<div class="ai-item">'+d._hardConflicts.length+' stop'+(d._hardConflicts.length===1?' is':'s are')+
+      ' scheduled when the place is shut, which caps this at <strong>'+_escHtml(_gradeCapForConflicts(d._hardConflicts.length)||'')+'</strong>'+
+      (d._gradeCappedFrom?' (the review itself said '+_escHtml(d._gradeCappedFrom)+')':'')+'. Fix '+
+      _escHtml(d._hardConflicts.map(c=>'Day '+c.day+' '+c.stop_name).join(', '))+
+      ' and nothing else is standing in the way of an A.</div></div>';
+  }else{
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#127942; What is holding the grade back</div>'+
+      '<div class="ai-item" style="color:var(--pine)">No stop is scheduled outside its opening hours, so the grade is not capped. '+
+      'The letter above is the review\u0027s own judgement of the itinerary.</div></div>';
   }
   if(d.suggested_additions?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#10024; Consider Adding</div>';

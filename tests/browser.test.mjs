@@ -283,14 +283,23 @@ test('End Time and Duration stay in sync in the real Edit Stop form', async () =
   // Opening the form must already show the TRUE span, not the stale "2hrs".
   const shown = await page.inputValue('#f-duration');
   assert.equal(shown, '4h 9min', 'duration derived from the times on open, got ' + shown);
-  // Typing a new End Time updates Duration.
-  await page.fill('#f-endtime', '14:03');
-  await page.dispatchEvent('#f-endtime', 'input');
-  await page.waitForFunction(() => document.getElementById('f-duration').value === '2hrs', null, { timeout: 12000 });
-  // Typing a Duration updates End Time.
-  await page.fill('#f-duration', '3h');
-  await page.dispatchEvent('#f-duration', 'input');
-  await page.waitForFunction(() => document.getElementById('f-endtime').value === '15:03', null, { timeout: 12000 });
+  // The sync handler is an inline oninput, so it runs SYNCHRONOUSLY with the
+  // event — there is nothing to wait for. Polling for the result was a race
+  // that made this test fail intermittently under load.
+  const dur = await page.evaluate(() => {
+    const e = document.getElementById('f-endtime');
+    e.value = '14:03';
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    return document.getElementById('f-duration').value;
+  });
+  assert.equal(dur, '2hrs', 'a new End Time updates Duration, got ' + dur);
+  const end = await page.evaluate(() => {
+    const d = document.getElementById('f-duration');
+    d.value = '3h';
+    d.dispatchEvent(new Event('input', { bubbles: true }));
+    return document.getElementById('f-endtime').value;
+  });
+  assert.equal(end, '15:03', 'and a new Duration updates End Time, got ' + end);
   await page.close();
 });
 
@@ -2708,5 +2717,91 @@ test('a suggestion shows the time and hours it is claiming', async () => {
   const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /11:00 AM/, 'the proposed time is shown so it can be judged');
   assert.match(txt, /10:00 AM - 5:00 PM/, 'and the hours it claims');
+  await page.close();
+});
+
+// ===========================================================================
+// v200 — CAN AN A BE EARNED? The first version of the hours check capped the
+// grade at C for ANY stop outside its hours, and its conflict list contained
+// false positives (leaving exactly at closing time; arriving two minutes
+// early). No real itinerary could reach an A.
+// ===========================================================================
+test('a clean itinerary can score an A', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:30 PM',
+        lat: 51.5194, lng: -0.127, dayHours: '10:00 AM - 5:00 PM' },
+      { name: 'Bettys', type: 'food', time: '8:30 PM', endTime: '9:00 PM',
+        lat: 51.51, lng: -0.13, dayHours: '9:00 AM - 9:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Exceptional.' },
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'A', 'an A must be reachable, got ' + out.letter);
+  assert.match(out.txt, /not capped/, 'and the app says so plainly');
+  await page.close();
+});
+
+test('a hard conflict caps the letter and says what to fix', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+        lat: 51.5076, lng: -0.0994, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Flawless.' },
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'B+', 'the model cannot award an A over a hard conflict, got ' + out.letter);
+  assert.match(out.txt, /Tate Modern/, 'it names what to fix');
+  assert.match(out.txt, /nothing else is standing in the way of an A/,
+    'and says an A is reachable once it is fixed');
+  await page.close();
+});
+
+test('a two-minute early arrival is shown as minor and does not cap', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Patty & Bun', type: 'food', time: '11:58 AM', endTime: '12:45 PM',
+        lat: 51.515, lng: -0.148, dayHours: '12:00 PM - 10:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A-', rationale: 'Strong.' },
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'A-', 'a short wait outside the door is not a downgrade');
+  assert.match(out.txt, /MINOR|minor/, 'it is still mentioned, marked minor');
+  assert.match(out.txt, /not capped/);
   await page.close();
 });

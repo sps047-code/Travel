@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v197';
+window.APP_CODE_VERSION='v198';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -567,16 +567,40 @@ function haversine(la1,lo1,la2,lo2){
   const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+/* ---- HOW LONG A LEG REALLY TAKES ------------------------------------------
+   haversine() gives the straight line between two points. Nobody travels in a
+   straight line: streets bend, rivers have bridges in particular places, and you
+   wait for the bus. Every mode therefore needs
+     - a DETOUR factor: how much further the real route is than the crow's flight
+     - a realistic PACE, not a theoretical top speed
+     - fixed OVERHEAD: parking, waiting on a platform, getting out of a station
+
+   Only driving used to get a detour factor. Walking, cycling, buses and trains
+   were all timed as if you could cut through buildings, which is how 0.9 miles
+   came out as a three-minute walk. (It was worse than that: the connector was
+   timing a WALK at DRIVING speed — see _legMode below.)                       */
+const _TRAVEL_MODEL={
+  // pace() takes the ROUTE miles and returns mph, so a mode can be slower over
+  // short urban distances than it is over long ones.
+  walk :{detour:1.25, overhead:0,  pace:()=>3.0},                       // a steady city walk, with crossings
+  bike :{detour:1.20, overhead:2,  pace:()=>11},                        // upright bike, urban, with lights
+  drive:{detour:1.25, overhead:3,  pace:(m)=>m>120?65:m>40?55:m>10?40:20},  // + parking
+  bus  :{detour:1.40, overhead:8,  pace:(m)=>m>25?35:11},               // waiting, then stopping constantly
+  train:{detour:1.15, overhead:12, pace:(m)=>m>30?65:25},               // platform time; metro vs intercity
+  flight:{detour:1.05,overhead:0,  pace:()=>480}                        // airport time is handled separately
+};
+// The real distance travelled, which is what the leg should report.
+function _routeMiles(straightLineMiles,mode){
+  const m=_TRAVEL_MODEL[mode]||_TRAVEL_MODEL.drive;
+  return straightLineMiles*m.detour;
+}
 function _travelMins(straightLineMiles,mode){
-  if(mode==='flight')return Math.round(straightLineMiles/8);
-  if(mode==='train')return Math.round(straightLineMiles/0.85);
-  if(mode==='bus')return Math.round(straightLineMiles/0.5);
-  if(mode==='bike')return Math.round(straightLineMiles/0.2);   // ~12 mph
-  if(mode==='walk')return Math.round(straightLineMiles/0.05);
-  // drive: apply 1.25 road-overhead factor then adaptive mph
-  const road=straightLineMiles*1.25;
-  const mph=road>120?65:road>40?55:road>10?40:20;
-  return Math.round(road/mph*60);
+  const m=_TRAVEL_MODEL[mode]||_TRAVEL_MODEL.drive;
+  const miles=straightLineMiles*m.detour;
+  const mph=m.pace(miles)||1;
+  const mins=miles/mph*60+m.overhead;
+  // A leg that exists at all takes at least a minute.
+  return Math.max(1,Math.round(mins));
 }
 function _minsToStr(mins){
   return mins<60?mins+' min':(Math.floor(mins/60)+'h'+(mins%60?' '+(mins%60)+'min':''));
@@ -668,10 +692,13 @@ function _airportWarningHtml(prev,s){
 }
 function legLabel(a,b,mode){
   if(!_validLL(a)||!_validLL(b))return'';
-  const dist=haversine(a.lat,a.lng,b.lat,b.lng);
-  if(dist<0.05)return'';
+  const straight=haversine(a.lat,a.lng,b.lat,b.lng);
+  if(straight<0.05)return'';
+  // Report the distance you actually cover, not the crow's flight, so the miles
+  // and the minutes describe the same journey.
+  const dist=_routeMiles(straight,mode);
   const mi=dist<10?dist.toFixed(1):Math.round(dist);
-  const mins=_travelMins(dist,mode);
+  const mins=_travelMins(straight,mode);
   return mi+' mi · '+_minsToStr(mins);
 }
 // Valid usable coordinates. Treats 0,0 (a real point off West Africa that stops
@@ -1341,8 +1368,15 @@ function renderPanel(idx){
       // double-counts and makes an impossible-looking "77 mi in 0 min" connector.
       let leg='';
       if(_validLL(next)&&next.type!=='drive'){
-        const from=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
-        if(from&&from!==next)leg=legLabel(from,next,tmode);
+        const fromStop=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
+        // A leg starts where the previous stop ENDS. After a train, that is the
+        // station it arrives at, not the one it left. This used to be corrected
+        // afterwards by a second function that rewrote the connector's text —
+        // and that function re-derived the travel mode with its own rule that
+        // had no 'walk' case, so a walk was timed at driving speed: 0.9 miles
+        // in 3 minutes. One computation now, from the right two points.
+        const origin=fromStop?_stopTo(fromStop,null):null;
+        if(origin&&fromStop!==next)leg=legLabel(origin,next,tmode);
       }
       const tzc=tzChangeLabel(s,next);
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
@@ -2686,7 +2720,8 @@ function _fixScotlandDay7Once(){ return false; }
 function _legTravelMins(a,b){
   if(!a||!b)return 15;
   const mode=b.transitMode||_defaultTransitMode(a,b);
-  if(a.lat&&a.lng&&b.lat&&b.lng)return Math.max(5,_travelMins(haversine(a.lat,a.lng,b.lat,b.lng),mode));
+  const from=_stopTo(a,null)||a;      // same origin the connector uses
+  if(_validLL(from)&&_validLL(b))return Math.max(5,_travelMins(haversine(from.lat,from.lng,b.lat,b.lng),mode));
   return 15;
 }
 // Recompute every stop's start time in chronological order: each stop begins
@@ -2873,7 +2908,7 @@ function _applyCoordHeal(){
       // A corrupted coordinate usually came with a corrupted type (Rosslyn → "food").
       if(c.type&&s.type!==c.type)s.type=c.type;
       // destLat/destLng only mean anything for transit legs; a stray one on an
-      // activity feeds _patchLegConnectors a wrong distance — drop it.
+      // activity feeds the leg connector a wrong distance — drop it.
       if(!['flight','train','bus'].includes(s.type)){ delete s.destLat; delete s.destLng; }
       healed++;
     }
@@ -6631,37 +6666,11 @@ function augmentCards(){
 }
 
 // ── 4b. PATCH LEG-CONNECTORS (use transit arrival coords when stored) ──────
-function _patchLegConnectors(){
-  if(typeof state==='undefined'||!state||!state.days) return;
-  document.querySelectorAll('.leg-connector').forEach(conn=>{
-    if(conn.dataset.distPatched) return;
-    const prev=conn.previousElementSibling;
-    if(!prev) return;
-    const m=(prev.id||'').match(/stop-card-(\d+)-(\d+)/);
-    if(!m) return;
-    const di=+m[1], si=+m[2];
-    const stop=state.days[di]?.stops[si];
-    if(!stop) return;
-    const next=state.days[di]?.stops[si+1];
-    if(!next||!_validLL(next)) return;
-    // Distance from where this stop ENDS, not from where it started.
-    const end=_stopTo(stop,(state.days[di]?.stops||[]).slice(si+1));
-    if(!end) return;
-    const dist=haversine(end.lat,end.lng,next.lat,next.lng);
-    const mode=stop.transitMode||(stop.type==='train'?'train':stop.type==='bus'?'bus':'drive');
-    for(const node of conn.childNodes){
-      if(node.nodeType===Node.TEXT_NODE&&/\d+\.?\d*\s*mi/.test(node.textContent)){
-        if(dist<0.08){ node.textContent=' '; }
-        else{
-          const mi=dist<10?dist.toFixed(1):Math.round(dist);
-          node.textContent=mi+' mi · '+_minsToStr(_travelMins(dist,mode))+' ';
-        }
-        conn.dataset.distPatched='1';
-        break;
-      }
-    }
-  });
-}
+// [removed in v198] _patchLegConnectors rewrote each connector's distance and
+// time AFTER render, using its own mode rule that fell through to 'drive' for
+// anything that was not a train or a bus. A walk was therefore labelled "Walk"
+// and timed as a drive. The renderer now computes the leg once, from the point
+// the previous stop ends at, so there is nothing left to patch.
 
 // ── 4c. END-OF-TRIP LABEL (last day "Tonight" → "End of Trip") ────────────
 function _patchEndOfTrip(){
@@ -6745,7 +6754,6 @@ function _startObserver(){
   _watchPlanChatModal();
   _injectFormField();
   augmentCards();
-  _patchLegConnectors();
   _patchEndOfTrip();
   _augmentAudioBadges();
   if(_syncOvernightArrivals()){ try{saveState('',true);}catch(e){} try{renderAll();}catch(e){} }
@@ -6753,8 +6761,7 @@ function _startObserver(){
   const ca = document.getElementById('content-area');
   if(ca) new MutationObserver(()=>{
     augmentCards();
-    _patchLegConnectors();
-    _patchEndOfTrip();
+      _patchEndOfTrip();
     _augmentAudioBadges();
     if(!_oaInitDone && typeof state!=='undefined' && state && state.days){
       _oaInitDone=true;

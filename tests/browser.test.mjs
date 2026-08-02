@@ -1136,6 +1136,31 @@ test('the REAL trip Day 1 transatlantic flight is drawn', async () => {
   await page.close();
 });
 
+
+// Capture the AI request specifically. The family sync polls every 3 seconds
+// through the same window.fetch, so "the first request captured" is a race.
+async function captureAiRequest(page) {
+  await page.evaluate(() => {
+    window.__sent = [];
+    const real = window.fetch;
+    window.fetch = async (u, o) => {
+      const url = String(u && u.url ? u.url : u);
+      const body = o && o.body;
+      let parsed = null;
+      try { parsed = JSON.parse(body); } catch (e) { /* not JSON */ }
+      if (parsed && typeof parsed.system === 'string') {
+        window.__sent.push({ url, body, parsed });
+        return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) };
+      }
+      return real ? real(u, o) : { ok: true, json: async () => ({}) };
+    };
+  });
+}
+async function aiRequestBody(page) {
+  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 20000 });
+  return page.evaluate(() => window.__sent[0].parsed);
+}
+
 // ===========================================================================
 // ASK AI ATTACHMENTS. A booking confirmation is a file, so the chat has to be
 // able to read one. Everything is extracted in the browser; the AI proxy takes
@@ -1196,20 +1221,12 @@ test('an attached file is actually put on the wire when you hit send', async () 
   const { page } = await openTrip(CHAT_DAY);
   await openChat(page);
   // Capture the outbound request instead of trusting that compose was called.
-  await page.evaluate(() => {
-    window.__sent = [];
-    window.fetch = async (u, o) => {
-      window.__sent.push({ url: String(u), body: o && o.body });
-      return { ok: true, json: async () => ({ content: [{ text: 'Noted.' }] }) };
-    };
-  });
+  await captureAiRequest(page);
   await attach(page, [{ name: 'flight.txt', type: 'text/plain',
     b64: b64('Norse Atlantic Z0 784, MCO to LGW, 4 Aug 2026, seat 21A, ref QK7T2M') }]);
   await page.evaluate(() => { document.getElementById('pc-input').value = 'Is this on my itinerary?'; });
   await page.evaluate(() => _planSendMessage());
-  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
-
-  const body = await page.evaluate(() => JSON.parse(window.__sent[0].body));
+  const body = await aiRequestBody(page);
   assert.match(body.user, /QK7T2M/, 'the booking reference must be in the request body');
   assert.match(body.user, /ATTACHED FILE: flight\.txt/);
   assert.match(body.user, /Is this on my itinerary\?/);
@@ -1311,15 +1328,10 @@ test('attachments can be removed, and the same file is not added twice', async (
 test('a file alone, with no typed question, is still a valid message', async () => {
   const { page } = await openTrip(CHAT_DAY);
   await openChat(page);
-  await page.evaluate(() => {
-    window.__sent = [];
-    window.fetch = async (u, o) => { window.__sent.push(o && o.body);
-      return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) }; };
-  });
+  await captureAiRequest(page);
   await attach(page, [{ name: 'ticket.txt', type: 'text/plain', b64: b64('Ref RJ4419 Edinburgh Waverley 09:12') }]);
   await page.evaluate(() => _planSendMessage());        // input left empty on purpose
-  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
-  const body = await page.evaluate(() => JSON.parse(window.__sent[0]));
+  const body = await aiRequestBody(page);
   assert.match(body.user, /RJ4419/);
   await page.close();
 });
@@ -1461,15 +1473,10 @@ test('the system prompt actually sent contains the attachment rules', async () =
   ]);
   await page.evaluate(() => openPlanChat());
   await page.waitForSelector('#pc-input', { state: 'attached' });
-  await page.evaluate(() => {
-    window.__sent = [];
-    window.fetch = async (u, o) => { window.__sent.push(o && o.body);
-      return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) }; };
-  });
+  await captureAiRequest(page);
   await page.evaluate(() => { document.getElementById('pc-input').value = 'hello'; });
   await page.evaluate(() => _planSendMessage());
-  await page.waitForFunction(() => window.__sent.length > 0, null, { timeout: 15000 });
-  const body = await page.evaluate(() => JSON.parse(window.__sent[0]));
+  const body = await aiRequestBody(page);
   // Before the merge these rules lived on PLAN_CHAT_SYSTEM, which nothing sent.
   assert.match(body.system, /ATTACHED FILE markers/,
     'the attachment rules must be in the prompt that is actually transmitted');
@@ -2512,5 +2519,83 @@ test('a fully covered trip shows no warning', async () => {
   }));
   assert.equal(out.covered, out.nights, 'every night has somewhere to sleep');
   assert.equal(out.subs, 0, 'so nothing is flagged');
+  await page.close();
+});
+
+// ===========================================================================
+// v198 — TRAVEL TIME. The connector read "0.9 mi · 3 min" on a leg labelled
+// Walk. 3 minutes is what _travelMins returns for that distance by CAR: a
+// second function rewrote the connector after render using its own mode rule,
+// which had no 'walk' case and fell through to 'drive'.
+// ===========================================================================
+test('a walking leg on screen is timed as a walk', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      // 0.013 degrees of latitude apart = 0.9 straight-line miles.
+      { name: 'Covent Garden', type: 'hike', time: '10:00 AM', endTime: '11:00 AM',
+        lat: 51.5117, lng: -0.1240 },
+      { name: 'British Museum', type: 'hike', time: '11:30 AM', endTime: '1:00 PM',
+        lat: 51.5247, lng: -0.1240 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => !!document.querySelector('.leg-connector'), null, { timeout: 15000 });
+  const leg = await page.evaluate(() => {
+    const c = document.querySelector('.leg-connector');
+    return { text: c.textContent.replace(/\s+/g, ' ').trim(),
+      pill: (c.querySelector('.leg-mode-pill') || {}).textContent || '' };
+  });
+  assert.match(leg.pill, /Walk/, 'the leg is a walk, got ' + leg.pill);
+  const m = /([\d.]+) mi · (?:(\d+)h ?)?(\d+)?\s*min/.exec(leg.text);
+  assert.ok(m, 'the connector states a distance and a time, got: ' + leg.text);
+  const miles = parseFloat(m[1]);
+  const mins = (m[2] ? +m[2] * 60 : 0) + (m[3] ? +m[3] : 0);
+  const mph = miles / (mins / 60);
+  assert.ok(mph >= 2 && mph <= 4,
+    'that is ' + mph.toFixed(1) + ' mph on foot — ' + leg.text);
+  assert.ok(mins >= 15, 'about a mile on foot is not a 3 minute job, got ' + mins + ' min');
+  await page.close();
+});
+
+test('the same leg by car is quicker than on foot, and both are sane', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => ({
+    walk: _travelMins(0.9, 'walk'), drive: _travelMins(0.9, 'drive'),
+    walkFar: _travelMins(12, 'walk'), driveFar: _travelMins(12, 'drive'),
+  }));
+  assert.ok(out.walk > out.drive, 'walking a mile must take longer than driving it');
+  assert.ok(out.walkFar > out.driveFar, 'and the same over 12 miles');
+  assert.ok(out.walk >= 18 && out.walk <= 28, '0.9 mi on foot ~23 min, got ' + out.walk);
+  await page.close();
+});
+
+test('the distance shown is the distance actually travelled', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => ({
+    straight: haversine(51.5117, -0.1240, 51.5194, -0.1270),
+    route: _routeMiles(haversine(51.5117, -0.1240, 51.5194, -0.1270), 'walk'),
+  }));
+  assert.ok(out.route > out.straight, 'streets are longer than the crow flies');
+  assert.ok(out.route < out.straight * 1.6, 'but not absurdly so');
+  await page.close();
+});
+
+test('a leg after a train starts where the train ARRIVES', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 2', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Gatwick Express', type: 'train', time: '9:30 AM', endTime: '10:00 AM',
+        lat: 51.1537, lng: -0.1821, destLat: 51.4952, destLng: -0.1441 },
+      { name: 'Royal Horseguards', type: 'lodge', time: '10:30 AM', endTime: '11:00 AM',
+        lat: 51.5063, lng: -0.1237 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => !!document.querySelector('.leg-connector'), null, { timeout: 15000 });
+  const text = await page.evaluate(() =>
+    document.querySelector('.leg-connector').textContent.replace(/\s+/g, ' ').trim());
+  const miles = parseFloat(/([\d.]+) mi/.exec(text)[1]);
+  // Victoria to Whitehall is about a mile. Gatwick to Whitehall is about 25.
+  assert.ok(miles < 5,
+    'the leg must run from Victoria, not from Gatwick, got ' + miles + ' mi — ' + text);
   await page.close();
 });

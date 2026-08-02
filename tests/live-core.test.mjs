@@ -359,10 +359,59 @@ test('_recalcDayTimes clamps an absurd sub-4AM anchor to a sane morning', () => 
   assert.ok(p(ctx.state.days[0].stops[0].time) >= 240, 'first stop clamped to >= 4 AM');
 });
 
-test('bike is a supported travel mode (~12 mph)', () => {
+// The old model gave 6 straight-line miles by bike as 30 minutes — 12 mph as
+// the crow flies, through buildings, without stopping at a single light. The
+// route is about 1.2x the straight line and a city cyclist averages ~11 mph, so
+// the honest answer is closer to 40 minutes.
+test('bike is a supported travel mode at a realistic city pace', () => {
   const tm = fn('_travelMins');
   const t = tm(6, 'bike');
-  assert.ok(t >= 25 && t <= 35, 'bike 6 mi should be ~30 min, got ' + t);
+  assert.ok(t >= 33 && t <= 50, 'bike 6 straight-line miles should be ~40 min, got ' + t);
+});
+
+// THE REPORTED BUG: "0.9 mi - 3 min" on a leg labelled Walk.
+test('a walk is timed as a walk, not as a drive', () => {
+  const tm = fn('_travelMins');
+  const walk = tm(0.9, 'walk');
+  assert.ok(walk >= 18 && walk <= 28, '0.9 straight-line miles on foot is ~23 min, got ' + walk);
+  assert.ok(walk > tm(0.9, 'drive'), 'and walking must never be quicker than driving it');
+  // 3 minutes was the DRIVING answer, which is what the connector was showing.
+  assert.ok(walk > 10, 'no human covers that in 3 minutes');
+});
+
+test('every mode allows for the real route, not the crow\'s flight', () => {
+  const route = fn('_routeMiles');
+  for (const mode of ['walk', 'bike', 'drive', 'bus', 'train']) {
+    assert.ok(route(10, mode) > 10, mode + ' must add a detour, got ' + route(10, mode));
+    assert.ok(route(10, mode) < 16, mode + ' detour must stay sane, got ' + route(10, mode));
+  }
+});
+
+test('travel times are within a believable speed range', () => {
+  const tm = fn('_travelMins');
+  const route = fn('_routeMiles');
+  const mph = (d, m) => route(d, m) / (tm(d, m) / 60);
+  // Door-to-door speeds. A very short drive looks slow because parking dominates
+  // it, and a short bus ride looks slow because you spend most of it waiting —
+  // both are true, and both are why the old straight-line model flattered them.
+  // Door-to-door speeds, checked only over distances where the mode is a real
+  // choice. A half-mile train "journey" is mostly platform time and genuinely
+  // works out at walking pace — the model is right, the scenario is silly.
+  const bounds = {
+    walk:  { range: [0.2, 0.5, 2, 5],       mph: [2.0, 4.0] },
+    bike:  { range: [0.5, 2, 10, 30],       mph: [7, 14] },
+    drive: { range: [0.5, 2, 10, 50, 200],  mph: [6, 70] },
+    bus:   { range: [2, 10, 50],            mph: [5, 45] },
+    train: { range: [5, 30, 100, 400],      mph: [10, 90] },
+  };
+  for (const [mode, spec] of Object.entries(bounds)) {
+    const [lo, hi] = spec.mph;
+    for (const d of spec.range) {
+      const v = mph(d, mode);
+      assert.ok(v >= lo && v <= hi,
+        mode + ' over ' + d + ' mi implies ' + v.toFixed(1) + ' mph, outside ' + lo + '-' + hi);
+    }
+  }
 });
 
 test('_healBadEndTimes makes duration equal end - start for an activity', () => {

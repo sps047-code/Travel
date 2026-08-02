@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v196';
+window.APP_CODE_VERSION='v197';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -3591,16 +3591,59 @@ function generateChecklist(){
   return[...bookable,...(state.checklist||[]).filter(i=>!i.auto)];
 }
 
+// A trip of N days has N-1 nights: one after every day except the last. This is
+// arithmetic, not a count of things somebody remembered to enter.
+function _tripNights(){
+  return Math.max(0,((state&&state.days)?state.days.length:0)-1);
+}
+// Are you sleeping on an overnight journey that night? A flight or train whose
+// end time is before its start time runs past midnight, so that night is spent
+// travelling rather than in a bed — accounted for, not missing.
+function _sleepsInTransit(dayIdx){
+  const day=state&&state.days&&state.days[dayIdx];
+  if(!day)return false;
+  return (day.stops||[]).some(s=>{
+    if(!['flight','train','bus'].includes(s.type))return false;
+    const a=_parseTimeMins(s.time),b=_parseTimeMins(s.endTime);
+    if(a==null||b==null)return false;
+    if(s.startDate&&s.endDate)return s.endDate>s.startDate;
+    return b<a;
+  });
+}
+// How many of the trip's nights have somewhere to sleep — a hotel, or an
+// overnight journey. The difference is a real planning gap, so it is shown.
+function _nightsWithSomewhereToSleep(){
+  const n=_tripNights();
+  let covered=0;
+  for(let di=0;di<n;di++){
+    let hotel=null;
+    try{ hotel=getNextHotelForDay(di); }catch(e){}
+    if(hotel||_sleepsInTransit(di))covered++;
+  }
+  return covered;
+}
+
 function renderOverview(){
   state.checklist=generateChecklist();
   const totalStops=state.days.reduce((n,d)=>n+d.stops.length,0);
   const lodges=[];
   state.days.forEach((day,di)=>day.stops.forEach((s,si)=>{if(s.type==='lodge')lodges.push({di,si,day,s});}));
 
+  // NIGHTS. This used to be the number of LODGE STOP CARDS, which is not a
+  // count of nights at all: a four-night stay is normally entered as one
+  // check-in, so an 11-day trip reported 7 nights. An 11-day trip has 10
+  // nights, by definition — one after every day but the last.
+  const nights=_tripNights();
+  const covered=_nightsWithSomewhereToSleep();
+  const gap=Math.max(0,nights-covered);
+  const nightsNote=gap
+    ?'<div class="ov-stat-sub" title="Nights with no hotel and no overnight travel">'+gap+' with nowhere booked</div>'
+    :'';
+
   const statsHtml='<div class="ov-stats">'+
     '<div class="ov-stat"><div class="ov-stat-num">'+state.days.length+'</div><div class="ov-stat-label">Days</div></div>'+
     '<div class="ov-stat"><div class="ov-stat-num">'+totalStops+'</div><div class="ov-stat-label">Stops</div></div>'+
-    '<div class="ov-stat"><div class="ov-stat-num">'+lodges.length+'</div><div class="ov-stat-label">Nights</div></div>'+
+    '<div class="ov-stat"><div class="ov-stat-num">'+nights+'</div><div class="ov-stat-label">Nights</div>'+nightsNote+'</div>'+
     '</div>';
 
   const colors=['var(--ruby)','var(--pine)','var(--river)','var(--amber)'];

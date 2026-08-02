@@ -2409,3 +2409,108 @@ test('adding someone to the trip includes them on stops that had everyone', asyn
     'a stop that had everyone still has everyone, got ' + JSON.stringify(out));
   await page.close();
 });
+
+// ===========================================================================
+// v197 — NIGHTS. The stat counted LODGE STOP CARDS, so a four-night stay
+// entered as a single check-in counted as one, and an 11-day trip reported
+// 7 nights. An 11-day trip has 10 nights, by definition.
+// ===========================================================================
+function tripOfDays(n, extra) {
+  return Array.from({ length: n }, (_, i) => ({
+    title: 'Day ' + (i + 1), subtitle: 'Day ' + (i + 1),
+    stops: (extra && extra[i]) || [
+      { name: 'Stop ' + (i + 1), type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5 + i / 100, lng: -0.12 },
+    ],
+  }));
+}
+
+test('an 11-day trip has 10 nights, not one per hotel booking', async () => {
+  // One hotel stop covering a multi-night stay — exactly how it is really entered.
+  const days = tripOfDays(11);
+  days[1].stops.push({ name: 'Royal Horseguards Hotel', type: 'lodge', time: '8:00 PM',
+    endTime: '9:00 PM', lat: 51.5063, lng: -0.1237 });
+  const { page } = await openTrip(days, { day: null });
+  const out = await page.evaluate(() => ({
+    nights: _tripNights(),
+    lodgeCards: state.days.reduce((n, d) => n + d.stops.filter((s) => s.type === 'lodge').length, 0),
+  }));
+  assert.equal(out.nights, 10, '11 days is 10 nights, got ' + out.nights);
+  assert.equal(out.lodgeCards, 1, 'and it is not the number of lodging cards, which is ' + out.lodgeCards);
+  await page.close();
+});
+
+test('the Nights stat on screen shows the real number', async () => {
+  const days = tripOfDays(11);
+  days[1].stops.push({ name: 'Royal Horseguards Hotel', type: 'lodge', time: '8:00 PM',
+    endTime: '9:00 PM', lat: 51.5063, lng: -0.1237 });
+  const { page } = await openTrip(days, { day: null });
+  await page.waitForFunction(() => !!document.querySelector('.ov-stats'), null, { timeout: 15000 });
+  const stats = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.ov-stat')).map((s) => ({
+      num: s.querySelector('.ov-stat-num').textContent,
+      label: s.querySelector('.ov-stat-label').textContent,
+    })));
+  const nights = stats.find((s) => /nights/i.test(s.label));
+  assert.ok(nights, 'the Nights stat exists, got ' + JSON.stringify(stats));
+  assert.equal(nights.num, '10', 'it reads 10, got ' + nights.num);
+  const days_ = stats.find((s) => /days/i.test(s.label));
+  assert.equal(days_.num, '11');
+  await page.close();
+});
+
+test('a one-day trip has no nights', async () => {
+  const { page } = await openTrip(tripOfDays(1), { day: null });
+  const n = await page.evaluate(() => _tripNights());
+  assert.equal(n, 0, 'a single day has nowhere to sleep afterwards, got ' + n);
+  await page.close();
+});
+
+test('a night spent on an overnight flight counts as covered', async () => {
+  const days = tripOfDays(3);
+  days[0].stops = [{ name: 'Flight MCO to LGW', type: 'flight', time: '8:30 PM', endTime: '10:00 AM',
+    startDate: '2026-08-04', endDate: '2026-08-05', lat: 28.4312, lng: -81.3081 }];
+  days[1].stops.push({ name: 'Royal Horseguards Hotel', type: 'lodge', time: '8:00 PM',
+    endTime: '9:00 PM', lat: 51.5063, lng: -0.1237 });
+  const { page } = await openTrip(days, { day: null });
+  const out = await page.evaluate(() => ({
+    transit: _sleepsInTransit(0),
+    nights: _tripNights(),
+    covered: _nightsWithSomewhereToSleep(),
+  }));
+  assert.ok(out.transit, 'the overnight flight is recognised as a night in transit');
+  assert.equal(out.nights, 2);
+  assert.equal(out.covered, 2, 'both nights are accounted for, got ' + out.covered);
+  await page.close();
+});
+
+test('nights with nowhere booked are called out', async () => {
+  const days = tripOfDays(5);   // 4 nights, no lodging at all
+  const { page } = await openTrip(days, { day: null });
+  await page.waitForFunction(() => !!document.querySelector('.ov-stats'), null, { timeout: 15000 });
+  const out = await page.evaluate(() => ({
+    covered: _nightsWithSomewhereToSleep(),
+    nights: _tripNights(),
+    sub: (document.querySelector('.ov-stat-sub') || {}).textContent || '',
+  }));
+  assert.equal(out.nights, 4);
+  assert.equal(out.covered, 0, 'nothing is booked');
+  assert.match(out.sub, /4 with nowhere booked/, 'and the gap is stated, got: ' + out.sub);
+  await page.close();
+});
+
+test('a fully covered trip shows no warning', async () => {
+  const days = tripOfDays(3);
+  // A hotel on each of the two nights that need one.
+  [0, 1].forEach((i) => days[i].stops.push({ name: 'Hotel ' + i, type: 'lodge',
+    time: '8:00 PM', endTime: '9:00 PM', lat: 51.5, lng: -0.12 }));
+  const { page } = await openTrip(days, { day: null });
+  await page.waitForFunction(() => !!document.querySelector('.ov-stats'), null, { timeout: 15000 });
+  const out = await page.evaluate(() => ({
+    covered: _nightsWithSomewhereToSleep(), nights: _tripNights(),
+    subs: document.querySelectorAll('.ov-stat-sub').length,
+  }));
+  assert.equal(out.covered, out.nights, 'every night has somewhere to sleep');
+  assert.equal(out.subs, 0, 'so nothing is flagged');
+  await page.close();
+});

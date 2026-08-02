@@ -1246,7 +1246,33 @@ function _domId(id){return String(id||'').replace(/[^A-Za-z0-9_-]/g,'');}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);
   else wire();
 })();
+// THE TRIP'S NAME HAS ONE SOURCE: the trip's own state.
+// The cards used to be built from trips/manifest.json, a static file whose title
+// is baked in at build time. Renaming a trip updates state.title (and, for a
+// local trip, the localTrips entry) but can never update the manifest, so the
+// home page kept showing the original name for ever while the trip page showed
+// the new one. Same trip, two strings.
+function _liveTitle(id){
+  try{
+    const raw=localStorage.getItem('tripState_'+id);
+    if(raw){ const st=JSON.parse(raw); if(st&&typeof st.title==='string'&&st.title.trim())return st.title.trim(); }
+  }catch(e){}
+  try{
+    const card=(lsGet('sharedCards',[])||[]).find(t=>t.id===id);
+    if(card&&card.title&&String(card.title).trim())return String(card.title).trim();
+  }catch(e){}
+  return '';
+}
+// Overlay the live name onto whatever the card was built from.
+function _withLiveTitles(list){
+  return (list||[]).map(t=>{
+    const live=_liveTitle(t.id);
+    return (live&&live!==t.title)?Object.assign({},t,{title:live}):t;
+  });
+}
+
 function renderTripsGrid(rawAll,hidden){
+  rawAll=_withLiveTitles(rawAll);
   const grid=document.getElementById('trips-grid');
   if(!grid)return;
   const all=rawAll.filter(t=>!hidden.includes(t.id));

@@ -2261,3 +2261,151 @@ test('an ordinary audio tour still gets its player', async () => {
   assert.equal(n, 0, 'an mp3 must not become a video embed');
   await page.close();
 });
+
+// ===========================================================================
+// v196 — ONE STRING PER THING.
+// Two reports, one shape: the same fact stored in two places, which then drift.
+// ===========================================================================
+
+// A. THE TRIP'S NAME. The home page built its cards from trips/manifest.json,
+// whose title is baked in at build time. Renaming updated state.title, which the
+// manifest can never know about, so the two pages showed different names.
+test('renaming a trip changes the name the home page shows', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => { window.prompt = () => 'Scotland 2026 — Final'; renameTripPrompt(); });
+  const stored = await page.evaluate(() => ({
+    title: state.title,
+    saved: JSON.parse(localStorage.getItem('tripState_london-scotland') || '{}').title,
+  }));
+  assert.equal(stored.title, 'Scotland 2026 — Final');
+  assert.equal(stored.saved, 'Scotland 2026 — Final', 'and it is persisted');
+
+  // Now the home page, which builds its card from the manifest.
+  const home = await browser.newPage();
+  await home.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    if (u.includes('firebaseio.com')) return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await home.addInitScript(() => {
+    localStorage.setItem('tripState_london-scotland', JSON.stringify({ title: 'Scotland 2026 — Final', days: [] }));
+  });
+  await home.goto(`${origin}/Travel/index.html`, { waitUntil: 'domcontentloaded' });
+  await home.waitForFunction(
+    () => document.querySelectorAll('.trip-card-title').length > 0, null, { timeout: 15000 });
+  const titles = await home.evaluate(() =>
+    Array.from(document.querySelectorAll('.trip-card-title')).map((n) => n.textContent));
+  assert.ok(titles.includes('Scotland 2026 — Final'),
+    'the card must show the live name, got ' + JSON.stringify(titles));
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'manifest.json'), 'utf8'));
+  const baked = manifest.find((t) => t.id === 'london-scotland');
+  assert.ok(!titles.includes(baked.title),
+    'and not the name baked into the manifest ("' + baked.title + '")');
+  await home.close();
+  await page.close();
+});
+
+test('a trip nobody renamed still shows its manifest name', async () => {
+  const home = await browser.newPage();
+  await home.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await home.goto(`${origin}/Travel/index.html`, { waitUntil: 'domcontentloaded' });
+  await home.waitForFunction(
+    () => document.querySelectorAll('.trip-card-title').length > 0, null, { timeout: 15000 });
+  const titles = await home.evaluate(() =>
+    Array.from(document.querySelectorAll('.trip-card-title')).map((n) => n.textContent));
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'manifest.json'), 'utf8'));
+  assert.ok(titles.includes(manifest[0].title),
+    'the fallback still works, got ' + JSON.stringify(titles));
+  await home.close();
+});
+
+// B. WHO IS ON THE TRIP. The per-stop checkboxes must be exactly the trip list.
+test('the people on a stop are exactly the people on the trip', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Alex', 'Jo'];
+    // A stop left over from when the list was different.
+    state.days[0].stops[0].attendance = ['Sam', 'Dana', 'Kim'];
+    _reconcileAttendance();
+    _populateTravelersForm(state.days[0].stops[0]);
+    const boxes = Array.from(document.querySelectorAll('#f-travelers-checkboxes input'));
+    return { offered: boxes.map((b) => b.value),
+      checked: boxes.filter((b) => b.checked).map((b) => b.value),
+      stored: state.days[0].stops[0].attendance };
+  });
+  assert.deepEqual(out.offered, ['Sam', 'Alex', 'Jo'],
+    'only the trip list is offered, got ' + JSON.stringify(out.offered));
+  assert.deepEqual(out.stored, ['Sam'], 'names no longer on the trip are dropped');
+  assert.deepEqual(out.checked, ['Sam']);
+  await page.close();
+});
+
+test('removing someone from the trip removes them from every stop', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Alex', 'Jo'];
+    state.days[0].stops[0].attendance = ['Sam', 'Alex'];
+    state.days[0].stops[1].attendance = ['Alex'];
+    _markCommitted();
+    document.getElementById('travelers-input').value = 'Sam\nJo';
+    saveTravelers();
+    return { people: state.travelers,
+      a0: state.days[0].stops[0].attendance, a1: state.days[0].stops[1].attendance };
+  });
+  assert.deepEqual(out.people, ['Sam', 'Jo']);
+  assert.deepEqual(out.a0, ['Sam'], 'Alex is gone from the first stop');
+  // The second stop was Alex only; with nobody left it means everybody again.
+  assert.equal(out.a1, undefined, 'a stop with nobody left on it means everyone');
+  await page.close();
+});
+
+test('a stop where everyone is going stores nothing special', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const stored = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Jo'];
+    state.days[0].stops[0].attendance = ['Sam', 'Jo'];
+    _reconcileAttendance();
+    return state.days[0].stops[0].attendance;
+  });
+  assert.equal(stored, undefined, 'everyone is the default, not a stored list');
+  await page.close();
+});
+
+test('the wizard answer becomes the trip list when it names people', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    const names = _travelersFromMeta.call(null);
+    state._meta = { who: 'Sam, Alex and Jo' };
+    const parsed = _travelersFromMeta();
+    state._meta = { who: '2 adults, 2 kids' };
+    const group = _travelersFromMeta();
+    return { parsed, group, names };
+  });
+  assert.deepEqual(out.parsed, ['Sam', 'Alex', 'Jo'],
+    'named people become the trip list, got ' + JSON.stringify(out.parsed));
+  assert.deepEqual(out.group, [],
+    'a description of a group is not a list of names, got ' + JSON.stringify(out.group));
+  await page.close();
+});
+
+test('adding someone to the trip includes them on stops that had everyone', async () => {
+  const { page } = await openTrip(WP_DAY);
+  const out = await page.evaluate(() => {
+    state.travelers = ['Sam', 'Jo'];
+    state.days[0].stops[0].attendance = ['Sam', 'Jo'];   // "everyone", written out
+    _reconcileAttendance();
+    // Now a third person joins the trip.
+    state.travelers = ['Sam', 'Jo', 'Alex'];
+    _populateTravelersForm(state.days[0].stops[0]);
+    const boxes = Array.from(document.querySelectorAll('#f-travelers-checkboxes input'));
+    return boxes.filter((b) => b.checked).map((b) => b.value);
+  });
+  assert.deepEqual(out, ['Sam', 'Jo', 'Alex'],
+    'a stop that had everyone still has everyone, got ' + JSON.stringify(out));
+  await page.close();
+});

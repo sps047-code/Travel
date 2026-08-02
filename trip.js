@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v195';
+window.APP_CODE_VERSION='v196';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -2731,6 +2731,13 @@ function _healLoadedItinerary(){
   // Last, so it sees the healed values: give every stop a canonical
   // {local, zone} start and end, and keep the legacy fields in step with it.
   step('gave every stop a dated, zoned start and end',()=>_normalizeTimes(state));
+  step('adopted the trip\'s people as the traveller list',()=>{
+    if(!getTravelers().length){
+      const seeded=_travelersFromMeta();
+      if(seeded.length)state.travelers=seeded;
+    }
+    _reconcileAttendance();
+  });
   if(did.length){
     try{_recordChange({source:WRITE.HEAL,desc:'On opening: '+did.join('; ')});}catch(e){}
   }
@@ -4390,15 +4397,22 @@ function renameTripPrompt(){
   if(next === null) return;
   const name = next.trim();
   if(!name || name === cur) return;
-  state.title = name;
   document.title = 'Seasons — ' + name;
-  // Update the local trips manifest entry if this is a local trip
+  commit('Renamed the trip to "' + name + '"', () => { state.title = name; }, WRITE.USER);
+  // state.title is the name. These two are CACHES the home page reads, and they
+  // are refreshed here so the card updates instantly instead of waiting for the
+  // next cloud fetch. The home page also reads the live title directly, so a
+  // stale cache can no longer show a different name from the trip page.
   try{
     const local = JSON.parse(localStorage.getItem('localTrips') || '[]');
     const entry = local.find(t => t.id === tripId);
     if(entry){ entry.title = name; localStorage.setItem('localTrips', JSON.stringify(local)); }
   }catch(e){}
-  saveState('Renamed trip');
+  try{
+    const cards = JSON.parse(localStorage.getItem('sharedCards') || '[]');
+    const card = cards.find(t => t.id === tripId);
+    if(card){ card.title = name; localStorage.setItem('sharedCards', JSON.stringify(cards)); }
+  }catch(e){}
   renderAll();
 }
 
@@ -5312,7 +5326,43 @@ function copyShareUrl(){
 }
 
 /* --- Multi-Traveler Attendance --- */
-function getTravelers(){return(state.travelers||[]).filter(t=>t&&t.trim());}
+// ONE list of people, for the whole trip. Every per-stop "who's joining" control
+// is drawn from this and nothing else, so the names on a stop can never be a
+// different set from the names on the trip.
+function getTravelers(){return(state.travelers||[]).map(t=>String(t||'').trim()).filter(Boolean);}
+// The planning wizard asked who was coming and stored the answer in _meta.who,
+// separately from state.travelers — a second list nothing else could see. If the
+// trip list is empty and that answer names people, adopt it as the trip list.
+function _travelersFromMeta(){
+  const who=(state&&state._meta&&state._meta.who)||'';
+  if(!who||typeof who!=='string')return [];
+  // "Sam, Alex and Jo" -> three people. A description of a group ("2 adults,
+  // 2 kids") is NOT a list of names, so it is left alone.
+  const parts=who.split(/\s*(?:,|&|\band\b|\+|\/|\r?\n)\s*/i).map(p=>p.trim()).filter(Boolean);
+  if(!parts.length||parts.length>12)return [];
+  const looksLikeAName=(p)=>/^[A-Z][A-Za-z'’.-]*(?:\s+[A-Z][A-Za-z'’.-]*)*$/.test(p)&&!/\d/.test(p)&&p.length<=40;
+  return parts.every(looksLikeAName)?parts:[];
+}
+// Names on a stop that are no longer on the trip are dropped, and a stop left
+// with nobody means everybody. Called whenever the trip list changes, so the two
+// can never drift apart.
+function _reconcileAttendance(){
+  const people=getTravelers();
+  let changed=false;
+  (state.days||[]).forEach(d=>(d.stops||[]).forEach(s=>{
+    if(!Array.isArray(s.attendance))return;
+    const kept=s.attendance.filter(n=>people.includes(n));
+    // "Everyone" is the ABSENCE of a list, not a copy of it. Storing a full copy
+    // meant that adding someone to the trip later silently left them off every
+    // stop that happened to list everybody at the time.
+    if(!kept.length||kept.length===people.length){
+      if('attendance' in s){ delete s.attendance; changed=true; }
+      return;
+    }
+    if(kept.length!==s.attendance.length){ s.attendance=kept; changed=true; }
+  }));
+  return changed;
+}
 function openTravelersModal(){
   document.getElementById('travelers-input').value=getTravelers().join('\n');
   document.getElementById('travelers-modal').classList.add('open');
@@ -5320,7 +5370,10 @@ function openTravelersModal(){
 function saveTravelers(){
   const val=document.getElementById('travelers-input').value;
   const names=val.split('\n').map(t=>t.trim()).filter(Boolean);
-  commit('Updated who is on the trip',()=>{state.travelers=names;},WRITE.USER);
+  commit('Updated who is on the trip',()=>{
+    state.travelers=names;
+    _reconcileAttendance();      // stops follow the trip list, always
+  },WRITE.USER);
   document.getElementById('travelers-modal').classList.remove('open');
   // If the stop modal is open behind this one — which it is when you got here
   // from "Add travellers" — refresh its checkboxes so the new names appear

@@ -2599,3 +2599,114 @@ test('a leg after a train starts where the train ARRIVES', async () => {
     'the leg must run from Victoria, not from Gatwick, got ' + miles + ' mi — ' + text);
   await page.close();
 });
+
+// ===========================================================================
+// v199 — THE GRADE MUST RESPECT OPENING HOURS. It suggested the Tate Modern
+// for an evening walk: the grader was never told hours mattered, was never
+// given the weekday, and its answer was never checked.
+// ===========================================================================
+test('the grader is told the weekday and each stop\'s hours', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:30 PM',
+        lat: 51.5194, lng: -0.127, dayHours: '10:00 AM - 5:00 PM' },
+      { name: 'Evening walk — South Bank', type: 'hike', time: '7:30 PM', endTime: '9:00 PM',
+        lat: 51.5074, lng: -0.1167 },
+    ] },
+  ], { day: null });
+  await captureAiRequest(page);
+  await page.evaluate(() => gradeItinerary());
+  const body = await aiRequestBody(page);
+  assert.match(body.system, /OPENING HOURS ARE A HARD CONSTRAINT/,
+    'hours must be a stated criterion, not an afterthought');
+  assert.match(body.system, /suggested_time/, 'and the answer must carry a time that can be checked');
+  assert.match(body.user, /open: 10:00 AM - 5:00 PM/,
+    'the hours the app already knows must be sent, got: ' + body.user.slice(0, 400));
+  assert.match(body.user, /Wednesday|2026-08-05/,
+    'and the weekday, because many places shut on a Monday');
+  assert.match(body.user, /10:00 AM-12:30 PM/, 'with the full window, not just the start');
+  await page.close();
+});
+
+test('a suggestion that would be closed never reaches the screen', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Evening walk — South Bank', type: 'hike', time: '7:30 PM', endTime: '9:00 PM',
+        lat: 51.5074, lng: -0.1167 },
+    ] },
+  ], { day: null });
+  // Answer with exactly the bug that was reported.
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'B', rationale: 'Good bones.' },
+      suggested_additions: [
+        { name: 'Tate Modern', type: 'hike', reason: 'Iconic', suggested_day: 1,
+          suggested_time: '8:00 PM', hours: '10:00 AM - 6:00 PM', fits_near: 'Evening walk — South Bank' },
+        { name: 'Borough Market night walk', type: 'hike', reason: 'Lively after dark', suggested_day: 1,
+          suggested_time: '8:00 PM', hours: 'Open 24 hours', fits_near: 'Evening walk — South Bank' },
+      ],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Consider Adding|Discarded/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  // Read the SECTIONS, not the whole blob: "Consider Adding" appears before
+  // "Discarded" in the text, so a naive regex spans both and always matches.
+  const sections = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#ai-grader-content .ai-section')).map((s) => ({
+      hdr: (s.querySelector('.ai-section-hdr') || {}).textContent || '',
+      body: Array.from(s.querySelectorAll('.ai-item')).map((i) => i.textContent).join(' | '),
+    })));
+  const adding = sections.find((s) => /Consider Adding/.test(s.hdr));
+  const dropped = sections.find((s) => /Discarded/.test(s.hdr));
+  assert.ok(adding, 'there is still a suggestions section');
+  assert.ok(!/Tate Modern/.test(adding.body),
+    'the closed gallery must not be offered: ' + adding.body);
+  assert.match(adding.body, /Borough Market night walk/, 'the one that is open still is');
+  assert.ok(dropped, 'and the user is told something was dropped');
+  assert.match(dropped.body, /Tate Modern/, 'by name');
+  assert.match(dropped.body, /10:00 AM - 6:00 PM/, 'with the hours that ruled it out');
+  await page.close();
+});
+
+test('a stop scheduled after closing is flagged even if the model missed it', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+        lat: 51.5076, lng: -0.0994, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Nothing wrong here.' },
+      timing_conflicts: [],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  assert.match(txt, /Tate Modern/, 'the app found it itself: ' + txt);
+  assert.match(txt, /10:00 AM - 6:00 PM/, 'and says which hours it breaks');
+  await page.close();
+});
+
+test('a suggestion shows the time and hours it is claiming', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'B', rationale: 'x' },
+      suggested_additions: [{ name: 'Sir John Soane\'s Museum', type: 'hike', reason: 'Free and extraordinary',
+        suggested_day: 1, suggested_time: '11:00 AM', hours: '10:00 AM - 5:00 PM', fits_near: 'British Museum' }],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Soane/.test(document.getElementById('ai-grader-content').textContent), null, { timeout: 20000 });
+  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  assert.match(txt, /11:00 AM/, 'the proposed time is shown so it can be judged');
+  assert.match(txt, /10:00 AM - 5:00 PM/, 'and the hours it claims');
+  await page.close();
+});

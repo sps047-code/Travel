@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v198';
+window.APP_CODE_VERSION='v199';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -5015,7 +5015,112 @@ function _stopPlaceMetaHtml(s){
 }
 
 /* --- AI Itinerary Grader --- */
-const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Condé Nast editor would — direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{"overall_grade":{"letter":"B+","rationale":"one sentence: biggest strength and biggest gap"},"destination_coverage":[{"destination":"London","score":"8/10","note":"Missing Tate Modern — fits Day 2 afternoon near Globe Theatre"}],"suggested_swaps":[{"remove":"stop name","day":1,"add":"replacement name","reason":"specific reason replacement is clearly better for this time slot and location"}],"suggested_additions":[{"name":"","type":"","reason":"","suggested_day":1,"fits_near":"name of existing nearby stop"}],"pacing_notes":["observation only — never a removal suggestion"],"timing_conflicts":[{"stop_name":"","day":1,"issue":""}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields — no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop and a specific day with capacity.\n4. pacing_notes are observations only — never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. Tone: experienced travel editor, not a cautious assistant. Be direct.';
+/* ---- OPENING HOURS, CHECKED LOCALLY ---------------------------------------
+   The grader used to be handed a stop's start time and, sometimes, a raw hours
+   string, and was never actually told that opening hours mattered. So it
+   suggested the Tate Modern for an evening walk. Two changes: it is now given
+   the weekday and every stop's full time window and hours, AND its answer is
+   checked here against those hours, because asking a model nicely is not the
+   same as verifying the result.                                              */
+// Parse a displayed hours line ("10:00 AM - 5:00 PM", "9:30-17:00, 18:00-21:00",
+// "Closed Monday", "Open 24 hours") into windows in minutes since midnight.
+// Returns null when the line cannot be read — unknown, never guessed.
+function _hoursWindows(line){
+  const t=String(line||'').trim();
+  if(!t)return null;
+  if(/open\s*24\s*hours|24\/7/i.test(t))return [{open:0,close:1440}];
+  if(/\bclosed\b/i.test(t))return [];                       // closed all day
+  const out=[];
+  const re=/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|–|—|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/gi;
+  let m;
+  while((m=re.exec(t))){
+    const conv=(h,mi,ap)=>{
+      h=+h; mi=mi?+mi:0;
+      if(ap){ ap=ap.toLowerCase(); if(ap==='pm'&&h!==12)h+=12; if(ap==='am'&&h===12)h=0; }
+      return h*60+mi;
+    };
+    // "10:00 - 5:00 PM": a bare opening hour takes the closing marker's sense
+    // only when that keeps it before the close.
+    let a=conv(m[1],m[2],m[3]||null), b=conv(m[4],m[5],m[6]||null);
+    if(!m[3]&&m[6]&&a>b)a=conv(m[1],m[2],null);
+    if(b<=a)b+=1440;                                        // runs past midnight
+    if(b-a>0&&b-a<=1440)out.push({open:a,close:b});
+  }
+  return out.length?out:null;
+}
+// true / false / null(unknown) — is this place open at that many minutes past midnight?
+function _isOpenAt(hoursLine,mins){
+  const w=_hoursWindows(hoursLine);
+  if(w===null||mins==null)return null;
+  if(!w.length)return false;                                 // closed today
+  return w.some(x=>(mins>=x.open&&mins<x.close)||(mins+1440>=x.open&&mins+1440<x.close));
+}
+// Every stop in the itinerary that is scheduled when it is shut. Computed here,
+// from the hours the app already holds, so it appears whatever the model says.
+function _hoursConflicts(){
+  const out=[];
+  (state.days||[]).forEach((d,di)=>{
+    (d.stops||[]).forEach(s=>{
+      const line=s.dayHours||'';
+      if(!line)return;
+      const start=_parseTimeMins(s.time);
+      if(start==null)return;
+      const open=_isOpenAt(line,start);
+      if(open===false){
+        out.push({day:di+1,stop_name:s.name,
+          issue:'Scheduled at '+s.time+' but the hours are "'+line+'".'});
+        return;
+      }
+      // Still open on arrival, shut before you leave.
+      const end=_parseTimeMins(s.endTime);
+      if(open===true&&end!=null&&_isOpenAt(line,end)===false){
+        out.push({day:di+1,stop_name:s.name,
+          issue:'Open at '+s.time+' but closes before '+s.endTime+' ("'+line+'").'});
+      }
+    });
+  });
+  return out;
+}
+// Check the grader's OWN answer. Every suggested addition has to state the
+// hours it believes and the time it proposes; if those two disagree, the
+// suggestion is wrong on its face and is dropped rather than shown.
+function _vetGradeSuggestions(data){
+  const dropped=[];
+  if(Array.isArray(data.suggested_additions)){
+    data.suggested_additions=data.suggested_additions.filter(a=>{
+      const when=_parseTimeMins(a.suggested_time);
+      const open=_isOpenAt(a.hours,when);
+      if(open===false){
+        dropped.push((a.name||'a suggestion')+' — proposed for '+a.suggested_time+
+          ' but its hours are "'+a.hours+'"');
+        return false;
+      }
+      return true;
+    });
+  }
+  if(Array.isArray(data.suggested_swaps)){
+    data.suggested_swaps=data.suggested_swaps.filter(r=>{
+      const when=_parseTimeMins(r.suggested_time);
+      const open=_isOpenAt(r.add_hours,when);
+      if(open===false){
+        dropped.push((r.add||'a replacement')+' — proposed for '+r.suggested_time+
+          ' but its hours are "'+r.add_hours+'"');
+        return false;
+      }
+      return true;
+    });
+  }
+  // Local conflicts are authoritative and are merged in, deduplicated by stop.
+  const local=_hoursConflicts();
+  const have=new Set((data.timing_conflicts||[]).map(c=>String(c.day)+'|'+String(c.stop_name||'').toLowerCase()));
+  data.timing_conflicts=(data.timing_conflicts||[]).concat(
+    local.filter(c=>!have.has(String(c.day)+'|'+String(c.stop_name||'').toLowerCase())));
+  data._droppedForHours=dropped;
+  return data;
+}
+
+const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields \u2014 no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts MUST include any EXISTING stop scheduled when it is closed \u2014 arriving after closing, or staying past it \u2014 and any stop on a weekday that place is shut.\n8. The grade itself must reflect this: an itinerary with stops scheduled when they are closed cannot score above a C, however good the choices are.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
+
 async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
   const content=document.getElementById('ai-grader-content');
@@ -5026,18 +5131,28 @@ async function gradeItinerary(){
     prompt+='Trip: '+(state.title||'Unknown')+'\nDays: '+state.days.length+'\n\n';
     state.days.forEach((d,di)=>{
       const dp=(d.subtitle||'').split(/\s*[·•]\s*/)[0].trim();
-      prompt+='Day '+(di+1)+' — '+d.title+(dp?' ('+dp+')':'')+'\n';
+      // The WEEKDAY matters as much as the date: a lot of museums shut on a
+      // Monday, and the grader cannot know that from "Day 3".
+      const iso=(typeof dayDateStr==='function')?dayDateStr(di):'';
+      let dow='';
+      try{ if(iso)dow=new Date(iso+'T12:00:00').toLocaleDateString('en-US',{weekday:'long'}); }catch(e){}
+      prompt+='Day '+(di+1)+' — '+d.title+(dp?' ('+dp+')':'')+(iso?' ['+iso+(dow?', '+dow:'')+']':'')+'\n';
       d.stops.forEach((s,si)=>{
-        prompt+='  '+(si+1)+'. '+s.name+' ['+s.type+']'+(s.time?' @'+s.time:'');
-        if(s.openingHours)prompt+=' hours:'+JSON.stringify(s.openingHours);
+        // The full window, not just the start: a suggestion has to fit a gap.
+        prompt+='  '+(si+1)+'. '+s.name+' ['+s.type+']'+(s.time?' '+s.time+(s.endTime?'-'+s.endTime:''):'');
+        // dayHours is the line the app actually shows for THIS weekday; it is
+        // what the user sees, and it was never sent.
+        if(s.dayHours)prompt+=' | open: '+s.dayHours;
+        else if(s.openingHours)prompt+=' | open: '+(typeof s.openingHours==='string'?s.openingHours:JSON.stringify(s.openingHours));
         if(s.notes)prompt+=' | '+s.notes;
         prompt+='\n';
       });
     });
+    prompt+='\nWhen you suggest anything, give its clock time and that weekday\u0027s opening hours. Suggestions that would be closed at the time proposed are discarded before the user sees them.\n';
     const text=await callClaude(GRADE_SYSTEM,prompt);
     const t=text.trim().replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
     const js=t.indexOf('{'),je=t.lastIndexOf('}');
-    const data=JSON.parse(js>=0&&je>js?t.slice(js,je+1):t);
+    const data=_vetGradeSuggestions(JSON.parse(js>=0&&je>js?t.slice(js,je+1):t));
     content.innerHTML=_renderGradeResult(data);
   }catch(e){
     content.innerHTML='<div class="ai-loading-wrap" style="color:var(--ruby)">Could not grade — please try again.</div>';
@@ -5068,7 +5183,16 @@ function _renderGradeResult(d){
   }
   if(d.suggested_additions?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#10024; Consider Adding</div>';
-    d.suggested_additions.forEach(a=>h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em><br>'+_escHtml(a.reason||'')+(a.fits_near?' <span style="color:var(--muted);font-size:var(--text-sm)">&#128205; Near '+_escHtml(a.fits_near)+'</span>':'')+'</div>');h+='</div>';
+    d.suggested_additions.forEach(a=>{
+      // Show the time and the hours, so a suggestion can be judged at a glance
+      // rather than taken on trust.
+      const when=a.suggested_time?'<span style="color:var(--pine);font-weight:600">'+_escHtml(a.suggested_time)+'</span>':'';
+      const hrs=a.hours?'<span style="color:var(--muted);font-size:var(--text-sm)">&#128337; '+_escHtml(a.hours)+'</span>':'';
+      h+='<div class="ai-item" style="border-left:3px solid var(--pine)"><strong>'+_escHtml(a.name||'')+'</strong> <em>('+_escHtml(a.type||'')+', Day '+a.suggested_day+')</em>'+
+        (when||hrs?'<div style="margin-top:2px">'+when+(when&&hrs?' &middot; ':'')+hrs+'</div>':'')+
+        '<div style="margin-top:2px">'+_escHtml(a.reason||'')+'</div>'+
+        (a.fits_near?'<span style="color:var(--muted);font-size:var(--text-sm)">&#128205; Near '+_escHtml(a.fits_near)+'</span>':'')+'</div>';
+    });h+='</div>';
   }
   if(d.suggested_swaps?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#8644; Consider Swapping</div>';
@@ -5078,6 +5202,13 @@ function _renderGradeResult(d){
         '<span style="color:var(--pine)">&#10003; Replace with <strong>'+_escHtml(r.add||'')+'</strong></span><br>'+
         '<span style="color:var(--muted);font-size:var(--text-sm)">'+_escHtml(r.reason||'')+'</span></div>';
     });h+='</div>';
+  }
+  if(d._droppedForHours&&d._droppedForHours.length){
+    // Say what was thrown away and why. A silent filter is indistinguishable
+    // from a model that simply had nothing to suggest.
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#128683; Discarded — closed at the time suggested</div>';
+    d._droppedForHours.forEach(x=>h+='<div class="ai-item" style="border-left:3px solid var(--muted);color:var(--muted)">'+_escHtml(x)+'</div>');
+    h+='</div>';
   }
   /* backward-compat: old suggested_removals field */
   if(!d.suggested_swaps?.length&&d.suggested_removals?.length){

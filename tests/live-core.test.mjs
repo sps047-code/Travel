@@ -1150,3 +1150,89 @@ test('a genuinely backwards day is STILL healed', () => {
   const t = ctx.state.days[0].stops.map((s) => p(s.time));
   assert.ok(t[1] > t[0], 'no overnight leg here, so the day is put back in order');
 });
+
+// ---------------------------------------------------------------------------
+// OPENING HOURS IN THE GRADE. The grader suggested the Tate Modern for an
+// evening walk. It was never told hours mattered, was never given the weekday,
+// and its answer was never checked. Now the answer is checked here.
+// ---------------------------------------------------------------------------
+test('_hoursWindows reads the hours lines the app actually shows', () => {
+  const w = fn('_hoursWindows');
+  // The vm has its own Object.prototype, so compare values, not object identity.
+  const plain = (x) => (x === null ? null : JSON.parse(JSON.stringify(x)));
+  assert.deepEqual(plain(w('10:00 AM - 6:00 PM')), [{ open: 600, close: 1080 }]);
+  assert.deepEqual(plain(w('Open 24 hours')), [{ open: 0, close: 1440 }]);
+  assert.deepEqual(plain(w('Closed Monday')), [], 'closed all day is an empty list, not unknown');
+  assert.equal(w(''), null, 'nothing known is null, never an assumption');
+  assert.equal(w('by appointment'), null, 'unreadable is null too');
+  const split = w('9:00 AM - 12:00 PM, 2:00 PM - 5:00 PM');
+  assert.equal(split.length, 2, 'a lunchtime closure is two windows');
+});
+
+test('_isOpenAt answers open, closed, or unknown', () => {
+  const at = fn('_isOpenAt');
+  const p = fn('_parseTimeMins');
+  assert.equal(at('10:00 AM - 6:00 PM', p('2:00 PM')), true);
+  assert.equal(at('10:00 AM - 6:00 PM', p('8:00 PM')), false, 'the Tate Modern case');
+  assert.equal(at('10:00 AM - 6:00 PM', p('9:00 AM')), false, 'before opening');
+  assert.equal(at('Closed Monday', p('2:00 PM')), false);
+  assert.equal(at('', p('2:00 PM')), null, 'unknown must not be reported as closed');
+  assert.equal(at('Open 24 hours', p('3:00 AM')), true);
+});
+
+test('_hoursConflicts finds stops scheduled when they are shut', () => {
+  const conflicts = fn('_hoursConflicts');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM', dayHours: '10:00 AM - 6:00 PM' },
+    { name: 'British Museum', type: 'hike', time: '11:00 AM', endTime: '1:00 PM', dayHours: '10:00 AM - 5:00 PM' },
+    { name: 'Evening walk', type: 'hike', time: '8:00 PM', endTime: '9:00 PM' },
+    { name: 'V&A', type: 'hike', time: '4:30 PM', endTime: '7:00 PM', dayHours: '10:00 AM - 5:45 PM' },
+  ] }] };
+  const out = conflicts();
+  const names = out.map((c) => c.stop_name);
+  assert.ok(names.includes('Tate Modern'), 'an 8 PM visit to a 6 PM closer is a conflict');
+  assert.ok(!names.includes('British Museum'), 'a stop inside its hours is not');
+  assert.ok(!names.includes('Evening walk'), 'unknown hours must not be reported as a problem');
+  assert.ok(names.includes('V&A'), 'arriving before closing but staying past it is a conflict');
+});
+
+test('a suggestion that would be closed is discarded, not shown', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [] }] };
+  const data = vet({
+    suggested_additions: [
+      { name: 'Tate Modern', suggested_time: '8:00 PM', hours: '10:00 AM - 6:00 PM' },
+      { name: 'Borough Market walk', suggested_time: '8:00 PM', hours: 'Open 24 hours' },
+      { name: 'Sky Garden', suggested_time: '7:00 PM', hours: '' },
+    ],
+    suggested_swaps: [
+      { remove: 'X', add: 'National Gallery', suggested_time: '9:00 PM', add_hours: '10:00 AM - 6:00 PM' },
+    ],
+  });
+  const names = data.suggested_additions.map((a) => a.name);
+  assert.ok(!names.includes('Tate Modern'), 'the closed gallery is gone');
+  assert.ok(names.includes('Borough Market walk'), 'the open one stays');
+  assert.ok(names.includes('Sky Garden'), 'unknown hours are not grounds to discard');
+  assert.equal(data.suggested_swaps.length, 0, 'a swap to a closed place goes too');
+  assert.equal(data._droppedForHours.length, 2, 'and both are reported, not silently dropped');
+  assert.ok(/Tate Modern/.test(data._droppedForHours.join(' ')));
+});
+
+test('locally-found conflicts are merged into the grade whatever the model said', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM', dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const data = vet({ timing_conflicts: [] });
+  assert.equal(data.timing_conflicts.length, 1, 'the app found it even though the model did not');
+  assert.equal(data.timing_conflicts[0].stop_name, 'Tate Modern');
+});
+
+test('a conflict the model already reported is not duplicated', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM', dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const data = vet({ timing_conflicts: [{ day: 1, stop_name: 'Tate Modern', issue: 'closed by then' }] });
+  assert.equal(data.timing_conflicts.length, 1, 'reported once, got ' + data.timing_conflicts.length);
+});

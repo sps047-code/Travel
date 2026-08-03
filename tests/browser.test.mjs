@@ -2773,10 +2773,9 @@ test('a hard conflict caps the letter and says what to fix', async () => {
     letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
     txt: document.getElementById('ai-grader-content').textContent,
   }));
-  assert.equal(out.letter, 'B+', 'the model cannot award an A over a hard conflict, got ' + out.letter);
+  assert.equal(out.letter, 'C+', 'the only stop being impossible is the whole trip, got ' + out.letter);
   assert.match(out.txt, /Tate Modern/, 'it names what to fix');
-  assert.match(out.txt, /nothing else is standing in the way of an A/,
-    'and says an A is reachable once it is fixed');
+  assert.match(out.txt, /1 of 1 stops/, 'and shows it in proportion to the trip');
   await page.close();
 });
 
@@ -2801,7 +2800,78 @@ test('a two-minute early arrival is shown as minor and does not cap', async () =
     txt: document.getElementById('ai-grader-content').textContent,
   }));
   assert.equal(out.letter, 'A-', 'a short wait outside the door is not a downgrade');
-  assert.match(out.txt, /MINOR|minor/, 'it is still mentioned, marked minor');
+  assert.match(out.txt, /minor/i, 'it is still mentioned, marked minor');
   assert.match(out.txt, /not capped/);
+  await page.close();
+});
+
+
+// 85 stops spread over 17 days, the shape of a real trip. Put on ONE day they
+// are re-timed by the auto-fix gate, which moved the fixture's own stop past
+// closing and made the test measure the wrong thing.
+function bigTrip({ day, at, stop }) {
+  const days = Array.from({ length: 17 }, (_, di) => ({
+    title: 'Day ' + (di + 1), subtitle: 'Day ' + (di + 1),
+    stops: Array.from({ length: 5 }, (_, si) => ({
+      name: 'Stop ' + (di * 5 + si + 1), type: 'hike',
+      time: (9 + si) + ':00 AM', endTime: (9 + si) + ':45 AM',
+      lat: 51.5 + (di * 5 + si) / 1000, lng: -0.12,
+    })),
+  }));
+  days[day].stops[at] = stop;
+  return days;
+}
+
+// ===========================================================================
+// v201 — PROPORTION. One 31-minute overrun on one stop out of 85 took an A to
+// a B+. Two errors: a visit that runs past closing was classed as impossible,
+// and the cap ignored how big the trip was.
+// ===========================================================================
+test('one overrun out of many stops does not cost the A', async () => {
+  // 85 stops, one of which runs past closing — exactly the reported case.
+  const { page } = await openTrip(bigTrip({ day: 5, at: 2,
+    stop: { name: "King's College Chapel", type: 'hike', time: '4:03 PM', endTime: '5:01 PM',
+      lat: 52.2045, lng: 0.1166, dayHours: '9:30 AM - 4:30 PM' } }), { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Impressively constructed.' },
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'A', 'an A must survive one half-hour adjustment, got ' + out.letter);
+  assert.match(out.txt, /Nothing\./, 'nothing is holding it back');
+  assert.match(out.txt, /run.? past closing/, 'the overrun is still reported');
+  assert.match(out.txt, /King's College Chapel/, 'by name');
+  assert.match(out.txt, /Leave earlier/, 'labelled as an adjustment, not a defect');
+  await page.close();
+});
+
+test('one genuinely impossible stop out of many costs only a half step', async () => {
+  const { page } = await openTrip(bigTrip({ day: 3, at: 4,
+    stop: { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+      lat: 51.5076, lng: -0.0994, dayHours: '10:00 AM - 6:00 PM' } }), { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' },
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'A-', 'a real defect costs something, but not a letter, got ' + out.letter);
+  assert.match(out.txt, /1 of 85 stops/, 'shown in proportion');
+  assert.match(out.txt, /Must move/, 'and marked as the kind of problem it is');
   await page.close();
 });

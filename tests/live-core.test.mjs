@@ -1211,7 +1211,7 @@ test('arriving a couple of minutes before opening is minor, not a hard conflict'
   assert.ok(patty, 'it is still mentioned');
   assert.equal(patty.severity, 'minor', 'but two minutes early is not a broken plan');
   assert.match(patty.issue, /short wait/);
-  assert.equal(tate.severity, 'hard', 'turning up two hours after closing is');
+  assert.equal(tate.severity, 'blocked', 'turning up two hours after closing is');
 });
 
 test('a closed-that-day stop is always hard', () => {
@@ -1222,7 +1222,7 @@ test('a closed-that-day stop is always hard', () => {
   ] }] };
   const out = conflicts();
   assert.equal(out.length, 1);
-  assert.equal(out[0].severity, 'hard');
+  assert.equal(out[0].severity, 'blocked');
   assert.match(out[0].issue, /Closed that day/);
 });
 
@@ -1232,18 +1232,47 @@ test('a closed-that-day stop is always hard', () => {
 test('a clean itinerary is not capped at all', () => {
   const cap = fn('_gradeCapForConflicts');
   const apply = fn('_applyGradeCap');
-  assert.equal(cap(0), null, 'nothing holds back an itinerary that works');
-  assert.equal(apply('A', 0), 'A', 'an A stands');
-  assert.equal(apply('A+', 0), 'A+');
+  assert.equal(cap(0, 85), null, 'nothing holds back an itinerary that works');
+  assert.equal(apply('A', 0, 85), 'A', 'an A stands');
+  assert.equal(apply('A+', 0, 85), 'A+');
 });
 
-test('hard conflicts cap the grade proportionately', () => {
+// THE OBJECTION: one 30-minute conflict out of 85 stops took an A to a B+.
+test('the cap is proportionate to the size of the trip', () => {
   const apply = fn('_applyGradeCap');
-  assert.equal(apply('A', 1), 'B+', 'one thing you cannot do costs a step');
-  assert.equal(apply('A', 2), 'B-');
-  assert.equal(apply('A', 5), 'C+');
-  assert.equal(apply('C', 1), 'C', 'a cap never RAISES a grade');
-  assert.equal(apply('B-', 1), 'B-', 'and never moves one already below it');
+  assert.equal(apply('A', 1, 85), 'A-', 'one impossible stop on a big trip is a blemish, not a downgrade');
+  assert.equal(apply('A', 1, 5), 'C+', 'one in five is a fifth of the trip and is serious');
+  assert.equal(apply('A', 4, 85), 'B+', '4.7 per cent');
+  assert.equal(apply('A', 8, 85), 'B-', '9.4 per cent');
+  assert.equal(apply('A', 30, 85), 'C+');
+  assert.equal(apply('C', 1, 85), 'C', 'a cap never RAISES a grade');
+});
+
+// A visit running past closing is an adjustment, not a defect.
+test('a visit that overruns closing does not cap the grade', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    // King's College Chapel: in the door at 4:03, closes 4:30, scheduled to 5:01.
+    { name: "King's College Chapel", type: 'hike', time: '4:03 PM', endTime: '5:01 PM',
+      dayHours: '9:30 AM - 4:30 PM' },
+  ] }] };
+  const data = vet({ overall_grade: { letter: 'A', rationale: 'Excellent' } });
+  assert.equal(data.overall_grade.letter, 'A', 'you get in — you just leave earlier');
+  assert.equal(data._hardConflicts.length, 0, 'it is not an impossible stop');
+  assert.equal(data._trimConflicts.length, 1, 'but it is still reported');
+  assert.match(data._trimConflicts[0].issue, /27 min inside/,
+    'and says what you actually get: ' + data._trimConflicts[0].issue);
+});
+
+test('arriving after closing IS impossible and does cap', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: Array.from({ length: 20 }, (_, i) => (
+    i === 0
+      ? { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM', dayHours: '10:00 AM - 6:00 PM' }
+      : { name: 'Stop ' + i, type: 'hike', time: '10:00 AM', endTime: '11:00 AM' })) }] };
+  const data = vet({ overall_grade: { letter: 'A', rationale: 'Flawless' } });
+  assert.equal(data._hardConflicts.length, 1);
+  assert.equal(data.overall_grade.letter, 'B+', '1 of 20 is 5 percent, got ' + data.overall_grade.letter);
 });
 
 test('minor issues alone leave an A reachable', () => {
@@ -1267,7 +1296,8 @@ test('the letter is docked to match the problems listed under it', () => {
       dayHours: '10:00 AM - 6:00 PM' },
   ] }] };
   const data = vet({ overall_grade: { letter: 'A', rationale: 'Flawless' } });
-  assert.equal(data.overall_grade.letter, 'B+', 'the model cannot award an A over a hard conflict');
+  assert.equal(data.overall_grade.letter, 'C+',
+    'the only stop being impossible is the whole trip, got ' + data.overall_grade.letter);
   assert.equal(data._gradeCappedFrom, 'A', 'and the original is kept so it can be explained');
 });
 

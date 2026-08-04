@@ -3095,3 +3095,101 @@ test('the real trip has no connector without a distance or a reason', async () =
   assert.deepEqual(bad, [], 'every leg on the real trip must report: ' + bad.join(' | '));
   await page.close();
 });
+
+// ===========================================================================
+// v204 — APPLYING AN AI ALTERNATE. Reported from a real card: the drive leg
+// before "Green Welly Stop Restaurant" showed a mode pill and no distance, and
+// the note read 'AI Suggested Alternate: Originally "..." | AI Suggested
+// Alternate: Originally "..." | ...'. Both come from confirmApplyAlternate.
+// ===========================================================================
+test('a swapped stop is re-located, so its leg has a distance again', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 7', subtitle: 'Mon, Aug 10, 2026', stops: [
+      { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '10:30 AM',
+        lat: 56.1239, lng: -3.9478 },
+      { name: 'The Real Food Cafe', type: 'food', time: '10:45 AM', endTime: '11:05 AM',
+        lat: 56.4361, lng: -4.7086, notes: 'Quick bite on the A82.' },
+    ] },
+  ]);
+  // Stand in for the geocoder the sandbox cannot reach.
+  await page.evaluate(() => {
+    window.fetch = async (u) => {
+      if (String(u).includes('nominatim')) {
+        return { ok: true, json: async () => ([{ lat: '56.4361', lon: '-4.7086',
+          display_name: 'Green Welly Stop, Tyndrum' }]) };
+      }
+      return { ok: true, json: async () => ({}) };
+    };
+  });
+  await page.evaluate(() => { _altResults = [{ name: 'Green Welly Stop Restaurant' }]; confirmApplyAlternate(0, 1, 0); });
+  await page.waitForFunction(
+    () => { const s = state.days[0].stops[1]; return s.name === 'Green Welly Stop Restaurant' && s.lat; },
+    null, { timeout: 15000 });
+  const out = await page.evaluate(() => {
+    const s = state.days[0].stops[1];
+    return { name: s.name, lat: s.lat, needsPin: s.needsPin, notes: s.notes };
+  });
+  assert.equal(out.name, 'Green Welly Stop Restaurant');
+  assert.ok(out.lat, 'the swapped stop has a location again, got ' + out.lat);
+  assert.equal(out.needsPin, undefined, 'and is no longer marked as needing a pin');
+  const legs = await legTexts(page);
+  assert.ok(legs.some((t) => /mi ·/.test(t)),
+    'the drive before it reports a distance again, got ' + JSON.stringify(legs));
+  await page.close();
+});
+
+test('the alternate note does not grow each time you swap', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 7', subtitle: 'Mon, Aug 10, 2026', stops: [
+      { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '10:30 AM',
+        lat: 56.1239, lng: -3.9478 },
+      { name: 'The Real Food Cafe', type: 'food', time: '10:45 AM', endTime: '11:05 AM',
+        lat: 56.4361, lng: -4.7086, notes: 'Quick bite on the A82.' },
+    ] },
+  ]);
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ([]) });   // no geocode
+  });
+  const notes = await page.evaluate(async () => {
+    _altResults = [{ name: 'Lunch — quick bite (Tyndrum)' }];
+    confirmApplyAlternate(0, 1, 0);
+    _altResults = [{ name: 'Green Welly Stop Restaurant' }];
+    confirmApplyAlternate(0, 1, 0);
+    return state.days[0].stops[1].notes;
+  });
+  assert.equal((notes.match(/AI Suggested Alternate/g) || []).length, 1,
+    'one prefix, however many swaps: ' + notes);
+  assert.match(notes, /Originally "The Real Food Cafe"/, 'naming the true original: ' + notes);
+  assert.match(notes, /Quick bite on the A82/, 'and keeping the real note');
+  await page.close();
+});
+
+test('a stop left with no location says so, in place of Fix pin', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 7', subtitle: 'Mon, Aug 10, 2026', stops: [
+      { name: 'Stirling Castle', type: 'hike', time: '9:30 AM', endTime: '10:30 AM',
+        lat: 56.1239, lng: -3.9478 },
+      { name: 'The Real Food Cafe', type: 'food', time: '10:45 AM', endTime: '11:05 AM',
+        lat: 56.4361, lng: -4.7086 },
+    ] },
+  ]);
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ([]) });   // geocode finds nothing
+    _altResults = [{ name: 'Somewhere Unfindable' }];
+    confirmApplyAlternate(0, 1, 0);
+  });
+  await page.waitForFunction(
+    () => state.days[0].stops[1].name === 'Somewhere Unfindable', null, { timeout: 15000 });
+  const out = await page.evaluate(() => {
+    const card = document.getElementById('stop-card-0-1');
+    return { needsPin: state.days[0].stops[1].needsPin,
+      btn: (card.querySelector('.map-link-alert') || {}).textContent || '',
+      any: card.textContent };
+  });
+  assert.ok(out.needsPin, 'the stop is marked as having no location');
+  assert.match(out.btn, /Set location/, 'and the card asks for one: ' + out.any.slice(0, 200));
+  const legs = await legTexts(page);
+  assert.ok(legs.some((t) => /Distance unknown/.test(t)),
+    'the leg says why it has no number, got ' + JSON.stringify(legs));
+  await page.close();
+});

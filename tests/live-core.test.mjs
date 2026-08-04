@@ -1394,3 +1394,43 @@ test('a swap with the same place on both sides becomes a pacing note', () => {
   assert.ok((data.pacing_notes || []).some((n) => /National Gallery/.test(n)),
     'and what it said is kept as a pacing note: ' + JSON.stringify(data.pacing_notes));
 });
+
+// ---------------------------------------------------------------------------
+// APPLYING AN AI ALTERNATE. Two faults, both visible on one card: the note
+// prefix was rebuilt by prepending, so it grew on every swap; and the swap
+// deleted lat/lng without setting new ones, leaving the stop with no location,
+// no distance and no travel time.
+// ---------------------------------------------------------------------------
+test('the alternate note keeps ONE prefix and the earliest original name', () => {
+  const note = fn('_altNote');
+  const first = note('The Real Food Cafe', 'Quick bite on the A82 — keep it short.');
+  assert.equal(first,
+    'AI Suggested Alternate: Originally "The Real Food Cafe" | Quick bite on the A82 — keep it short.');
+  // Swap again: the prefix must not stack.
+  const second = note('Lunch — quick bite (Tyndrum)', first);
+  assert.equal((second.match(/AI Suggested Alternate/g) || []).length, 1,
+    'one prefix only, got: ' + second);
+  assert.match(second, /Originally "The Real Food Cafe"/,
+    'and it keeps the FIRST original, not the last: ' + second);
+  assert.match(second, /Quick bite on the A82/, 'the real note survives');
+  // A third swap changes nothing about the prefix.
+  const third = note('Green Welly Stop Restaurant', second);
+  assert.equal((third.match(/AI Suggested Alternate/g) || []).length, 1);
+  assert.match(third, /Originally "The Real Food Cafe"/);
+});
+
+test('a stop with no previous note still gets a clean prefix', () => {
+  const note = fn('_altNote');
+  assert.equal(note('The Real Food Cafe', ''), 'AI Suggested Alternate: Originally "The Real Food Cafe"');
+  assert.equal(note('The Real Food Cafe', null), 'AI Suggested Alternate: Originally "The Real Food Cafe"');
+});
+
+test('_altNoteParts separates the original name from the real note', () => {
+  const parts = fn('_altNoteParts');
+  const p = parts('AI Suggested Alternate: Originally "A" | AI Suggested Alternate: Originally "B" | real note');
+  assert.equal(p.original, 'A', 'the first prefix names the true original');
+  assert.equal(p.rest, 'real note', 'and everything else is stripped');
+  const plain = parts('just a note');
+  assert.equal(plain.original, '');
+  assert.equal(plain.rest, 'just a note');
+});

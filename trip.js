@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v203';
+window.APP_CODE_VERSION='v204';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -137,6 +137,9 @@ function _repairState(st){
 // you look for a reservation number that is gone.
 const _PRECIOUS_FIELDS=['reservation','notes','ticket','ticketName','photo','desc','audioUrl',
   'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours'];
+// Marker set when a swap leaves a stop without a location. Cleared as soon as
+// one is found; surfaced on the card so it is never a silent gap.
+const _NEEDS_PIN='needsPin';
 // Report values that disappeared from a stop that still exists. Never blocks a
 // write — it records, so a loss can be found after the fact instead of guessed at.
 function _fieldLosses(beforeState,afterState){
@@ -1350,7 +1353,7 @@ function renderPanel(idx){
       _audioBadgeHtml(s)+
       /* the ticket button is rendered by _bookingHtml above — one definition */
       (s.lat&&s.lng?'<a class="map-link" href="https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng+'" target="_blank" rel="noopener"><svg width="9" height="11" viewBox="0 0 30 36" fill="currentColor" style="flex-shrink:0"><path d="M15 0C7.268 0 1 6.268 1 14c0 8.836 14 22 14 22S29 22.836 29 14C29 6.268 22.732 0 15 0z"/></svg> Directions</a>':'')+
-      (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link map-link-quiet" onclick="fixStopLocation('+idx+','+si+')" title="Wrong pin on the map? Re-locate this stop from its name">&#128205; Fix pin</button>':'')+
+      (!['drive','flight','train','bus'].includes(s.type)?'<button class="map-link'+(_validLL(s)?' map-link-quiet':' map-link-alert')+'" onclick="fixStopLocation('+idx+','+si+')" title="'+(_validLL(s)?'Wrong pin on the map? Re-locate this stop from its name':'This stop has no location, so it has no distance or travel time')+'">&#128205; '+(_validLL(s)?'Fix pin':'Set location')+'</button>':'')+
       (s.type==='flight'?flightAwareLink(s.name,s.notes,s.flightNumber)+''+_checkinLink(s.flightNumber,s.airline):'')+
       _bookingLinkHtml(s)+
       (_isUpNext&&s.lat&&s.lng?'<a class="live-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng+'" target="_blank" rel="noopener">&#127907; Navigate Here</a>':'')+
@@ -5645,18 +5648,67 @@ function _renderAlternates(alts,dayIdx,stopIdx){
       '</div></div>';
   }).join('');
 }
+// The alternate note used to be rebuilt by PREPENDING to whatever was already
+// there, so swapping twice produced
+//   AI Suggested Alternate: Originally "B" | AI Suggested Alternate: Originally "A" | real note
+// and it grew on every swap. The truth is a single original name and the note
+// the stop actually carries.
+const _ALT_PREFIX_RE=/^\s*AI Suggested Alternate:\s*Originally\s*"([^"]*)"\s*(?:\|\s*)?/i;
+function _altNoteParts(notes){
+  let text=String(notes||''),original='';
+  for(;;){
+    const m=_ALT_PREFIX_RE.exec(text);
+    if(!m)break;
+    if(!original)original=m[1];      // the FIRST one is the real original
+    text=text.slice(m[0].length);
+  }
+  return {original:original,rest:text.trim()};
+}
+// Build the note for a stop being replaced, keeping one prefix and the earliest
+// original name.
+function _altNote(prevName,prevNotes){
+  const p=_altNoteParts(prevNotes);
+  const original=p.original||prevName||'';
+  return ('AI Suggested Alternate: Originally "'+original+'"'+(p.rest?' | '+p.rest:'')).trim();
+}
+// A stop with no coordinates has no distance, no travel time and no map pin.
+// Applying an alternate CLEARS the old venue's pin, correctly, but left the stop
+// with none at all — which is why the leg before it went blank. Look the new
+// place up straight away, and mark it so the card can ask for a pin if not.
+async function _relocateByName(stop,changeDesc){
+  const q=String(stop&&stop.name||'').replace(/^(dinner|lunch|breakfast|brunch|coffee|drinks)\s*[—–-]\s*/i,'')
+    .replace(/\s*[—–].*/,'').trim();
+  if(!q)return false;
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+    if(!r.ok)return false;
+    const d=await r.json();
+    if(!d||!d[0])return false;
+    const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))return false;
+    commit(changeDesc||('Located '+stop.name),()=>{stop.lat=lat;stop.lng=lng;delete stop.needsPin;},WRITE.SYSTEM);
+    renderAll();
+    return true;
+  }catch(e){ return false; }
+}
+
 function confirmApplyAlternate(dayIdx,stopIdx,altIdx){
   const alt=_altResults[altIdx];if(!alt)return;
   const day=state.days[dayIdx];const stop=day?.stops[stopIdx];if(!day||!stop)return;
   const origStop={...stop};
-  stop.name=alt.name;
-  stop.notes=('AI Suggested Alternate: Originally "'+origStop.name+'"'+(origStop.notes?' | '+origStop.notes:'')).trim();
-  stop.reservation='';
-  // Clear the OLD venue's place data so the pin/photo/hours/links don't linger.
-  ['lat','lng','desc','openingHours','dayHours','dayHoursSrc','website','phone','customImage','stars'].forEach(k=>{delete stop[k];});
-  if(alt.google_maps_search_url)stop.url=alt.google_maps_search_url; else delete stop.url;
-  stop.recentlyChanged=true;
-  saveState('Applied restaurant alternate');
+  commit('Swapped '+origStop.name+' for '+alt.name,()=>{
+    stop.name=alt.name;
+    stop.notes=_altNote(origStop.name,origStop.notes);
+    stop.reservation='';
+    // Clear the OLD venue's place data so the pin/photo/hours/links don't linger.
+    ['lat','lng','desc','openingHours','dayHours','dayHoursSrc','website','phone','customImage','stars'].forEach(k=>{delete stop[k];});
+    stop.needsPin=true;          // no location until the lookup below succeeds
+    if(alt.google_maps_search_url)stop.url=alt.google_maps_search_url; else delete stop.url;
+    stop.recentlyChanged=true;
+  },WRITE.AI);
+  // Find the new place, so the stop has a pin, a distance and a travel time
+  // instead of a blank leg and a Fix pin button.
+  _relocateByName(stop,'Located '+alt.name);
   document.getElementById('alternates-modal').classList.remove('open');
   renderAll();
   showUndoBanner('"'+alt.name+'" applied.',()=>{

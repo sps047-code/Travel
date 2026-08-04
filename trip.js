@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v202';
+window.APP_CODE_VERSION='v203';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -690,14 +690,20 @@ function _airportWarningHtml(prev,s){
   const leaveTxt=leave<0?'earlier in the day':('by '+_minsToClock(leave));
   return '<div style="margin-top:var(--space-2);display:block;background:rgba(194,59,59,0.10);border:1px solid rgba(194,59,59,0.40);color:var(--ruby,#c23b3b);border-radius:9px;padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:700;line-height:1.4">&#9888;&#65039; You won’t reach the airport '+(f.intl?'3 hours':'2 hours')+' before your '+_escHtml(_minsToClock(f.dep))+' flight. To make it, leave '+_escHtml(f.prevName)+' '+_escHtml(leaveTxt)+' (it’s about '+_minsToStr(f.travel)+' to the airport).</div>';
 }
+// THERE IS ALWAYS SOMETHING TO SAY between two stops. This used to return an
+// empty string in three cases — a missing coordinate, a stop under 0.05 miles
+// away, and a leg into a drive — so a connector silently showed a mode pill and
+// no numbers, and there was no way to tell "nothing to travel" apart from
+// "we don't know". Every leg now answers, even if the answer is that it cannot
+// be measured yet.
 function legLabel(a,b,mode){
-  if(!_validLL(a)||!_validLL(b))return'';
+  if(!_validLL(a)||!_validLL(b))return'<span class="leg-unknown">Distance unknown — no location set</span>';
   const straight=haversine(a.lat,a.lng,b.lat,b.lng);
-  if(straight<0.05)return'';
+  if(straight<0.02)return'<span class="leg-same">Same place · no travel</span>';
   // Report the distance you actually cover, not the crow's flight, so the miles
   // and the minutes describe the same journey.
   const dist=_routeMiles(straight,mode);
-  const mi=dist<10?dist.toFixed(1):Math.round(dist);
+  const mi=dist<0.1?dist.toFixed(2):dist<10?dist.toFixed(1):Math.round(dist);
   const mins=_travelMins(straight,mode);
   return mi+' mi · '+_minsToStr(mins);
 }
@@ -1227,7 +1233,9 @@ function _lodgeBookingHtml(lodge,where,opts){ return _bookingHtml(lodge,where,op
 function hotelBookendHtml(label,lodge,otherStop,where){
   const nm=lodge.name.replace(/^check.?in\s*[—–\-]\s*/i,'').replace(/\s*[—–].*/,'').trim();
   let travelHtml='';
-  if(label.toLowerCase().startsWith('start')&&otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
+  if(label.toLowerCase().startsWith('start')&&otherStop&&!(_validLL(lodge)&&_validLL(otherStop))){
+    travelHtml='<div class="hotel-bookend-travel"><span class="leg-unknown">Distance unknown — no location set</span></div>';
+  }else if(label.toLowerCase().startsWith('start')&&otherStop&&lodge.lat&&lodge.lng&&otherStop.lat&&otherStop.lng){
     const dist=haversine(lodge.lat,lodge.lng,otherStop.lat,otherStop.lng);
     const tmode=lodge.transitMode||_defaultTransitMode(lodge,otherStop);   // 'subway' is canonicalised to 'train' at load
     const mi=dist<10?dist.toFixed(1):Math.round(dist);
@@ -1366,8 +1374,12 @@ function renderPanel(idx){
       // Do NOT draw a travel-distance leg INTO a drive stop: a "Drive — A to B"
       // stop already IS that travel (with its own duration), so a leg to it
       // double-counts and makes an impossible-looking "77 mi in 0 min" connector.
+      // Every gap between two stops gets a distance and a time. The old guard
+      // skipped any leg INTO a drive stop, on the grounds that the drive IS the
+      // travel — but a drive stop's coordinates are where it STARTS, so the leg
+      // to it is the transition to the car, not a double count.
       let leg='';
-      if(_validLL(next)&&next.type!=='drive'){
+      {
         const fromStop=_validLL(s)?s:_legEndpoint(day.stops,si,-1);
         // A leg starts where the previous stop ENDS. After a train, that is the
         // station it arrives at, not the one it left. This used to be corrected
@@ -1376,7 +1388,7 @@ function renderPanel(idx){
         // had no 'walk' case, so a walk was timed at driving speed: 0.9 miles
         // in 3 minutes. One computation now, from the right two points.
         const origin=fromStop?_stopTo(fromStop,null):null;
-        if(origin&&fromStop!==next)leg=legLabel(origin,next,tmode);
+        leg=legLabel(origin,next,tmode);
       }
       const tzc=tzChangeLabel(s,next);
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
@@ -1391,13 +1403,9 @@ function renderPanel(idx){
           if(tn2<dep2+tv-10)infeasWarn='<span style="color:var(--ruby);font-weight:700;margin-left:var(--space-3)">&#9888;&#65039; Not enough time — earliest arrival '+_formatTimeMins(dep2+tv)+'</span>';
         }
       }
-      if(leg||tzc){
-        cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+
-          (tzc?'<span class="tz-change" style="margin-left:'+(leg?'10px':'0')+'">&#9201; '+tzc+'</span>':'')+infeasWarn+
-          '</div>';
-      }else{
-        cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+modePill+'</div>';
-      }
+      cards+='<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+leg+modePill+
+        (tzc?'<span class="tz-change" style="margin-left:10px">&#9201; '+tzc+'</span>':'')+infeasWarn+
+        '</div>';
     }
   });
   const panelCls='day-panel'+(idx===currentDayIdx?' active':'');

@@ -2992,3 +2992,106 @@ test('a swap that replaces a stop with itself is not shown as a swap', async () 
     'but what it said is kept as a pacing note: ' + JSON.stringify(pacing));
   await page.close();
 });
+
+// ===========================================================================
+// v203 — EVERY GAP BETWEEN TWO STOPS REPORTS A DISTANCE AND A TIME. legLabel
+// returned an empty string in three cases (missing coordinate, under 0.05 mi,
+// and any leg into a drive), so connectors showed a bare mode pill with no
+// numbers — and "nothing to travel" was indistinguishable from "unknown".
+// ===========================================================================
+async function legTexts(page) {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('.day-panel.active .leg-connector'))
+      .map((c) => c.textContent.replace(/\s+/g, ' ').trim()));
+}
+
+test('every leg in a day reports something, with no silent gaps', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Hotel', type: 'lodge', time: '8:00 AM', endTime: '8:30 AM', lat: 51.5063, lng: -0.1237 },
+      { name: 'Coffee next door', type: 'food', time: '8:35 AM', endTime: '9:00 AM',
+        lat: 51.50631, lng: -0.12371 },                       // metres away
+      { name: 'No location yet', type: 'hike', time: '9:30 AM', endTime: '10:00 AM' },
+      { name: 'Drive to Windsor', type: 'drive', time: '10:15 AM', endTime: '11:15 AM',
+        lat: 51.5074, lng: -0.1278 },
+      { name: 'Windsor Castle', type: 'hike', time: '11:30 AM', endTime: '1:30 PM',
+        lat: 51.4839, lng: -0.6044 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.day-panel.active .leg-connector').length >= 4,
+    null, { timeout: 15000 });
+  const legs = await legTexts(page);
+  // Four gaps between the five stops, plus the trailing leg to tonight's hotel.
+  assert.ok(legs.length >= 4, 'one connector per gap, got ' + legs.length);
+  for (const [i, t] of legs.entries()) {
+    assert.ok(/mi ·|Same place|Distance unknown/.test(t),
+      'leg ' + (i + 1) + ' says nothing about the journey: "' + t + '"');
+  }
+  await page.close();
+});
+
+test('a stop a few metres away says so, rather than nothing', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Hotel', type: 'lodge', time: '8:00 AM', endTime: '8:30 AM', lat: 51.5063, lng: -0.1237 },
+      { name: 'Hotel restaurant', type: 'food', time: '8:35 AM', endTime: '9:00 AM',
+        lat: 51.50631, lng: -0.12371 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.day-panel.active .leg-connector').length >= 1,
+    null, { timeout: 15000 });
+  const legs = await legTexts(page);
+  assert.match(legs[0], /Same place · no travel/, 'got: ' + legs[0]);
+  await page.close();
+});
+
+test('a stop with no coordinates says the distance is unknown', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+        lat: 51.5194, lng: -0.127 },
+      { name: 'Somewhere I have not pinned', type: 'food', time: '1:00 PM', endTime: '2:00 PM' },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.day-panel.active .leg-connector').length >= 1,
+    null, { timeout: 15000 });
+  const legs = await legTexts(page);
+  assert.match(legs[0], /Distance unknown/, 'got: ' + legs[0]);
+  assert.ok(!/Same place/.test(legs[0]), 'unknown must not read as "no travel"');
+  await page.close();
+});
+
+test('the leg into a drive stop is reported, not skipped', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Hotel', type: 'lodge', time: '8:00 AM', endTime: '8:30 AM', lat: 51.5063, lng: -0.1237 },
+      { name: 'Drive to Windsor', type: 'drive', time: '9:00 AM', endTime: '10:00 AM',
+        lat: 51.4600, lng: -0.3000 },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.day-panel.active .leg-connector').length >= 1,
+    null, { timeout: 15000 });
+  const legs = await legTexts(page);
+  assert.match(legs[0], /mi ·/, 'the run to where the drive starts, got: ' + legs[0]);
+  await page.close();
+});
+
+test('the real trip has no connector without a distance or a reason', async () => {
+  const trip = JSON.parse(fs.readFileSync(path.join(ROOT, 'trips', 'london-scotland.json'), 'utf8'));
+  const { page } = await openTrip(trip.days, { day: 0 });
+  const bad = [];
+  for (let d = 0; d < trip.days.length; d++) {
+    await page.evaluate((i) => switchDay(i), d);
+    await page.waitForTimeout(120);
+    const legs = await legTexts(page);
+    legs.forEach((t, i) => {
+      if (!/mi ·|Same place|Distance unknown/.test(t)) bad.push('Day ' + (d + 1) + ' leg ' + (i + 1) + ': "' + t + '"');
+    });
+  }
+  assert.deepEqual(bad, [], 'every leg on the real trip must report: ' + bad.join(' | '));
+  await page.close();
+});

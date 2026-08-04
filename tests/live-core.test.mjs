@@ -1260,8 +1260,10 @@ test('a visit that overruns closing does not cap the grade', () => {
   assert.equal(data.overall_grade.letter, 'A', 'you get in — you just leave earlier');
   assert.equal(data._hardConflicts.length, 0, 'it is not an impossible stop');
   assert.equal(data._trimConflicts.length, 1, 'but it is still reported');
-  assert.match(data._trimConflicts[0].issue, /27 min inside/,
+  assert.match(data._trimConflicts[0].issue, /27 min rather than the 58/,
     'and says what you actually get: ' + data._trimConflicts[0].issue);
+  assert.match(data._trimConflicts[0].issue, /Stay to closing/,
+    'the advice is to use the whole visit, not to leave early');
 });
 
 test('arriving after closing IS impossible and does cap', () => {
@@ -1356,4 +1358,39 @@ test('a conflict the model already reported is not duplicated', () => {
   ] }] };
   const data = vet({ timing_conflicts: [{ day: 1, stop_name: 'Tate Modern', issue: 'closed by then' }] });
   assert.equal(data.timing_conflicts.length, 1, 'reported once, got ' + data.timing_conflicts.length);
+});
+
+// A note the review supplied without a severity is a WATCH item. Defaulting it
+// to "blocked" put MUST MOVE on notes whose own text said "not a hard conflict".
+test('an unlabelled conflict from the review is not treated as blocking', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'National Gallery', type: 'hike', time: '4:36 PM', endTime: '5:45 PM',
+      dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const data = vet({
+    overall_grade: { letter: 'A', rationale: 'Strong' },
+    timing_conflicts: [{ day: 10, stop_name: 'National Gallery',
+      issue: 'Tight but workable — not a hard conflict.' }],
+  });
+  assert.equal(data.overall_grade.letter, 'A',
+    'a watch item must not cap the grade, got ' + data.overall_grade.letter);
+  assert.equal(data._hardConflicts.length, 0, 'and must not count as impossible');
+});
+
+test('a swap with the same place on both sides becomes a pacing note', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [] }] };
+  const data = vet({
+    suggested_swaps: [
+      { remove: 'National Gallery', day: 10,
+        add: 'National Gallery — enter by 4:36 PM and target the key rooms',
+        reason: 'This is a pacing note, not a true swap.' },
+      { remove: "St Paul's Cathedral", day: 2, add: 'Tate Modern', reason: 'Genuinely different place.' },
+    ],
+  });
+  assert.equal(data.suggested_swaps.length, 1, 'the self-swap is gone');
+  assert.equal(data.suggested_swaps[0].add, 'Tate Modern', 'the real swap stays');
+  assert.ok((data.pacing_notes || []).some((n) => /National Gallery/.test(n)),
+    'and what it said is kept as a pacing note: ' + JSON.stringify(data.pacing_notes));
 });

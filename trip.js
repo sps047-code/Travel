@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v201';
+window.APP_CODE_VERSION='v202';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -5123,8 +5123,8 @@ function _hoursConflicts(){
         const over=_minsOutsideHours(line,end);
         const inside=Math.max(0,close-start);
         out.push({day:di+1,stop_name:s.name,severity:(over!=null&&over<=HOURS_GRACE_MINS)?'minor':'trim',
-          issue:'Closes at '+_formatTimeMins(close)+' ("'+line+'"), so you get '+inside+
-                ' min inside rather than '+(end-start)+'. Leave '+(over!=null?over:'')+' min earlier.'});
+          issue:'Closes at '+_formatTimeMins(close)+' ("'+line+'"), so the visit ends there: '+inside+
+                ' min rather than the '+(end-start)+' planned. Stay to closing and move the next stop up.'});
       }
     });
   });
@@ -5170,6 +5170,18 @@ function _vetGradeSuggestions(data){
     });
   }
   if(Array.isArray(data.suggested_swaps)){
+    // "Replace National Gallery with National Gallery" is a pacing note wearing a
+    // swap's clothes. Keep what it says, drop the pretence that it is a swap.
+    const norm=(x)=>String(x||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+    data.suggested_swaps=data.suggested_swaps.filter(r=>{
+      const a=norm(r.remove),b=norm(r.add);
+      if(a&&b&&(a===b||b.indexOf(a)===0||a.indexOf(b)===0)){
+        data.pacing_notes=(data.pacing_notes||[]);
+        data.pacing_notes.push('Day '+r.day+' — '+(r.add||r.remove)+': '+(r.reason||'timing note'));
+        return false;
+      }
+      return true;
+    });
     data.suggested_swaps=data.suggested_swaps.filter(r=>{
       const when=_parseTimeMins(r.suggested_time);
       const open=_isOpenAt(r.add_hours,when);
@@ -5205,7 +5217,7 @@ function _vetGradeSuggestions(data){
   return data;
 }
 
-const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields \u2014 no incomplete swaps.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts MUST include any EXISTING stop scheduled when it is closed \u2014 arriving after closing, or staying past it \u2014 and any stop on a weekday that place is shut.\n8. Judge the grade in PROPORTION to the size of the trip. A stop that is impossible \u2014 shut that day, or arrived at after closing \u2014 is a real defect, and one of those on an eighty-stop trip is a small blemish, not a failure. A visit that merely runs past closing is NOT a defect at all: the traveller gets in and leaves earlier, so mention it and move on. Arriving a few minutes before opening, or leaving exactly at closing time, is not a conflict and must not be reported as one. Capping is applied automatically from the impossible stops, so do not double-dock. Judge the itinerary on the QUALITY OF THE CHOICES, and award an A when they are genuinely excellent \u2014 do not withhold one out of caution or because of a handful of timing adjustments.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
+const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields, and they MUST BE DIFFERENT PLACES. Replacing a stop with itself is not a swap \u2014 if the point is about timing or how to use the visit, put it in pacing_notes instead. Swaps with the same place on both sides are moved there automatically.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts: every entry MUST carry \u0022severity\u0022, one of \u0022blocked\u0022 (cannot be done at all: shut that day, or arrived at after closing), \u0022trim\u0022 (you get in, but the visit is scheduled to run past closing) or \u0022watch\u0022 (workable but tight). Use \u0022blocked\u0022 ONLY when the visit genuinely cannot happen. If your own wording is \u0022not a hard conflict\u0022, \u0022tight but workable\u0022 or \u0022confirm with the venue\u0022, the severity is \u0022watch\u0022, never \u0022blocked\u0022.\n7a. STAYING UNTIL A PLACE CLOSES IS THE POINT, NOT A PROBLEM. A visit that ends exactly at closing time is a day well used. NEVER advise leaving early to avoid being rushed out, and never treat a visit that runs to closing as a conflict. The only timing problem worth raising is a visit scheduled to end AFTER the doors shut \u2014 and the fix for that is to end it at closing and bring the NEXT stop forward, not to cut the visit short.\n7b. LAST ADMISSION only matters if you ARRIVE after it. If the group is already inside before last admission, it is irrelevant \u2014 do not raise it. If you are unsure whether a last admission applies, that is a \u0022watch\u0022 note, never \u0022blocked\u0022.\n7c. A constraint you cannot resolve from the itinerary \u2014 a tide table, a seasonal timetable, whether a pre-booked ticket beats a last-admission cutoff \u2014 is a \u0022watch\u0022 item to verify, not a stop that must move.\n8. Judge the grade in PROPORTION to the size of the trip. A stop that is impossible \u2014 shut that day, or arrived at after closing \u2014 is a real defect, and one of those on an eighty-stop trip is a small blemish, not a failure. A visit that merely runs past closing is NOT a defect at all: the traveller gets in and leaves earlier, so mention it and move on. Arriving a few minutes before opening, or leaving exactly at closing time, is not a conflict and must not be reported as one. Capping is applied automatically from the impossible stops, so do not double-dock. Judge the itinerary on the QUALITY OF THE CHOICES, and award an A when they are genuinely excellent \u2014 do not withhold one out of caution or because of a handful of timing adjustments.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
 
 async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
@@ -5266,13 +5278,16 @@ function _renderGradeResult(d){
   if(d.timing_conflicts?.length){
     h+='<div class="ai-section"><div class="ai-section-hdr">&#9888;&#65039; Timing Issues</div>';
     d.timing_conflicts.forEach(c=>{
-      const sev=c.severity||'blocked';
-      const TAG={blocked:'Must move',trim:'Leave earlier',minor:'Minor'};
-      const soft=sev!=='blocked';
-      h+='<div class="ai-item'+(soft?'':' ai-item-warn')+'"'+(sev==='minor'?' style="color:var(--muted)"':'')+'>'+
+      // Only the app's own check, or an explicit label from the review, may say
+      // "must move". An unlabelled note is a WATCH ITEM — defaulting it to
+      // blocked put MUST MOVE on notes whose own text read "not a hard conflict".
+      const sev=c.severity||'watch';
+      const TAG={blocked:'Must move',trim:'Ends at closing',watch:'Worth checking',minor:'Minor'};
+      const COLOR={blocked:'var(--ruby)',trim:'var(--amber)',watch:'var(--river)',minor:'var(--muted)'};
+      h+='<div class="ai-item'+(sev==='blocked'?' ai-item-warn':'')+'"'+(sev==='minor'?' style="color:var(--muted)"':'')+'>'+
         '<strong>Day '+c.day+': '+_escHtml(c.stop_name||'')+'</strong>'+
         (TAG[sev]?' <span style="font-size:var(--text-2xs);font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:'+
-          (sev==='blocked'?'var(--ruby)':sev==='trim'?'var(--amber)':'var(--muted)')+'">'+TAG[sev]+'</span>':'')+
+          COLOR[sev]+'">'+TAG[sev]+'</span>':'')+
         ' &mdash; '+_escHtml(c.issue||'')+'</div>';
     });h+='</div>';
   }
@@ -5293,8 +5308,8 @@ function _renderGradeResult(d){
     }
     if(trims.length){
       h+='<div class="ai-item" style="color:var(--muted)"><strong>'+trims.length+' visit'+(trims.length===1?'':'s')+
-        ' run'+(trims.length===1?'s':'')+' past closing.</strong> You get in; you just leave earlier. '+
-        'Worth adjusting, but not a mark against the itinerary: '+
+        ' run'+(trims.length===1?'s':'')+' past closing.</strong> You get in; the visit simply ends when the doors do. '+
+        'Bring the next stop forward rather than cutting the visit short. Not a mark against the itinerary: '+
         _escHtml(trims.map(c=>'Day '+c.day+' '+c.stop_name).join(', '))+'</div>';
     }
     h+='</div>';

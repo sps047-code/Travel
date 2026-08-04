@@ -2849,7 +2849,7 @@ test('one overrun out of many stops does not cost the A', async () => {
   assert.match(out.txt, /Nothing\./, 'nothing is holding it back');
   assert.match(out.txt, /run.? past closing/, 'the overrun is still reported');
   assert.match(out.txt, /King's College Chapel/, 'by name');
-  assert.match(out.txt, /Leave earlier/, 'labelled as an adjustment, not a defect');
+  assert.match(out.txt, /Ends at closing/, 'labelled as an adjustment, not a defect');
   await page.close();
 });
 
@@ -2873,5 +2873,122 @@ test('one genuinely impossible stop out of many costs only a half step', async (
   assert.equal(out.letter, 'A-', 'a real defect costs something, but not a letter, got ' + out.letter);
   assert.match(out.txt, /1 of 85 stops/, 'shown in proportion');
   assert.match(out.txt, /Must move/, 'and marked as the kind of problem it is');
+  await page.close();
+});
+
+// ===========================================================================
+// v202 — LABELS MUST MEAN SOMETHING. Five notes were stamped "MUST MOVE" whose
+// own text read "not a hard conflict" and "tight but workable": conflicts the
+// REVIEW supplies carry no severity, and the renderer defaulted them to blocked.
+// ===========================================================================
+test('a review note without a severity is not stamped MUST MOVE', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Thu, Aug 13, 2026', stops: [
+      { name: 'National Gallery', type: 'hike', time: '4:36 PM', endTime: '5:45 PM',
+        lat: 51.5089, lng: -0.1283, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' },
+      timing_conflicts: [{ day: 1, stop_name: 'National Gallery',
+        issue: 'Tight but workable for a highlights run. Not a hard conflict.' }],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.ok(!/Must move/i.test(out.txt),
+    'a note saying "not a hard conflict" must not be labelled Must move: ' + out.txt);
+  assert.match(out.txt, /Worth checking/, 'it is a watch item');
+  assert.equal(out.letter, 'A', 'and it does not cap the grade, got ' + out.letter);
+  await page.close();
+});
+
+test('the app\'s OWN finding is still labelled Must move when it truly is', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+        lat: 51.5076, lng: -0.0994, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Flawless.' }, timing_conflicts: [],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  assert.match(txt, /Must move/, 'arriving two hours after closing really is one');
+  await page.close();
+});
+
+test('a visit is told to run TO closing, never to end early', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: "King's College Chapel", type: 'hike', time: '4:03 PM', endTime: '5:01 PM',
+        lat: 52.2045, lng: 0.1166, dayHours: '9:30 AM - 4:30 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' }, timing_conflicts: [],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  assert.match(txt, /Ends at closing/, 'labelled for what it is');
+  assert.match(txt, /Stay to closing/, 'and the advice is to use the whole visit: ' + txt);
+  assert.ok(!/leave earlier/i.test(txt), 'never told to cut the visit short');
+  await page.close();
+});
+
+test('the grader is instructed that closing time is a target, not a hazard', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await captureAiRequest(page);
+  await page.evaluate(() => gradeItinerary());
+  const body = await aiRequestBody(page);
+  assert.match(body.system, /STAYING UNTIL A PLACE CLOSES IS THE POINT/);
+  assert.match(body.system, /NEVER advise leaving early/);
+  assert.match(body.system, /LAST ADMISSION only matters if you ARRIVE after it/);
+  assert.match(body.system, /severity/, 'and every conflict must declare how serious it is');
+  await page.close();
+});
+
+test('a swap that replaces a stop with itself is not shown as a swap', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' },
+      suggested_swaps: [{ remove: 'National Gallery', day: 10,
+        add: 'National Gallery — enter by 4:36 PM, target the key rooms only',
+        reason: 'Already in the plan; this is a pacing note, not a true swap.' }],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /National Gallery/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const sections = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#ai-grader-content .ai-section')).map((s) => ({
+      hdr: (s.querySelector('.ai-section-hdr') || {}).textContent || '',
+      body: Array.from(s.querySelectorAll('.ai-item')).map((i) => i.textContent).join(' | '),
+    })));
+  const swaps = sections.find((s) => /Swapping/.test(s.hdr));
+  const pacing = sections.find((s) => /Pacing/.test(s.hdr));
+  assert.ok(!swaps, 'there is no swap to show, got ' + JSON.stringify(swaps));
+  assert.ok(pacing && /National Gallery/.test(pacing.body),
+    'but what it said is kept as a pacing note: ' + JSON.stringify(pacing));
   await page.close();
 });

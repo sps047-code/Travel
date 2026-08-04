@@ -3193,3 +3193,54 @@ test('a stop left with no location says so, in place of Fix pin', async () => {
     'the leg says why it has no number, got ' + JSON.stringify(legs));
   await page.close();
 });
+
+// ===========================================================================
+// v205 — RAIL SPEED. Reported from Day 9: the connector read "17 mi · 53 min"
+// for Ely to Cambridge, a journey the itinerary itself schedules in 31 minutes
+// and which takes about 17 minutes on the train.
+// ===========================================================================
+test('the Ely to Cambridge leg is not an hour', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 9', subtitle: 'Wed, Aug 12, 2026', stops: [
+      { name: 'Ely Cathedral', type: 'hike', time: '2:12 PM', endTime: '2:59 PM',
+        lat: 52.3993, lng: 0.2624 },
+      { name: "King's College Chapel & The Backs", type: 'hike', time: '3:30 PM', endTime: '4:28 PM',
+        lat: 52.2045, lng: 0.1166, transitMode: 'train' },
+    ] },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.day-panel.active .leg-connector').length >= 1,
+    null, { timeout: 15000 });
+  const legs = await legTexts(page);
+  const m = /([\d.]+) mi · (?:(\d+)h ?)?(\d+)?\s*min/.exec(legs[0]);
+  assert.ok(m, 'the leg reports a distance and a time, got: ' + legs[0]);
+  const mins = (m[2] ? +m[2] * 60 : 0) + (m[3] ? +m[3] : 0);
+  // The plan allows 31 minutes; the estimate must be in the same world.
+  assert.ok(mins >= 20 && mins <= 40,
+    'about half an hour door to door, got ' + mins + ' min — ' + legs[0]);
+  await page.close();
+});
+
+test('the estimate agrees with what the itinerary itself allows', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 9', subtitle: 'Wed, Aug 12, 2026', stops: [
+      { name: 'Ely Cathedral', type: 'hike', time: '2:12 PM', endTime: '2:59 PM',
+        lat: 52.3993, lng: 0.2624 },
+      { name: "King's College Chapel & The Backs", type: 'hike', time: '3:30 PM', endTime: '4:28 PM',
+        lat: 52.2045, lng: 0.1166, transitMode: 'train' },
+    ] },
+  ]);
+  const out = await page.evaluate(() => {
+    const [a, b] = state.days[0].stops;
+    return { planned: _parseTimeMins(b.time) - _parseTimeMins(a.endTime),
+      estimated: _legTravelMins(a, b) };
+  });
+  // Read the gap the app actually holds rather than assuming it: the load-time
+  // heal is entitled to nudge a time, and the point here is that the ESTIMATE
+  // agrees with the plan, not what the plan happens to be to the minute.
+  assert.ok(out.planned >= 28 && out.planned <= 35,
+    'the plan allows about half an hour, got ' + out.planned);
+  assert.ok(Math.abs(out.estimated - out.planned) <= 12,
+    'the estimate must be close to it, got ' + out.estimated + ' vs ' + out.planned);
+  await page.close();
+});

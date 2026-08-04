@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v204';
+window.APP_CODE_VERSION='v205';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -589,7 +589,12 @@ const _TRAVEL_MODEL={
   bike :{detour:1.20, overhead:2,  pace:()=>11},                        // upright bike, urban, with lights
   drive:{detour:1.25, overhead:3,  pace:(m)=>m>120?65:m>40?55:m>10?40:20},  // + parking
   bus  :{detour:1.40, overhead:8,  pace:(m)=>m>25?35:11},               // waiting, then stopping constantly
-  train:{detour:1.15, overhead:12, pace:(m)=>m>30?65:25},               // platform time; metro vs intercity
+  // A single "under 30 miles = 25 mph" rule treated a regional train like a
+  // tube hop: Ely to Cambridge came out at 53 minutes for a 17-minute
+  // journey. Rail is three different things depending on the distance.
+  // Waiting time is not constant either: a metro runs every few minutes, an
+  // intercity service is booked and you arrive early for it.
+  train:{detour:1.15, overhead:(m)=>m>30?15:m>5?12:6, pace:(m)=>m>100?75:m>30?60:m>5?50:18},
   flight:{detour:1.05,overhead:0,  pace:()=>480}                        // airport time is handled separately
 };
 // The real distance travelled, which is what the leg should report.
@@ -601,7 +606,8 @@ function _travelMins(straightLineMiles,mode){
   const m=_TRAVEL_MODEL[mode]||_TRAVEL_MODEL.drive;
   const miles=straightLineMiles*m.detour;
   const mph=m.pace(miles)||1;
-  const mins=miles/mph*60+m.overhead;
+  const overhead=(typeof m.overhead==='function')?m.overhead(miles):m.overhead;
+  const mins=miles/mph*60+overhead;
   // A leg that exists at all takes at least a minute.
   return Math.max(1,Math.round(mins));
 }

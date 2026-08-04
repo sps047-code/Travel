@@ -402,7 +402,10 @@ test('travel times are within a believable speed range', () => {
     bike:  { range: [0.5, 2, 10, 30],       mph: [7, 14] },
     drive: { range: [0.5, 2, 10, 50, 200],  mph: [6, 70] },
     bus:   { range: [2, 10, 50],            mph: [5, 45] },
-    train: { range: [5, 30, 100, 400],      mph: [10, 90] },
+    // Under about ten miles a train journey is mostly platform time, which is
+    // true rather than a modelling error, so the guard starts where rail is a
+    // real choice.
+    train: { range: [10, 30, 100, 400],     mph: [20, 90] },
   };
   for (const [mode, spec] of Object.entries(bounds)) {
     const [lo, hi] = spec.mph;
@@ -1433,4 +1436,56 @@ test('_altNoteParts separates the original name from the real note', () => {
   const plain = parts('just a note');
   assert.equal(plain.original, '');
   assert.equal(plain.rest, 'just a note');
+});
+
+// ---------------------------------------------------------------------------
+// RAIL. A single "under 30 miles = 25 mph" rule treated a regional train like a
+// tube hop: Ely to Cambridge, a 17-minute journey, came out as 53 minutes.
+// Checked against journeys with published times, door to door.
+// ---------------------------------------------------------------------------
+test('train times match real journeys, door to door', () => {
+  const tm = fn('_travelMins');
+  const straight = (routeMiles) => routeMiles / 1.15;   // undo the detour factor
+  const cases = [
+    // name,                route miles, acceptable door-to-door minutes
+    ['tube hop',                     2, [8, 18]],
+    ['Ely to Cambridge',            17, [22, 40]],
+    ['Gatwick to Victoria',         26, [32, 50]],
+    ['Cambridge to Kings Cross',    48, [45, 70]],
+    ['York to Edinburgh',          180, [130, 175]],
+    ['Edinburgh to London',        330, [240, 300]],
+  ];
+  for (const [name, route, [lo, hi]] of cases) {
+    const mins = tm(straight(route), 'train');
+    assert.ok(mins >= lo && mins <= hi,
+      name + ' (' + route + ' mi) came out at ' + mins + ' min, expected ' + lo + '-' + hi);
+  }
+});
+
+test('a regional train is not timed like a metro', () => {
+  const tm = fn('_travelMins');
+  const straight = (r) => r / 1.15;
+  const short = tm(straight(2), 'train');
+  const regional = tm(straight(17), 'train');
+  // 17 miles is 8.5x the distance; it must not be 8.5x the time, and it must
+  // certainly not be slower per mile.
+  const mphShort = 2 / (short / 60);
+  const mphRegional = 17 / (regional / 60);
+  assert.ok(mphRegional > mphShort * 2,
+    'a regional service must be much faster per mile than a metro: '
+      + mphRegional.toFixed(0) + ' vs ' + mphShort.toFixed(0) + ' mph');
+});
+
+test('a short hop is not saddled with an intercity wait', () => {
+  const tm = fn('_travelMins');
+  const straight = (r) => r / 1.15;
+  // Two miles on a metro is a few minutes of travel plus a short wait. If the
+  // wait were the flat 12 minutes a regional service needs, this would be 19.
+  assert.ok(tm(straight(2), 'train') <= 16,
+    'a tube hop must not carry a mainline wait, got ' + tm(straight(2), 'train'));
+  // Per-mile speed must rise with distance, not fall.
+  const mph = (r) => r / (tm(straight(r), 'train') / 60);
+  assert.ok(mph(2) < mph(17) && mph(17) < mph(180),
+    'faster per mile the further you go: '
+      + [2, 17, 180].map((r) => r + 'mi=' + mph(r).toFixed(0) + 'mph').join(', '));
 });

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v209';
+window.APP_CODE_VERSION='v210';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -136,7 +136,7 @@ function _repairState(st){
 // form and dropped everything the form had no input for; that is invisible until
 // you look for a reservation number that is gone.
 const _PRECIOUS_FIELDS=['reservation','notes','ticket','ticketName','photo','desc','audioUrl',
-  'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours'];
+  'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours','ticketRef'];
 // Marker set when a swap leaves a stop without a location. Cleared as soon as
 // one is found; surfaced on the card so it is never a silent gap.
 const _NEEDS_PIN='needsPin';
@@ -474,9 +474,116 @@ async function _extractTicketReservation(dataUrl,mimeType){
     }
   }catch(e){}
 }
-function showTicketViewer(di,si){
-  const s=state.days[di].stops[si];if(!s||!s.ticketImage)return;
-  const mime=(s.ticketImage.match(/^data:([^;]+)/)||[])[1]||'';
+/* ============================================================================
+   TICKET STORE
+   A ticket is a PDF or a photo. Kept inside the itinerary it was base64 in the
+   same blob that goes to localStorage on every keystroke and to the cloud on
+   every change — one 2.3 MB confirmation put the whole trip over the ~5 MB
+   localStorage quota, and the failure was swallowed by catch(e){}.
+
+   Tickets now live in the Cache API, which is where the audio tours and the
+   offline copy already live and which has a far larger quota. The stop keeps a
+   REFERENCE. Restoring an old itinerary finds its tickets again because the
+   store is never emptied by a restore.
+
+   The inline copy is only removed once the stored one has been read back, so a
+   ticket can never be lost to a half-finished migration.
+   ========================================================================== */
+const _TICKET_CACHE='seasons-tickets';
+const _ticketUrl=(ref)=>'/Travel/ticket/'+encodeURIComponent(ref);
+let _ticketMem={};                       // in-session cache, avoids re-reading
+
+// Content-addressed: the same ticket attached to two stops is stored once, and
+// re-importing an itinerary cannot create a second copy of the same file.
+async function _ticketId(dataUri){
+  try{
+    const buf=new TextEncoder().encode(dataUri);
+    const h=await crypto.subtle.digest('SHA-256',buf);
+    return 't'+Array.from(new Uint8Array(h)).slice(0,12).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){
+    // No SubtleCrypto (insecure origin): fall back to a cheap content hash so
+    // the reference is still stable for the same bytes.
+    let a=5381; for(let i=0;i<dataUri.length;i+=7)a=((a*33)^dataUri.charCodeAt(i))>>>0;
+    return 't'+a.toString(16)+'-'+dataUri.length.toString(36);
+  }
+}
+async function _ticketPut(dataUri,ref){
+  if(!dataUri)return '';
+  const id=ref||await _ticketId(dataUri);
+  try{
+    const c=await caches.open(_TICKET_CACHE);
+    await c.put(_ticketUrl(id),new Response(dataUri,{headers:{'Content-Type':'text/plain'}}));
+    _ticketMem[id]=dataUri;
+    return id;
+  }catch(e){ return ''; }
+}
+async function _ticketGet(ref){
+  if(!ref)return '';
+  if(_ticketMem[ref])return _ticketMem[ref];
+  try{
+    const c=await caches.open(_TICKET_CACHE);
+    const r=await c.match(_ticketUrl(ref));
+    if(r){ const t=await r.text(); _ticketMem[ref]=t; return t; }
+  }catch(e){}
+  // Not on this device: another device may have stored it in the shared trip.
+  try{
+    if(getTripType()==='family'){
+      const t=await _dbFamilyGet('/tickets/'+ref);
+      if(typeof t==='string'&&t){ await _ticketPut(t,ref); return t; }
+    }
+  }catch(e){}
+  return '';
+}
+// Share the blob so every device can open the ticket. Written once per ref.
+async function _ticketPush(ref,dataUri){
+  if(!ref||!dataUri||getTripType()!=='family')return;
+  try{
+    const have=await _dbFamilyGet('/tickets/'+ref);
+    if(typeof have==='string'&&have)return;
+    await _dbFamilyPut('/tickets/'+ref,dataUri);
+  }catch(e){}
+}
+// Does this stop have a ticket at all, inline or stored?
+function _stopTicketRef(s){ return (s&&(s.ticketRef||''))||''; }
+function _stopHasTicket(s){ return !!(s&&(s.ticketRef||s.ticketImage)); }
+// Resolve a stop's ticket whichever way it is held.
+async function _stopTicketData(s){
+  if(!s)return '';
+  if(s.ticketRef){ const d=await _ticketGet(s.ticketRef); if(d)return d; }
+  return s.ticketImage||'';
+}
+// Move every inline ticket into the store. Non-destructive: the inline copy is
+// dropped only after the stored one reads back identical.
+async function _migrateTicketsToStore(){
+  if(!state||!state.days)return 0;
+  let moved=0;
+  for(const day of state.days){
+    for(const s of (day.stops||[])){
+      if(!s.ticketImage)continue;
+      const ref=await _ticketPut(s.ticketImage);
+      if(!ref)continue;                                  // store unavailable: leave it alone
+      const back=await _ticketGet(ref);
+      if(back!==s.ticketImage)continue;                  // not verified: leave it alone
+      const data=s.ticketImage;
+      s.ticketRef=ref;
+      s.ticketMime=(data.match(/^data:([^;]+)/)||[])[1]||'';
+      delete s.ticketImage;
+      moved++;
+      _ticketPush(ref,data);
+    }
+  }
+  if(moved){
+    try{ commitApplied(moved+' ticket'+(moved===1?'':'s')+' moved out of the itinerary into the ticket store',WRITE.SYSTEM); }catch(e){}
+  }
+  return moved;
+}
+
+async function showTicketViewer(di,si){
+  const st0=state.days[di].stops[si];if(!st0||!_stopHasTicket(st0))return;
+  const data=await _stopTicketData(st0);
+  if(!data){ showToast('That ticket could not be found on this device. Open the trip online once to fetch it.',6000); return; }
+  const s={ticketImage:data,ticketFileName:st0.ticketFileName};
+  const mime=(data.match(/^data:([^;]+)/)||[])[1]||st0.ticketMime||'';
   if(!mime.startsWith('image/')){
     // Use Blob URL + window.open — works on iOS; a.click() download doesn't
     try{
@@ -1233,7 +1340,7 @@ function _bookingHtml(stop,where,opts){
   const resv=stop.reservation
     ?'<div class="lodge-resv" style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;color:var(--pine);letter-spacing:0.03em;margin-top:var(--space-1)">&#128203; Conf&nbsp;#&nbsp;'+_escHtml(stop.reservation)+'</div>'
     :'';
-  const ticket=(hasPos&&stop.ticketImage)
+  const ticket=(hasPos&&_stopHasTicket(stop))
     ?'<button class="ticket-view-btn" onclick="event.preventDefault();event.stopPropagation();showTicketViewer('+where.dayIdx+','+where.stopIdx+')" style="margin-top:var(--space-2)">&#127903; '+(o.label||'View Reservation')+'</button>'
     :'';
   return resv+ticket;
@@ -3366,6 +3473,9 @@ function saveStop(){
   // Was a wrapper in trip-extras.js that reassigned window.saveStop. Inlined so
   // saveStop has exactly one definition and cannot be silently replaced.
   if(_syncOvernightArrivals()){ try{commitApplied('Removed a legacy duplicate arrival',WRITE.HEAL);}catch(e){} try{renderAll();}catch(e){} }
+  // A ticket attached just now is still inline. Move it into the store so it
+  // never travels inside the itinerary blob.
+  try{ _migrateTicketsToStore().then(n=>{ if(n)renderAll(); }); }catch(e){}
 }
 
 
@@ -5365,7 +5475,7 @@ const HOURS_GRACE_MINS=15;
 // tattoo at 9 PM, a vaults tour after dark are all admitted on the ticket. The
 // hours check must never argue with a confirmation number.
 function _isBooked(s){
-  return !!(s&&((typeof s.reservation==='string'&&s.reservation.trim())||s.ticketImage));
+  return !!(s&&((typeof s.reservation==='string'&&s.reservation.trim())||_stopHasTicket(s)));
 }
 function _hoursConflicts(){
   const out=[];
@@ -7133,6 +7243,10 @@ async function init(){
   }
 
   try{ _healLoadedItinerary(); }catch(e){}   // ONCE at load, never on every render
+  // Tickets out of the itinerary blob and into their own store. Async and
+  // non-blocking: nothing here may delay the first paint, and a failure leaves
+  // the inline copies exactly where they are.
+  try{ _migrateTicketsToStore().then(n=>{ if(n){ try{renderAll();}catch(e){} } }); }catch(e){}
   // The itinerary as loaded (and healed) is the baseline every later commit is
   // measured against. Without this the first real edit would be reported as a
   // rogue mutation, because loading legitimately assigns `state` directly.

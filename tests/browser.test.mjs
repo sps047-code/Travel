@@ -790,6 +790,12 @@ test('the wizard saves a generated trip with all its days and stops', async () =
   const { page } = await openWizard(WIZ_TRIP);
   await page.evaluate(async () => { await generateTrip(); });
   await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  // waitForURL resolves while the new document is still swapping in, so an
+  // evaluate here can hit a destroyed execution context. Waiting on the app's
+  // own `state` is NOT the fix — trip.js may not finish initialising under the
+  // wizard's route handler. Waiting for the document is enough and is what the
+  // race is actually about.
+  await page.waitForLoadState('domcontentloaded');
   const res = await page.evaluate((nav) => {
     const id = (nav.match(/id=([^&]+)/) || [])[1];
     const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
@@ -809,6 +815,12 @@ test('the wizard keeps the answers you gave it on the trip', async () => {
   const { page } = await openWizard(WIZ_TRIP);
   await page.evaluate(async () => { await generateTrip(); });
   await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  // waitForURL resolves while the new document is still swapping in, so an
+  // evaluate here can hit a destroyed execution context. Waiting on the app's
+  // own `state` is NOT the fix — trip.js may not finish initialising under the
+  // wizard's route handler. Waiting for the document is enough and is what the
+  // race is actually about.
+  await page.waitForLoadState('domcontentloaded');
   const meta = await page.evaluate((nav) => {
     const id = (nav.match(/id=([^&]+)/) || [])[1];
     const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
@@ -852,6 +864,12 @@ test('the blank-trip path creates the right number of empty days', async () => {
   const { page } = await openWizard(WIZ_TRIP);
   await page.evaluate(async () => { await generateSkeleton(); });
   await page.waitForURL(/trip\.html/, { timeout: 20000 });
+  // waitForURL resolves while the new document is still swapping in, so an
+  // evaluate here can hit a destroyed execution context. Waiting on the app's
+  // own `state` is NOT the fix — trip.js may not finish initialising under the
+  // wizard's route handler. Waiting for the document is enough and is what the
+  // race is actually about.
+  await page.waitForLoadState('domcontentloaded');
   const res = await page.evaluate((nav) => {
     const id = (nav.match(/id=([^&]+)/) || [])[1];
     const t = JSON.parse(localStorage.getItem('tripState_' + id) || 'null');
@@ -2897,7 +2915,7 @@ test('a review note without a severity is not stamped MUST MOVE', async () => {
   });
   await page.evaluate(() => gradeItinerary());
   await page.waitForFunction(
-    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
   const out = await page.evaluate(() => ({
     letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
@@ -2905,7 +2923,11 @@ test('a review note without a severity is not stamped MUST MOVE', async () => {
   }));
   assert.ok(!/Must move/i.test(out.txt),
     'a note saying "not a hard conflict" must not be labelled Must move: ' + out.txt);
-  assert.match(out.txt, /Worth checking/, 'it is a watch item');
+  // v206 goes further than v202 did: a note with nothing behind it is not shown
+  // at all, rather than shown as a watch item.
+  assert.ok(!/Tight but workable/.test(out.txt),
+    'and an unproven note is not shown at all: ' + out.txt);
+  assert.match(out.txt, /Not shown — nothing to check/, 'but the user is told it was dropped');
   assert.equal(out.letter, 'A', 'and it does not cap the grade, got ' + out.letter);
   await page.close();
 });
@@ -3242,5 +3264,290 @@ test('the estimate agrees with what the itinerary itself allows', async () => {
     'the plan allows about half an hour, got ' + out.planned);
   assert.ok(Math.abs(out.estimated - out.planned) <= 12,
     'the estimate must be close to it, got ' + out.estimated + ' vs ' + out.planned);
+  await page.close();
+});
+
+// ===========================================================================
+// v206 — "WORTH CHECKING" WAS NOISE. Every one of those notes was about
+// opening times the app had not actually checked, and several were about stops
+// with tickets already bought for that date and time.
+// ===========================================================================
+test('speculative timing notes never reach the screen', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 12, 2026', stops: [
+      // Both in central London: eleven minutes apart is realistic, so the
+      // auto-fix leaves the times alone and the test measures what it claims to.
+      // (Cambridge to London in eleven minutes is not, and the app correctly
+      // pushed the Gallery past closing — a real conflict, not the one under test.)
+      { name: "St Martin-in-the-Fields", type: 'hike', time: '4:03 PM', endTime: '4:25 PM',
+        lat: 51.5089, lng: -0.1266 },
+      { name: 'National Gallery', type: 'hike', time: '4:36 PM', endTime: '5:45 PM',
+        lat: 51.5089, lng: -0.1283, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' },
+      timing_conflicts: [
+        { day: 1, stop_name: 'St Martin-in-the-Fields',
+          issue: 'Last admission is typically 4:00 PM. Confirm with the venue.' },
+        { day: 1, stop_name: 'National Gallery', scheduled_time: '4:36 PM',
+          hours: '10:00 AM - 6:00 PM', issue: 'Tight but workable — move with purpose.' },
+      ],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => {
+    const sections = Array.from(document.querySelectorAll('#ai-grader-content .ai-section')).map((s) => ({
+      hdr: (s.querySelector('.ai-section-hdr') || {}).textContent || '',
+      body: Array.from(s.querySelectorAll('.ai-item')).map((i) => i.textContent).join(' | '),
+    }));
+    return { sections, txt: document.getElementById('ai-grader-content').textContent };
+  });
+  const issues = out.sections.find((s) => /Timing Issues/.test(s.hdr));
+  assert.ok(!issues, 'nothing was demonstrated, so nothing is listed: ' + JSON.stringify(issues));
+  assert.ok(!/Worth checking/.test(out.txt), 'and no "worth checking" filler');
+  assert.match(out.txt, /Not shown — nothing to check/, 'the user is told what was dropped');
+  await page.close();
+});
+
+test('a stop you hold a ticket for is never questioned on hours', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Sat, Aug 8, 2026', stops: [
+      { name: 'Royal Edinburgh Military Tattoo', type: 'hike', time: '9:00 PM', endTime: '11:00 PM',
+        lat: 55.9486, lng: -3.1999, dayHours: '9:30 AM - 5:00 PM', reservation: 'TAT-4471' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' },
+      timing_conflicts: [{ day: 1, stop_name: 'Royal Edinburgh Military Tattoo', severity: 'blocked',
+        scheduled_time: '9:00 PM', hours: '9:30 AM - 5:00 PM', issue: 'Scheduled after closing.' }],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const out = await page.evaluate(() => ({
+    letter: document.querySelector('#ai-grader-content .ai-grade-letter').textContent.trim(),
+    txt: document.getElementById('ai-grader-content').textContent,
+  }));
+  assert.equal(out.letter, 'A', 'a ticketed evening event must not cap the grade, got ' + out.letter);
+  assert.ok(!/Must move/.test(out.txt), 'and must not be called impossible: ' + out.txt);
+  assert.match(out.txt, /you hold a booking for that time/, 'the reason is stated');
+  await page.close();
+});
+
+test('a real, unbooked closure is still reported', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+        lat: 51.5076, lng: -0.0994, dayHours: '10:00 AM - 6:00 PM' },
+    ] },
+  ], { day: null });
+  await page.evaluate(() => {
+    window.fetch = async () => ({ ok: true, json: async () => ({ content: [{ text: JSON.stringify({
+      overall_grade: { letter: 'A', rationale: 'Strong.' }, timing_conflicts: [],
+    }) }] }) });
+  });
+  await page.evaluate(() => gradeItinerary());
+  await page.waitForFunction(
+    () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
+    null, { timeout: 20000 });
+  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  assert.match(txt, /Tate Modern/, 'filtering noise must not silence the real findings');
+  assert.match(txt, /Must move/);
+  await page.close();
+});
+
+test('the grader is told not to speculate and that a booking settles it', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await captureAiRequest(page);
+  await page.evaluate(() => gradeItinerary());
+  const body = await aiRequestBody(page);
+  assert.match(body.system, /DO NOT RAISE SPECULATION/);
+  assert.match(body.system, /A BOOKING SETTLES THE QUESTION/);
+  assert.match(body.system, /a hedge is worse than saying nothing/);
+  await page.close();
+});
+
+// ===========================================================================
+// SAVE AND RESTORE. Asked to restore yesterday's itinerary; it could not be
+// done. History held descriptions with no data behind them, cloud backups ran
+// weekly, and the only restore path was a hand-typed ?recover=1 URL. A copy you
+// cannot put back is not a backup.
+// ===========================================================================
+const SR_TRIP = [
+  { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'British Museum', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.5194, lng: -0.127, reservation: 'BM-4471' },
+    { name: 'Dishoom', type: 'food', time: '1:00 PM', endTime: '1:45 PM', lat: 51.5115, lng: -0.1265 },
+    { name: 'Royal Horseguards', type: 'lodge', time: '8:00 PM', endTime: '9:00 PM',
+      lat: 51.5063, lng: -0.1237 },
+  ] },
+  { title: 'Day 2', subtitle: 'Thu, Aug 6, 2026', stops: [
+    { name: 'Tower of London', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.5081, lng: -0.0759 },
+  ] },
+];
+
+// Solo trip: no cloud, so Save/Restore must work entirely on the device.
+async function openSaveTrip(days) {
+  const { page } = await openTrip(days || SR_TRIP, { day: null });
+  await page.evaluate(() => { localStorage.removeItem(_savesKey()); });
+  return page;
+}
+
+test('Save keeps a copy and says what it kept', async () => {
+  const page = await openSaveTrip();
+  const out = await page.evaluate(async () => {
+    window.prompt = () => 'before the AI touched it';
+    await saveItinerary();
+    const saves = _loadLocalSaves();
+    return { n: saves.length, name: saves[0].name, days: saves[0].days, stops: saves[0].stops,
+      toast: (document.getElementById('share-toast') || {}).textContent || '' };
+  });
+  assert.equal(out.n, 1, 'one save was kept');
+  assert.equal(out.name, 'before the AI touched it');
+  assert.equal(out.days, 2);
+  assert.equal(out.stops, 4);
+  assert.match(out.toast, /Saved/, 'and it says so: ' + out.toast);
+  assert.match(out.toast, /4 stops/, 'with the counts, so a failed save is distinguishable');
+  await page.close();
+});
+
+test('Restore brings back exactly what was saved', async () => {
+  const page = await openSaveTrip();
+  const out = await page.evaluate(async () => {
+    window.prompt = () => 'good copy';
+    window.confirm = () => true;
+    await saveItinerary();
+    // Wreck it the way a bad sync would: move a stop and delete another.
+    commit('break it', () => {
+      state.days[0].stops[0].time = '6:00 AM';
+      state.days[0].stops.splice(1, 1);
+    }, WRITE.AI);
+    const broken = { time: state.days[0].stops[0].time, stops: state.days[0].stops.length };
+    await openRestore();
+    restoreSaved(0);
+    return { broken, time: state.days[0].stops[0].time,
+      names: state.days[0].stops.map((s) => s.name),
+      resv: state.days[0].stops[0].reservation };
+  });
+  assert.equal(out.broken.time, '6:00 AM', 'it really was broken first');
+  assert.equal(out.broken.stops, 2);
+  assert.equal(out.time, '10:00 AM', 'the time is back');
+  assert.deepEqual(out.names, ['British Museum', 'Dishoom', 'Royal Horseguards'], 'the stop is back');
+  assert.equal(out.resv, 'BM-4471', 'and so is the confirmation number');
+  await page.close();
+});
+
+// THE TRAP: restoring a smaller copy is exactly the write _wouldLoseData exists
+// to refuse. Without force it is silently blocked and Restore does nothing.
+test('restoring a much smaller copy succeeds, but only deliberately', async () => {
+  // Start SMALL and grow. Trimming a 12-stop day to 3 is itself the write the
+  // brake refuses, so building the fixture that way never got off the ground.
+  const small = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+    Array.from({ length: 3 }, (_, i) => ({ name: 'Stop ' + (i + 1), type: 'hike',
+      time: (8 + i) + ':00 AM', endTime: (8 + i) + ':45 AM', lat: 51.5 + i / 100, lng: -0.12 })) }];
+  const page = await openSaveTrip(small);
+  const out = await page.evaluate(async () => {
+    window.prompt = () => 'small';
+    window.confirm = () => true;
+    await saveItinerary();
+    // Grow well beyond double, which is allowed.
+    commit('add them back', () => {
+      for (let i = 0; i < 9; i++) {
+        state.days[0].stops.push({ name: 'Extra ' + i, type: 'hike', time: '2:00 PM',
+          endTime: '2:30 PM', lat: 51.6 + i / 100, lng: -0.12 });
+      }
+    }, WRITE.USER);
+    const grown = state.days[0].stops.length;
+    // Without force, the brake must refuse this.
+    const blocked = commitReplace('no force', JSON.parse(JSON.stringify(_loadLocalSaves()[0].state)), WRITE.USER);
+    const afterBlocked = state.days[0].stops.length;
+    // Through the Restore button, it must go through.
+    await openRestore();
+    restoreSaved(_restoreList.findIndex((e) => e.name === 'small'));
+    return { grown, blocked, afterBlocked, afterRestore: state.days[0].stops.length };
+  });
+  assert.equal(out.grown, 12);
+  assert.equal(out.blocked, false, 'the brake refuses an unforced shrink');
+  assert.equal(out.afterBlocked, 12, 'and nothing changed');
+  assert.equal(out.afterRestore, 3, 'Restore goes through deliberately, got ' + out.afterRestore);
+  await page.close();
+});
+
+test('force skips only the loss brake, never the structural check', async () => {
+  const page = await openSaveTrip();
+  const out = await page.evaluate(() => {
+    const before = JSON.stringify(state);
+    const ok = commitReplace('corrupt', { days: 'not an array' }, WRITE.USER, { force: true });
+    return { ok, unchanged: JSON.stringify(state) === before };
+  });
+  assert.equal(out.ok, false, 'a structurally broken copy is refused even with force');
+  assert.ok(out.unchanged, 'and the itinerary is untouched');
+  await page.close();
+});
+
+test('a restore is itself recorded, so it can be undone too', async () => {
+  const page = await openSaveTrip();
+  const log = await page.evaluate(async () => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    window.prompt = () => 'checkpoint';
+    window.confirm = () => true;
+    _markCommitted();
+    await saveItinerary();
+    commit('later edit', () => { state.days[0].stops[0].notes = 'changed'; }, WRITE.USER);
+    await openRestore();
+    restoreSaved(0);
+    return _loadChangeLog().map((e) => e.desc);
+  });
+  assert.ok(log.some((d) => /Saved a copy: "checkpoint"/.test(d)), 'the save is logged: ' + JSON.stringify(log));
+  assert.ok(log.some((d) => /Restored "checkpoint"/.test(d)), 'and so is the restore');
+  await page.close();
+});
+
+test('the Save and Restore buttons are on the trip overview', async () => {
+  const page = await openSaveTrip();
+  // Make sure we are actually on the Overview before looking for its header.
+  await page.evaluate(() => switchDay(-1));
+  await page.waitForFunction(
+    () => !!document.querySelector('.ov-trip-head'), null, { timeout: 15000 });
+  const btns = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.ov-trip-head .ai-action-btn')).map((b) => b.textContent.trim()));
+  assert.ok(btns.some((b) => /Save/.test(b)), 'a Save button exists: ' + JSON.stringify(btns));
+  assert.ok(btns.some((b) => /Restore/.test(b)), 'and a Restore button: ' + JSON.stringify(btns));
+  await page.close();
+});
+
+test('Restore says so plainly when there is nothing saved yet', async () => {
+  const page = await openSaveTrip();
+  const txt = await page.evaluate(async () => {
+    await openRestore();
+    return document.getElementById('trip-recap-content').textContent;
+  });
+  assert.match(txt, /No saved copies yet/, 'got: ' + txt);
+  assert.match(txt, /Save/, 'and points at the button that fixes that');
+  await page.close();
+});
+
+test('the oldest saves are dropped, the newest kept', async () => {
+  const page = await openSaveTrip();
+  const out = await page.evaluate(async () => {
+    for (let i = 0; i < SAVE_KEEP + 5; i++) {
+      window.prompt = () => 'save ' + i;
+      await saveItinerary();
+    }
+    const s = _loadLocalSaves();
+    return { n: s.length, first: s[0].name, last: s[s.length - 1].name };
+  });
+  assert.equal(out.n, 25, 'capped at SAVE_KEEP, got ' + out.n);
+  assert.equal(out.last, 'save 29', 'newest kept');
+  assert.equal(out.first, 'save 5', 'oldest dropped');
   await page.close();
 });

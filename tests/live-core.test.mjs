@@ -1489,3 +1489,88 @@ test('a short hop is not saddled with an intercity wait', () => {
     'faster per mile the further you go: '
       + [2, 17, 180].map((r) => r + 'mi=' + mph(r).toFixed(0) + 'mph').join(', '));
 });
+
+// ---------------------------------------------------------------------------
+// "WORTH CHECKING" WAS NOISE. Every one of those notes was about opening times
+// the app had not actually checked, and several were about stops with tickets
+// already bought for that date and time. A finding must be demonstrated.
+// ---------------------------------------------------------------------------
+test('a booked stop is never flagged on opening hours', () => {
+  const conflicts = fn('_hoursConflicts');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    // The Tattoo at 9 PM, on a ticket. Generic hours would call this shut.
+    { name: 'Royal Edinburgh Military Tattoo', type: 'hike', time: '9:00 PM', endTime: '11:00 PM',
+      dayHours: '9:30 AM - 5:00 PM', reservation: 'TAT-4471' },
+    // Same shape, but with a ticket image rather than a number.
+    { name: 'Westminster Abbey Lates', type: 'hike', time: '6:00 PM', endTime: '8:00 PM',
+      dayHours: '9:30 AM - 3:30 PM', ticketImage: 'data:image/png;base64,AAA' },
+    // Unbooked and genuinely shut: still reported.
+    { name: 'Tate Modern', type: 'hike', time: '8:00 PM', endTime: '9:30 PM',
+      dayHours: '10:00 AM - 6:00 PM' },
+  ] }] };
+  const names = conflicts().map((c) => c.stop_name);
+  // The vm has its own Array.prototype, so compare values.
+  assert.equal(names.length, 1, 'only one stop is raised, got ' + JSON.stringify(names));
+  assert.equal(names[0], 'Tate Modern', 'the unbooked, demonstrably shut one');
+});
+
+test('a conflict with no hours behind it is discarded', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: "King's College Chapel", type: 'hike', time: '4:03 PM', endTime: '4:25 PM' },
+  ] }] };
+  const data = vet({
+    overall_grade: { letter: 'A', rationale: 'x' },
+    timing_conflicts: [{ day: 1, stop_name: "King's College Chapel",
+      issue: 'Last admission is typically 4:00 PM or shortly after. Arrive as close as possible.' }],
+  });
+  assert.equal(data.timing_conflicts.length, 0,
+    'speculation about a last admission is not a finding: ' + JSON.stringify(data.timing_conflicts));
+  assert.ok(data._unprovenConflicts.length, 'and the user is told it was dropped');
+});
+
+test('a conflict whose OWN hours do not conflict is discarded', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'National Gallery', type: 'hike', time: '4:36 PM', endTime: '5:45 PM' },
+  ] }] };
+  const data = vet({
+    overall_grade: { letter: 'A', rationale: 'x' },
+    timing_conflicts: [{ day: 1, stop_name: 'National Gallery', scheduled_time: '4:36 PM',
+      hours: '10:00 AM - 6:00 PM', issue: 'Tight but workable — move with purpose.' }],
+  });
+  assert.equal(data.timing_conflicts.length, 0,
+    '4:36 PM is inside 10-6, so there is nothing to report');
+});
+
+test('a conflict that IS demonstrated survives', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: 'St Pauls Cathedral', type: 'hike', time: '5:00 PM', endTime: '6:00 PM' },
+  ] }] };
+  const data = vet({
+    overall_grade: { letter: 'A', rationale: 'x' },
+    timing_conflicts: [{ day: 1, stop_name: 'St Pauls Cathedral', severity: 'blocked',
+      scheduled_time: '5:00 PM', hours: '9:00 AM - 4:30 PM', issue: 'Arrives after it closes.' }],
+  });
+  assert.equal(data.timing_conflicts.length, 1, 'a real one is kept');
+  assert.match(data.timing_conflicts[0].issue, /closes/);
+});
+
+test('a booked stop is dropped even when the review insists', () => {
+  const vet = fn('_vetGradeSuggestions');
+  ctx.state = { days: [{ title: 'D1', stops: [
+    { name: "Clifford's Tower", type: 'hike', time: '4:35 PM', endTime: '5:00 PM',
+      dayHours: '10:00 AM - 5:00 PM', reservation: '45J87VEX' },
+  ] }] };
+  const data = vet({
+    overall_grade: { letter: 'A', rationale: 'x' },
+    timing_conflicts: [{ day: 1, stop_name: "Clifford's Tower", severity: 'blocked',
+      scheduled_time: '4:35 PM', hours: '10:00 AM - 5:00 PM',
+      issue: 'Arrives after the typical last admission of 4:30 PM.' }],
+  });
+  assert.equal(data.timing_conflicts.length, 0,
+    'a pre-paid ticket answers the question: ' + JSON.stringify(data.timing_conflicts));
+  assert.ok(data._unprovenConflicts.some((x) => /booking/.test(x)),
+    'and says why: ' + JSON.stringify(data._unprovenConflicts));
+});

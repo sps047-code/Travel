@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v205';
+window.APP_CODE_VERSION='v206';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -162,7 +162,7 @@ function _fieldLosses(beforeState,afterState){
 // The ONE way to change the itinerary.
 //   commit('Moved dinner later', () => { ...mutate state... }, WRITE.USER)
 // Returns true if the change was written, false if it was refused and rolled back.
-function commit(desc,mutate,source){
+function commit(desc,mutate,source,opts){
   source=source||WRITE.USER;
   const before=JSON.stringify(state);
   // Anything that changed the itinerary WITHOUT coming through here is a bug in
@@ -173,7 +173,7 @@ function commit(desc,mutate,source){
   }
   try{ if(typeof mutate==='function')mutate(); }
   catch(err){ try{state=JSON.parse(before);}catch(e){} _lastCommitted=before; throw err; }
-  return _finishCommit(before,desc,source);
+  return _finishCommit(before,desc,source,opts);
 }
 // For a caller that has ALREADY mutated state and needs the same validation,
 // rollback and recording. Taking a fresh snapshot here would compare the new
@@ -183,7 +183,7 @@ function commitApplied(desc,source){
   const before=(_lastCommitted!==null)?_lastCommitted:JSON.stringify(state);
   return _finishCommit(before,desc,source||WRITE.SYSTEM);
 }
-function _finishCommit(before,desc,source){
+function _finishCommit(before,desc,source,opts){
   const fatal=_fatalStateErrors(state);
   if(fatal.length){
     try{state=JSON.parse(before);}catch(e){}
@@ -196,8 +196,11 @@ function _finishCommit(before,desc,source){
   // Canonical times are maintained here, at the one write path, rather than by
   // each caller remembering to do it.
   try{ _normalizeTimes(state); }catch(e){}
-  // A single edit must never quietly destroy the trip.
-  if(_wouldLoseData(JSON.parse(before),state)){
+  // A single edit must never quietly destroy the trip. The ONE exception is a
+  // restore: bringing back an older, smaller copy is exactly the write this
+  // brake exists to stop, and it is precisely what was asked for. force skips
+  // this check and nothing else — the structural validation above still ran.
+  if(!(opts&&opts.force)&&_wouldLoseData(JSON.parse(before),state)){
     try{state=JSON.parse(before);}catch(e){}
     _lastCommitted=before;
     try{_recordChange({source:source,desc:desc,refused:'would have removed most of the itinerary'});}catch(e){}
@@ -218,8 +221,8 @@ function _finishCommit(before,desc,source){
 // Adopting a copy from elsewhere (the cloud, an import, a restore) replaces the
 // whole itinerary, so it is a commit with a different shape: there is nothing to
 // mutate, only a new value to accept.
-function commitReplace(desc,next,source){
-  return commit(desc,()=>{state=next;},source||WRITE.CLOUD);
+function commitReplace(desc,next,source,opts){
+  return commit(desc,()=>{state=next;},source||WRITE.CLOUD,opts);
 }
 // Called after any path that legitimately sets `state` outside commit() — load,
 // restore, cloud adoption — so the next commit does not misreport it as a rogue
@@ -3367,6 +3370,169 @@ function saveStop(){
   if(_syncOvernightArrivals()){ try{commitApplied('Removed a legacy duplicate arrival',WRITE.HEAL);}catch(e){} try{renderAll();}catch(e){} }
 }
 
+
+/* ============================================================================
+   SAVE AND RESTORE
+
+   Press Save to keep a copy of the itinerary. Press Restore to bring one back.
+   That is the whole feature, and it is what "backup" has to mean: a copy you
+   can put back. What existed before was a History log that recorded what
+   changed but held no data, and weekly cloud backups reachable only through a
+   hand-typed ?recover=1 URL. Neither let anyone restore yesterday's itinerary.
+
+   A copy of this trip is ~23 KB, so keeping 25 of them costs well under a
+   megabyte. Storage was never the reason this did not exist.
+   ========================================================================== */
+const SAVE_KEEP=25;
+function _savesKey(){ return 'seasons_saves_'+(typeof tripId!=='undefined'?tripId:''); }
+function _loadLocalSaves(){
+  try{ const v=JSON.parse(localStorage.getItem(_savesKey())||'[]'); return Array.isArray(v)?v:[]; }
+  catch(e){ return []; }
+}
+function _writeLocalSaves(list){
+  // Trim oldest first, and keep trimming if the device refuses the write, so a
+  // full disk degrades to fewer saves rather than to none.
+  let keep=list.slice(-SAVE_KEEP);
+  for(;;){
+    try{ localStorage.setItem(_savesKey(),JSON.stringify(keep)); return true; }
+    catch(e){
+      if(keep.length<=1){ try{localStorage.removeItem(_savesKey());}catch(err){} return false; }
+      keep=keep.slice(Math.ceil(keep.length/2));
+    }
+  }
+}
+function _stateCounts(st){
+  const days=(st&&st.days&&st.days.length)||0;
+  let stops=0; try{ (st.days||[]).forEach(d=>{stops+=((d.stops||[]).length);}); }catch(e){}
+  return {days:days,stops:stops};
+}
+// Keep a copy of the itinerary as it is right now.
+async function saveItinerary(){
+  if(!state||!Array.isArray(state.days)||!state.days.length){ showToast('Nothing to save yet.'); return; }
+  const c=_stateCounts(state);
+  const suggested=new Date().toLocaleString();
+  const name=prompt('Name this save (optional):\n\n'+c.days+' days, '+c.stops+' stops',suggested);
+  if(name===null)return;                                   // cancelled
+  const at=Date.now();
+  const entry={at:at,name:(name.trim()||suggested),by:_sessionId().slice(0,6),
+    days:c.days,stops:c.stops,state:JSON.parse(JSON.stringify(state))};
+  const list=_loadLocalSaves(); list.push(entry);
+  const okLocal=_writeLocalSaves(list);
+  let okCloud=false;
+  if(getTripType()==='family'){
+    try{
+      await _dbFamilyPut('/saves/'+at,entry);
+      okCloud=true;
+      // Trim the cloud to the newest SAVE_KEEP.
+      try{
+        const all=await _dbFamilyGet('/saves');
+        const keys=Object.keys(all||{}).sort((a,b)=>Number(a)-Number(b));
+        for(let i=0;i<keys.length-SAVE_KEEP;i++){ await _dbFamilyDelete('/saves/'+keys[i]); }
+      }catch(e){}
+    }catch(e){}
+  }
+  try{_recordChange({source:WRITE.USER,desc:'Saved a copy: "'+entry.name+'" ('+c.days+' days, '+c.stops+' stops)'});}catch(e){}
+  // Say what happened. A save with no feedback cannot be told from one that failed.
+  if(okCloud) showToast('Saved — '+c.days+' days, '+c.stops+' stops. On this device and in the cloud.',4000);
+  else if(okLocal) showToast('Saved on this device — '+c.days+' days, '+c.stops+' stops. Could not reach the cloud.',5000);
+  else showToast('Could not save. This device is out of storage space.',6000);
+  renderAll();
+}
+// Every copy that can be restored: saves made here, saves made on another
+// device, and the older weekly backups already sitting in the cloud.
+async function _gatherRestorable(){
+  const out=[];
+  const seen=new Set();
+  const add=(o)=>{ const k=String(o.at); if(seen.has(k))return; seen.add(k); out.push(o); };
+  _loadLocalSaves().forEach(e=>{ if(e&&e.state)add({at:e.at,name:e.name,by:e.by,state:e.state,kind:'save'}); });
+  if(getTripType()==='family'){
+    try{
+      const saves=await _dbFamilyGet('/saves');
+      Object.keys(saves||{}).forEach(k=>{ const e=saves[k]; if(e&&e.state)add({at:e.at||Number(k),name:e.name||'Saved copy',by:e.by,state:e.state,kind:'save'}); });
+    }catch(e){}
+    try{
+      const hist=await _dbFamilyGet('/history');
+      Object.keys(hist||{}).forEach(k=>{ const h=hist[k]; if(h&&h.state)add({at:h.at||Number(k),name:h.desc||'Automatic backup',by:h.by,state:h.state,kind:'auto'}); });
+    }catch(e){}
+  }
+  out.sort((a,b)=>Number(b.at)-Number(a.at));
+  return out;
+}
+let _restoreList=[];
+async function openRestore(){
+  const modal=document.getElementById('trip-recap-modal');
+  const body=document.getElementById('trip-recap-content');
+  if(!modal||!body)return;
+  const title=modal.querySelector('.modal-title');
+  if(title)title.innerHTML='&#8634; Restore a saved itinerary';
+  body.innerHTML='<div class="ai-loading-wrap"><span class="ai-loading-spinner">&#8635;</span><div style="font-family:var(--font-ui);color:var(--muted)">Looking for saved copies…</div></div>';
+  modal.classList.add('open');
+  _restoreList=await _gatherRestorable();
+  body.innerHTML=_restoreHtml();
+}
+function _restoreHtml(){
+  const cur=_stateCounts(state);
+  if(!_restoreList.length){
+    return '<div style="padding:var(--space-4);font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);line-height:1.5">'+
+      'No saved copies yet. Press <b>&#128190; Save</b> to keep one — then it will be listed here and you can bring it back at any time.</div>';
+  }
+  const rows=_restoreList.map((e,i)=>{
+    const c=_stateCounts(e.state);
+    const when=(()=>{try{return new Date(Number(e.at)).toLocaleString();}catch(x){return '';}})();
+    const diff=c.stops-cur.stops;
+    const diffTxt=diff===0?'same number of stops as now'
+      :(diff>0?('<b>'+diff+' more</b> stops than now'):('<b>'+Math.abs(diff)+' fewer</b> stops than now'));
+    return '<div style="padding:var(--space-3) 0;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:baseline;flex-wrap:wrap">'+
+        '<span style="font-family:var(--font-ui);font-size:var(--text-md);font-weight:700;color:var(--ink)">'+_escHtml(e.name||'Saved copy')+'</span>'+
+        '<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);white-space:nowrap">'+_escHtml(when)+'</span>'+
+      '</div>'+
+      '<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);margin-top:2px">'+
+        c.days+' days &middot; '+c.stops+' stops &middot; '+diffTxt+
+        (e.kind==='auto'?' &middot; <span style="color:var(--river)">automatic</span>':'')+'</div>'+
+      '<details style="margin-top:var(--space-2)"><summary style="cursor:pointer;font-family:var(--font-ui);font-size:var(--text-sm);color:var(--river)">Show every day &amp; stop</summary>'+
+        '<div style="margin-top:var(--space-2);max-height:260px;overflow:auto">'+_recPreview(JSON.stringify(e.state)).html+'</div></details>'+
+      '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap">'+
+        '<button class="ai-action-btn" style="background:var(--pine)" onclick="restoreSaved('+i+')">&#8634; Restore this copy</button>'+
+        '<button class="ai-action-btn" style="background:var(--river)" onclick="downloadSaved('+i+')">&#11015; Download</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);margin-bottom:var(--space-2)">'+
+      'You have <b>'+cur.days+' days, '+cur.stops+' stops</b> right now. Restoring replaces that on every device.</div>'+
+    '<div style="max-height:60vh;overflow-y:auto">'+rows+'</div>';
+}
+function downloadSaved(i){
+  const e=_restoreList[i]; if(!e)return;
+  try{
+    const blob=new Blob([JSON.stringify(e.state)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=tripId+'-'+String(e.name||'save').replace(/[^A-Za-z0-9_-]+/g,'-').slice(0,40)+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+  }catch(err){ showToast('Download failed: '+(err&&err.message||err)); }
+}
+function restoreSaved(i){
+  const e=_restoreList[i]; if(!e||!e.state)return;
+  const from=_stateCounts(e.state), now=_stateCounts(state);
+  const lost=now.stops-from.stops;
+  const when=(()=>{try{return new Date(Number(e.at)).toLocaleString();}catch(x){return '';}})();
+  const msg='Restore "'+(e.name||'saved copy')+'"'+(when?', saved '+when:'')+'?\n\n'+
+    'That copy has '+from.stops+' stops. You have '+now.stops+' now.\n'+
+    (lost>0?(lost+' stop'+(lost===1?'':'s')+' will be REMOVED.\n'):'')+
+    '\nThis changes the itinerary on every device. You can save a copy first if you want to keep what you have.';
+  if(!confirm(msg))return;
+  // force skips ONLY the catastrophic-loss brake — restoring an older, smaller
+  // copy is exactly the write that brake exists to stop, and here it is what was
+  // asked for. Structural validation still applies.
+  const ok=commitReplace('Restored "'+(e.name||'saved copy')+'"'+(when?' from '+when:''),
+    JSON.parse(JSON.stringify(e.state)),WRITE.USER,{force:true});
+  if(ok){
+    document.getElementById('trip-recap-modal')?.classList.remove('open');
+    showToast('Restored — '+from.days+' days, '+from.stops+' stops.',4000);
+    renderAll();
+  }
+}
+
 /* ---- Audio Tours ---- */
 const AUDIO_TOURS={
   'london':[
@@ -3791,6 +3957,8 @@ function renderOverview(){
     '<button class="ai-action-btn" onclick="openShareModal()" style="background:var(--pine)">&#128279; Share</button>'+
     '<button class="ai-action-btn" onclick="openTravelersModal()" style="background:var(--slate,#4A6572)">&#128100; Travelers</button>'+
     '<button class="ai-action-btn" id="offline-btn" onclick="downloadTripOffline()" style="background:var(--river)" title="Download this itinerary so you can view it without internet">'+(localStorage.getItem("offline_"+tripId)==="1"?"&#10003; Saved Offline":"&#11015; Save Offline")+'</button>'+
+    '<button class="ai-action-btn" onclick="saveItinerary()" style="background:var(--pine)" title="Keep a copy of the itinerary exactly as it is now">&#128190; Save</button>'+
+    '<button class="ai-action-btn" onclick="openRestore()" style="background:var(--river)" title="Bring back a saved copy of the itinerary">&#8634; Restore</button>'+
     '<button class="ai-action-btn" onclick="openChangeLog()" style="background:var(--slate,#4A6572)" title="Every change to this itinerary: what changed, when, and what made it">&#128220; History</button>'+
     '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
@@ -4266,7 +4434,7 @@ function _stopFamily(){
 // Build a human-readable preview (day titles + every stop name) and a keyword
 // check from a raw JSON string. Lets the user CONFIRM a copy is the right one
 // (e.g. it contains "Lincoln") before trusting or pushing it.
-function _recPreview(raw,keyword){
+function _recPreview(raw,keyword){   // keyword optional: only the recovery screen still passes one
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let st;
   try{ st=JSON.parse(raw); }catch(e){ return {ok:false,html:'<span style="color:#a00">Not valid JSON.</span>',days:0,stops:0,has:false}; }
@@ -5100,10 +5268,18 @@ const HOURS_GRACE_MINS=15;
 //
 // The first version called a trim "hard", so a 31-minute overrun on one stop out
 // of 85 was treated exactly like a cathedral being shut on the day.
+// A booking IS the answer to "is it open then". A ticket bought for that date
+// and time beats any generic opening-hours line: an evening abbey tour, a
+// tattoo at 9 PM, a vaults tour after dark are all admitted on the ticket. The
+// hours check must never argue with a confirmation number.
+function _isBooked(s){
+  return !!(s&&((typeof s.reservation==='string'&&s.reservation.trim())||s.ticketImage));
+}
 function _hoursConflicts(){
   const out=[];
   (state.days||[]).forEach((d,di)=>{
     (d.stops||[]).forEach(s=>{
+      if(_isBooked(s))return;                               // you hold a ticket for this time
       const line=s.dayHours||'';
       if(!line)return;
       const start=_parseTimeMins(s.time);
@@ -5210,7 +5386,37 @@ function _vetGradeSuggestions(data){
       return true;
     });
   }
-  // Local conflicts are authoritative and are merged in, deduplicated by stop.
+  // A CONFLICT MUST BE DEMONSTRATED, NOT SUSPECTED. A note that a place "may"
+  // apply a last admission, or that the group "should confirm with the venue",
+  // tells you nothing you did not already know and buries the findings that are
+  // real. Every conflict the review supplies has to state the hours it is
+  // relying on, and those hours have to actually conflict with the time the stop
+  // is scheduled. Anything else is dropped.
+  const stopAt=(day,name)=>{
+    const d=(state.days||[])[(+day||0)-1];
+    if(!d)return null;
+    const key=String(name||'').toLowerCase().trim();
+    return (d.stops||[]).find(x=>String(x.name||'').toLowerCase().trim()===key)||null;
+  };
+  const unproven=[];
+  data.timing_conflicts=(data.timing_conflicts||[]).filter(c=>{
+    const stop=stopAt(c.day,c.stop_name);
+    if(stop&&_isBooked(stop)){
+      unproven.push((c.stop_name||'a stop')+' — you hold a booking for that time');
+      return false;
+    }
+    // Hours it can point to: its own, else the ones the app holds for that stop.
+    const hours=c.hours||(stop&&stop.dayHours)||'';
+    const when=_parseTimeMins(c.scheduled_time||(stop&&stop.time));
+    const open=_isOpenAt(hours,when,'arriving');
+    if(open===false)return true;                           // demonstrably shut: keep
+    const endWhen=_parseTimeMins(stop&&stop.endTime);
+    if(hours&&endWhen!=null&&_isOpenAt(hours,endWhen,'leaving')===false)return true;   // overruns
+    unproven.push((c.stop_name||'a stop')+' — no hours given that conflict with the time');
+    return false;
+  });
+  data._unprovenConflicts=unproven;
+  // The app's OWN findings are evidence, not opinion, and are merged in.
   const local=_hoursConflicts();
   const have=new Set((data.timing_conflicts||[]).map(c=>String(c.day)+'|'+String(c.stop_name||'').toLowerCase()));
   data.timing_conflicts=(data.timing_conflicts||[]).concat(
@@ -5234,7 +5440,7 @@ function _vetGradeSuggestions(data){
   return data;
 }
 
-const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields, and they MUST BE DIFFERENT PLACES. Replacing a stop with itself is not a swap \u2014 if the point is about timing or how to use the visit, put it in pacing_notes instead. Swaps with the same place on both sides are moved there automatically.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts: every entry MUST carry \u0022severity\u0022, one of \u0022blocked\u0022 (cannot be done at all: shut that day, or arrived at after closing), \u0022trim\u0022 (you get in, but the visit is scheduled to run past closing) or \u0022watch\u0022 (workable but tight). Use \u0022blocked\u0022 ONLY when the visit genuinely cannot happen. If your own wording is \u0022not a hard conflict\u0022, \u0022tight but workable\u0022 or \u0022confirm with the venue\u0022, the severity is \u0022watch\u0022, never \u0022blocked\u0022.\n7a. STAYING UNTIL A PLACE CLOSES IS THE POINT, NOT A PROBLEM. A visit that ends exactly at closing time is a day well used. NEVER advise leaving early to avoid being rushed out, and never treat a visit that runs to closing as a conflict. The only timing problem worth raising is a visit scheduled to end AFTER the doors shut \u2014 and the fix for that is to end it at closing and bring the NEXT stop forward, not to cut the visit short.\n7b. LAST ADMISSION only matters if you ARRIVE after it. If the group is already inside before last admission, it is irrelevant \u2014 do not raise it. If you are unsure whether a last admission applies, that is a \u0022watch\u0022 note, never \u0022blocked\u0022.\n7c. A constraint you cannot resolve from the itinerary \u2014 a tide table, a seasonal timetable, whether a pre-booked ticket beats a last-admission cutoff \u2014 is a \u0022watch\u0022 item to verify, not a stop that must move.\n8. Judge the grade in PROPORTION to the size of the trip. A stop that is impossible \u2014 shut that day, or arrived at after closing \u2014 is a real defect, and one of those on an eighty-stop trip is a small blemish, not a failure. A visit that merely runs past closing is NOT a defect at all: the traveller gets in and leaves earlier, so mention it and move on. Arriving a few minutes before opening, or leaving exactly at closing time, is not a conflict and must not be reported as one. Capping is applied automatically from the impossible stops, so do not double-dock. Judge the itinerary on the QUALITY OF THE CHOICES, and award an A when they are genuinely excellent \u2014 do not withhold one out of caution or because of a handful of timing adjustments.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
+const GRADE_SYSTEM='You are a seasoned travel editor reviewing an itinerary the way a Cond\u00e9 Nast editor would \u2014 direct, specific, and focused on what will make or break the experience. Core question: does this itinerary hit the must-see sights, or are iconic experiences being missed?\n\nOPENING HOURS ARE A HARD CONSTRAINT, NOT A DETAIL. A suggestion for a place that is shut at the time you propose is worthless and counts against your own credibility. Before you suggest ANY addition or swap:\n1. Work out the actual clock time the visit would happen, from the surrounding stops on that day.\n2. State that place\u0027s real opening hours FOR THAT WEEKDAY (each day below is given with its weekday). If you are not confident of the hours, use typical ones: major museums and galleries roughly 10:00 AM - 6:00 PM (many close one weekday, and most last admission is 30-60 min before closing); churches and cathedrals roughly 9:00 AM - 5:00 PM; castles and historic houses roughly 9:30 AM - 5:00 PM; shops roughly 9:00 AM - 6:00 PM; parks, squares, markets, viewpoints and neighbourhood walks are open in the evening.\n3. If the place would be CLOSED at that time, either propose a different time on a day that works, or do not suggest it at all. Never suggest a museum or gallery for an evening slot unless it genuinely has a late opening that night, and say which night it is.\n4. Prefer suggestions that are actually open in the slot you are filling. An evening slot wants dinner, a walk, a viewpoint, a show, a pub, a night market \u2014 not a gallery that shut at six.\n\nEvery suggested_additions entry MUST carry \u0022suggested_time\u0022 (a clock time like \u00229:30 AM\u0022) and \u0022hours\u0022 (that weekday\u0027s opening hours, like \u002210:00 AM - 6:00 PM\u0022, or \u0022Closed Monday\u0022). Every suggested_swaps entry MUST carry \u0022suggested_time\u0022 and \u0022add_hours\u0022 for the replacement. These are checked; an entry whose proposed time falls outside the hours it states is discarded.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\u0022overall_grade\u0022:{\u0022letter\u0022:\u0022B+\u0022,\u0022rationale\u0022:\u0022one sentence: biggest strength and biggest gap\u0022},\u0022destination_coverage\u0022:[{\u0022destination\u0022:\u0022London\u0022,\u0022score\u0022:\u00228/10\u0022,\u0022note\u0022:\u0022Missing Tate Modern \u2014 fits Day 2 afternoon near Globe Theatre\u0022}],\u0022suggested_swaps\u0022:[{\u0022remove\u0022:\u0022stop name\u0022,\u0022day\u0022:1,\u0022add\u0022:\u0022replacement name\u0022,\u0022suggested_time\u0022:\u00222:00 PM\u0022,\u0022add_hours\u0022:\u002210:00 AM - 6:00 PM\u0022,\u0022reason\u0022:\u0022specific reason replacement is clearly better for this time slot and location\u0022}],\u0022suggested_additions\u0022:[{\u0022name\u0022:\u0022\u0022,\u0022type\u0022:\u0022\u0022,\u0022reason\u0022:\u0022\u0022,\u0022suggested_day\u0022:1,\u0022suggested_time\u0022:\u0022\u0022,\u0022hours\u0022:\u0022\u0022,\u0022fits_near\u0022:\u0022name of existing nearby stop\u0022}],\u0022pacing_notes\u0022:[\u0022observation only \u2014 never a removal suggestion\u0022],\u0022timing_conflicts\u0022:[{\u0022stop_name\u0022:\u0022\u0022,\u0022day\u0022:1,\u0022issue\u0022:\u0022\u0022}]}\n\nRules:\n1. NEVER suggest removing a top-tier attraction (major museums, iconic landmarks, historic castles, world-famous sites) unless genuinely duplicated.\n2. Every entry in suggested_swaps MUST include both remove AND add fields, and they MUST BE DIFFERENT PLACES. Replacing a stop with itself is not a swap \u2014 if the point is about timing or how to use the visit, put it in pacing_notes instead. Swaps with the same place on both sides are moved there automatically.\n3. suggested_additions MUST name a specific fits_near stop, a specific day with capacity, a suggested_time, and that day\u0027s hours.\n4. pacing_notes are observations only \u2014 never suggest removing stops in them.\n5. Account for trip duration: 2-day city visit needs different priorities than 5-day.\n6. destination_coverage: score each distinct destination. Be specific about what iconic experience is missing.\n7. timing_conflicts: ONLY report a stop you can DEMONSTRATE is a problem. Every entry MUST carry \u0022severity\u0022 (\u0022blocked\u0022 = cannot be done at all; \u0022trim\u0022 = you get in but it is scheduled past closing), \u0022hours\u0022 (that weekday\u0027s actual opening hours) and \u0022scheduled_time\u0022. Entries whose stated hours do not actually conflict with the stated time are DISCARDED before the user sees them, so a hedge is worse than saying nothing.\n7a. STAYING UNTIL A PLACE CLOSES IS THE POINT, NOT A PROBLEM. A visit that ends exactly at closing time is a day well used. NEVER advise leaving early to avoid being rushed out, and never treat a visit that runs to closing as a conflict. The only timing problem worth raising is a visit scheduled to end AFTER the doors shut \u2014 and the fix for that is to end it at closing and bring the NEXT stop forward, not to cut the visit short.\n7b. LAST ADMISSION only matters if you ARRIVE after it. If the group is already inside before last admission, it is irrelevant \u2014 do not raise it. If you are unsure whether a last admission applies, say nothing.\n7c. A constraint you cannot resolve from the itinerary \u2014 a tide table, a seasonal timetable, whether a pre-booked ticket beats a last-admission cutoff \u2014 goes in pacing_notes as something to verify. It is NEVER a timing_conflict, because you have not shown the place is shut.\n7d. DO NOT RAISE SPECULATION. \u0022May apply a strict last admission\u0022, \u0022confirm with the venue\u0022, \u0022typically closes 30 minutes before\u0022, \u0022should be verified\u0022 \u2014 none of these are findings. They tell the traveller nothing they did not already know and they bury the problems that are real. If you do not know that a place is shut at the time planned, say nothing about it.\n7e. A BOOKING SETTLES THE QUESTION. A stop with a confirmation number or a ticket is admitted at the time booked, whatever the general opening hours say \u2014 evening abbey tours, a 9 PM tattoo, an after-dark vaults tour are all normal. NEVER raise an opening-hours concern about a stop that is already booked.\n8. Judge the grade in PROPORTION to the size of the trip. A stop that is impossible \u2014 shut that day, or arrived at after closing \u2014 is a real defect, and one of those on an eighty-stop trip is a small blemish, not a failure. A visit that merely runs past closing is NOT a defect at all: the traveller gets in and leaves earlier, so mention it and move on. Arriving a few minutes before opening, or leaving exactly at closing time, is not a conflict and must not be reported as one. Capping is applied automatically from the impossible stops, so do not double-dock. Judge the itinerary on the QUALITY OF THE CHOICES, and award an A when they are genuinely excellent \u2014 do not withhold one out of caution or because of a handful of timing adjustments.\n9. Tone: experienced travel editor, not a cautious assistant. Be direct.';
 
 async function gradeItinerary(){
   const modal=document.getElementById('ai-grader-modal');
@@ -5352,6 +5558,11 @@ function _renderGradeResult(d){
         '<span style="color:var(--pine)">&#10003; Replace with <strong>'+_escHtml(r.add||'')+'</strong></span><br>'+
         '<span style="color:var(--muted);font-size:var(--text-sm)">'+_escHtml(r.reason||'')+'</span></div>';
     });h+='</div>';
+  }
+  if(d._unprovenConflicts&&d._unprovenConflicts.length){
+    h+='<div class="ai-section"><div class="ai-section-hdr">&#128683; Not shown — nothing to check</div>'+
+      '<div class="ai-item" style="color:var(--muted)">Timing notes are only listed when the hours actually conflict with the '+
+      'time planned, or when you have no booking. Dropped: '+_escHtml(d._unprovenConflicts.join('; '))+'</div></div>';
   }
   if(d._droppedForHours&&d._droppedForHours.length){
     // Say what was thrown away and why. A silent filter is indistinguishable

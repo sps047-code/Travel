@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v206';
+window.APP_CODE_VERSION='v207';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -304,13 +304,9 @@ function _wouldLoseData(prev,next){
 // taken. Backups are WEEKLY: a new version is banked only if the newest existing
 // one is at least a week old, and the oldest are dropped so BACKUP_KEEP remain
 // (so ~5 weeks of history).
-const BACKUP_KEEP=5;
-const BACKUP_INTERVAL_MS=7*24*60*60*1000; // weekly
-// Is a new backup due? True if there is none yet, or the newest is >= a week old.
-function _isBackupDue(newestAt,now){
-  if(!newestAt)return true;
-  return (now-newestAt)>=BACKUP_INTERVAL_MS;
-}
+// Every overwrite is banked now, not one a week, so keep enough to be useful.
+const BACKUP_KEEP=30;
+
 // CLOUD version history: once a week, snapshot the current shared copy into
 // /history, then trim so only the newest BACKUP_KEEP versions are kept. Stored in
 // the shared cloud (NOT on the device), so the versions are available from any
@@ -325,7 +321,9 @@ async function _dbBackupBeforeOverwrite(priorState,ts,desc){
     if(keys.length){
       const nk=keys[keys.length-1];
       const newestAt=(hist[nk]&&hist[nk].at)||Number(nk);
-      if(!_isBackupDue(newestAt,ts))return;
+      // NO CADENCE GATE. This snapshot is the copy that is ABOUT TO BE DESTROYED.
+      // Skipping it because "a backup was taken recently" is exactly how an
+      // overwritten version ends up with nothing to go back to.
     }
     await _dbFamilyPut('/history/'+ts,{at:ts,by:_sessionId(),desc:desc||'',state:priorState});
     keys.push(String(ts));
@@ -4316,6 +4314,35 @@ function _syncFamily(changeDesc){
     const next=JSON.parse(JSON.stringify(state));
     // Read what's currently in the cloud so we can (a) run the safety brake and
     // (b) snapshot it into the rolling 5-version history before overwriting.
+    // ---- STALENESS CHECK (compare-and-swap) --------------------------------
+    // A device is only allowed to overwrite the shared copy if it has SEEN the
+    // version it is overwriting. Without this, a device holding a copy from
+    // weeks ago pushes it straight over everyone's current itinerary, and the
+    // loss brake below does not catch it because that only counts stops — an
+    // old copy with a similar number of stops passes.
+    // _lastFamilyAt is the timestamp of the newest change this device has
+    // adopted or made. If the cloud has moved past that, we are stale.
+    try{
+      const lc=await _dbFamilyGet('/lastChange');
+      if(lc&&lc.at&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
+        try{console.warn('[family] push blocked — this device has not seen change',lc.at);}catch(e){}
+        try{_recordChange({source:WRITE.SYSTEM,
+          desc:'Push blocked: this device had not seen the newer shared copy'+(lc.desc?' ("'+lc.desc+'")':''),
+          refused:'stale copy'});}catch(e){}
+        try{showToast('⚠ NOT SYNCED — another device changed the itinerary since this one last updated. Reload before editing so you do not overwrite it.',7000);}catch(e){}
+        return;
+      }
+    }catch(e){
+      // COULD NOT READ THE MARKER. Do not push. A device that cannot see what is
+      // in the cloud cannot know whether it is about to overwrite something
+      // newer, and the loss brake below cannot run either without a cloud copy
+      // to compare against. Refusing to sync is recoverable; a blind overwrite
+      // is not.
+      try{console.warn('[family] push blocked — could not read the shared copy');}catch(err){}
+      try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: could not reach the shared copy to check it',refused:'cloud unreadable'});}catch(err){}
+      try{showToast('⚠ NOT SYNCED — could not reach the shared itinerary to check it. Your change is saved on this device only.',6000);}catch(err){}
+      return;
+    }
     let cloud=null;
     try{ const st=await _dbFamilyGet('/state'); if(_validTripState(st))cloud=st; }catch(e){}
     if(cloud&&_wouldLoseData(cloud,next)){

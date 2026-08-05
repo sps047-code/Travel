@@ -456,16 +456,14 @@ test('_wouldLoseData allows a normal edit (same size or minor change)', () => {
   assert.equal(g(null, full), false, 'no previous trip means nothing to lose');
 });
 
-test('cloud version history exists, keeps 5, and is weekly', () => {
-  // Backups live in the cloud (see _dbBackupBeforeOverwrite), not on the device.
+// The weekly scheduler is GONE. A cadence gate meant the copy about to be
+// destroyed was skipped whenever a backup had been taken recently — which is
+// how an overwritten version ends up with nothing to go back to.
+test('every overwrite is banked, on no schedule at all', () => {
   assert.equal(typeof ctx._dbBackupBeforeOverwrite, 'function', '_dbBackupBeforeOverwrite must exist');
-  assert.match(src, /const BACKUP_KEEP=5/, 'the cloud history must retain exactly 5 versions');
-  const due = fn('_isBackupDue');
-  const now = 1_000 * 60 * 60 * 24 * 400; // arbitrary fixed ms
-  const WEEK = 7 * 24 * 60 * 60 * 1000;
-  assert.equal(due(0, now), true, 'a first backup is always due');
-  assert.equal(due(now - WEEK - 1, now), true, 'due once the newest is a week old');
-  assert.equal(due(now - (WEEK - 1000), now), false, 'not due if the newest is under a week old');
+  assert.match(src, /const BACKUP_KEEP=30/, 'enough history to be useful now that every push banks one');
+  assert.ok(!/_isBackupDue/.test(src), 'the weekly due-check must be gone');
+  assert.ok(!/BACKUP_INTERVAL_MS/.test(src), 'and so must the weekly interval');
 });
 
 // ---------------------------------------------------------------------------

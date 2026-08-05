@@ -3551,3 +3551,170 @@ test('the oldest saves are dropped, the newest kept', async () => {
   assert.equal(out.first, 'save 5', 'oldest dropped');
   await page.close();
 });
+
+// ===========================================================================
+// THE JUNE-14 OVERWRITE. Reported: the itinerary reverted to a version from
+// weeks earlier. _syncFamily read the cloud copy ONLY to count stops, and
+// _wouldLoseData blocks a push only when it drops more than HALF the stops — so
+// an old copy with a similar number of stops overwrote the current one. Nothing
+// checked whether the pushing device had ever SEEN the version it replaced.
+// ===========================================================================
+async function openFamilyTrip(days, cloud) {
+  // The service worker intercepts fetches and page.route does NOT see them, so
+  // every Firebase read in a normal test page fails at the network and the app
+  // silently takes its "cannot reach the cloud" path. Blocking the worker is
+  // what makes the sync path actually testable.
+  const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  const puts = [];
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    if (u.includes('firebaseio.com')) {
+      const m = route.request().method();
+      const json = (body) => route.fulfill({ status: 200, contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*' }, body });
+      if (m === 'PUT') { puts.push({ url: u, body: route.request().postData() }); return json('null'); }
+      if (/\/lastChange\.json/.test(u)) return json(JSON.stringify(cloud.lastChange));
+      if (/\/state\.json/.test(u)) return json(JSON.stringify(cloud.state));
+      return json('null');
+    }
+    // Real Leaflet, or trip.js throws during init and never sets up `state`.
+    if (u.includes('leaflet')) {
+      const ext = u.endsWith('.css') ? '.css' : '.js';
+      const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+      if (fs.existsSync(lf)) return route.fulfill({ status: 200,
+        contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
+    }
+    if (u.includes('tile.openstreetmap.org')) return route.fulfill({ status: 200, contentType: 'image/png',
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    if (u.includes('unpkg.com') || u.includes('cdnjs')) {
+      return route.fulfill({ status: 200, contentType: 'application/javascript', body: 'void 0;' });
+    }
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.addInitScript((d) => {
+    localStorage.setItem('tripState_london-scotland',
+      JSON.stringify({ tripType: 'family', title: 'Test', days: d }));
+    localStorage.setItem('tripFamily_london-scotland', '1');
+  }, days);
+  await page.goto(`${origin}/Travel/trip.html?id=london-scotland&fam=1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof state !== 'undefined' && state && Array.isArray(state.days),
+    null, { timeout: 20000 });
+  return { page, puts };
+}
+
+// A stale device: 11 stops from weeks ago. The cloud has 12 — similar enough
+// that the loss brake never fires.
+const STALE = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+  Array.from({ length: 11 }, (_, i) => ({ name: 'OLD ' + i, type: 'hike',
+    time: (8 + (i % 10)) + ':00 AM', endTime: (8 + (i % 10)) + ':45 AM', lat: 51.5 + i / 100, lng: -0.12 })) }];
+const CURRENT = { days: [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+  Array.from({ length: 12 }, (_, i) => ({ name: 'CURRENT ' + i, type: 'hike',
+    time: (8 + (i % 10)) + ':00 AM', endTime: (8 + (i % 10)) + ':45 AM', lat: 51.5 + i / 100, lng: -0.12 })) }],
+  tripType: 'family', title: 'Test' };
+
+test('a device that has not seen the current copy cannot overwrite it', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT,
+    // The cloud moved on LONG after anything this device knows about.
+    lastChange: { at: Date.now() + 5_000_000, by: 'other-device', desc: 'edits from the other phone' },
+  });
+  // Count only what happens AFTER the trigger; loading the page can push on its
+  // own, which is itself the same failure and is covered by its own test below.
+  const before = puts.filter((p) => /\/state\.json/.test(p.url)).length;
+  const out = await page.evaluate(async () => {
+    _lastFamilyAt = 1;                     // this device is far behind
+    _syncFamily('an edit from the stale device');
+    await new Promise((r) => setTimeout(r, 1500));
+    return { toast: (document.getElementById('share-toast') || {}).textContent || '',
+      log: _loadChangeLog().map((e) => e.desc + '|' + (e.refused || '')) };
+  });
+  const stateWrites = puts.filter((p) => /\/state\.json/.test(p.url)).slice(before);
+  assert.equal(stateWrites.length, 0,
+    'the stale copy must never reach the shared itinerary, got ' + stateWrites.length + ' writes');
+  assert.match(out.toast, /NOT SYNCED/, 'and the user is told: ' + out.toast);
+  assert.ok(out.log.some((l) => /had not seen the newer shared copy/.test(l)),
+    'and it is recorded: ' + JSON.stringify(out.log));
+  await page.close();
+});
+
+test('a device that IS up to date still syncs normally', async () => {
+  const at = Date.now() - 10_000;
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT,
+    lastChange: { at, by: 'other-device', desc: 'an earlier change we already have' },
+  });
+  const before2 = puts.filter((p) => /\/state\.json/.test(p.url)).length;
+  await page.evaluate(async (seen) => {
+    _lastFamilyAt = seen;                  // we have already adopted that change
+    _syncFamily('a legitimate edit');
+    await new Promise((r) => setTimeout(r, 1500));
+  }, at);
+  const stateWrites = puts.filter((p) => /\/state\.json/.test(p.url)).slice(before2);
+  assert.equal(stateWrites.length, 1, 'an up-to-date device must still be able to save');
+  await page.close();
+});
+
+test('our own change is not mistaken for someone else moving ahead', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT,
+    lastChange: { at: Date.now() + 5_000_000, by: 'THIS-SESSION', desc: 'our own push' },
+  });
+  const before3 = puts.filter((p) => /\/state\.json/.test(p.url)).length;
+  await page.evaluate(async () => {
+    sessionStorage.setItem('_csid', 'THIS-SESSION');
+    _lastFamilyAt = 1;
+    _syncFamily('a follow-up edit');
+    await new Promise((r) => setTimeout(r, 1500));
+  });
+  const stateWrites = puts.filter((p) => /\/state\.json/.test(p.url)).slice(before3);
+  assert.equal(stateWrites.length, 1,
+    'a device must not block itself, got ' + stateWrites.length + ' writes');
+  await page.close();
+});
+
+test('a device that cannot reach the shared copy does not push blind', async () => {
+  // The cloud is unreachable. Previously `cloud` stayed null, the loss brake had
+  // nothing to compare against, and the device pushed its local copy anyway.
+  const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  const puts = [];
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    if (u.includes('firebaseio.com')) {
+      if (route.request().method() === 'PUT') {
+        puts.push({ url: u });
+        return route.fulfill({ status: 200, contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' });
+      }
+      return route.abort();                        // reads genuinely fail
+    }
+    if (u.includes('leaflet')) {
+      const ext = u.endsWith('.css') ? '.css' : '.js';
+      const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+      if (fs.existsSync(lf)) return route.fulfill({ status: 200,
+        contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
+    }
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.addInitScript((d) => {
+    localStorage.setItem('tripState_london-scotland',
+      JSON.stringify({ tripType: 'family', title: 'Test', days: d }));
+    localStorage.setItem('tripFamily_london-scotland', '1');
+  }, STALE);
+  await page.goto(`${origin}/Travel/trip.html?id=london-scotland&fam=1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof state !== 'undefined' && state && Array.isArray(state.days),
+    null, { timeout: 20000 });
+  const before = puts.filter((p) => /\/state\.json/.test(p.url)).length;
+  const toast = await page.evaluate(async () => {
+    _syncFamily('an edit while the cloud is down');
+    await new Promise((r) => setTimeout(r, 1500));
+    return (document.getElementById('share-toast') || {}).textContent || '';
+  });
+  const writes = puts.filter((p) => /\/state\.json/.test(p.url)).slice(before);
+  assert.equal(writes.length, 0, 'a blind overwrite must never happen, got ' + writes.length);
+  assert.match(toast, /NOT SYNCED/, 'and the user is told: ' + toast);
+  await page.close();
+});

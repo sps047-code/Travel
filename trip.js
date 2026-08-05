@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v208';
+window.APP_CODE_VERSION='v209';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -3468,10 +3468,75 @@ async function openRestore(){
   _restoreList=await _gatherRestorable();
   body.innerHTML=_restoreHtml();
 }
+// UPLOAD A FILE AND RESTORE FROM IT. The panel used to list only saved copies
+// and automatic backups, so a correct itinerary in a file had nowhere to go —
+// and when every automatic backup holds the same corrupted copy, that list is
+// worth nothing. This is first in the panel, above the list, for that reason.
+function _restoreUploadHtml(){
+  return '<div style="border:1.5px solid var(--pine-border);background:var(--pine-tint);border-radius:var(--radius-md);padding:var(--space-3);margin-bottom:var(--space-4)">'+
+    '<div style="font-family:var(--font-ui);font-size:var(--text-md);font-weight:700;color:var(--ink);margin-bottom:2px">&#11015; Restore from a file</div>'+
+    '<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);margin-bottom:var(--space-2)">'+
+      'Choose an itinerary file you have saved or been sent. Nothing changes until you confirm.</div>'+
+    '<input type="file" id="restore-file" accept=".json,application/json" onchange="_restoreFilePicked(event)" '+
+      'style="font-family:var(--font-ui);font-size:var(--text-sm)"/>'+
+    '<div id="restore-file-verdict" style="font-family:var(--font-ui);font-size:var(--text-sm);margin-top:var(--space-2)"></div>'+
+    '<div id="restore-file-actions"></div>'+
+  '</div>';
+}
+let _restoreFileState=null, _restoreFileName='';
+function _restoreFilePicked(ev){
+  const f=ev&&ev.target&&ev.target.files&&ev.target.files[0];
+  const verdict=document.getElementById('restore-file-verdict');
+  const actions=document.getElementById('restore-file-actions');
+  _restoreFileState=null; _restoreFileName='';
+  if(actions)actions.innerHTML='';
+  if(!f){ if(verdict)verdict.innerHTML=''; return; }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const raw=String(rd.result||'');
+    let parsed=null;
+    try{ parsed=JSON.parse(raw); }catch(e){
+      verdict.innerHTML='<span style="color:var(--ruby);font-weight:700">That file is not valid JSON.</span>'; return;
+    }
+    if(!_validTripState(parsed)){
+      verdict.innerHTML='<span style="color:var(--ruby);font-weight:700">That file is not an itinerary — no days were found in it.</span>'; return;
+    }
+    _restoreFileState=parsed; _restoreFileName=f.name||'file';
+    const c=_stateCounts(parsed), now=_stateCounts(state);
+    const diff=c.stops-now.stops;
+    verdict.innerHTML='<span style="color:var(--pine);font-weight:700">&#10003; '+_escHtml(_restoreFileName)+' — '+
+      c.days+' days &middot; '+c.stops+' stops</span>'+
+      '<span style="color:var(--muted)"> ('+(diff===0?'same as now':(diff>0?diff+' more':Math.abs(diff)+' fewer')+' than now')+')</span>'+
+      '<details style="margin-top:var(--space-2)"><summary style="cursor:pointer;color:var(--river)">Show every day &amp; stop</summary>'+
+      '<div style="margin-top:var(--space-2);max-height:260px;overflow:auto">'+_recPreview(raw).html+'</div></details>';
+    actions.innerHTML='<button class="ai-action-btn" style="background:var(--pine);margin-top:var(--space-3)" '+
+      'onclick="_restoreFromFile()">&#8634; Restore from this file</button>';
+  };
+  rd.onerror=()=>{ verdict.innerHTML='<span style="color:var(--ruby)">Could not read that file.</span>'; };
+  rd.readAsText(f);
+}
+function _restoreFromFile(){
+  if(!_restoreFileState)return;
+  const from=_stateCounts(_restoreFileState), now=_stateCounts(state);
+  const lost=now.stops-from.stops;
+  if(!confirm('Restore from "'+_restoreFileName+'"?\n\n'+
+    'That copy has '+from.stops+' stops. You have '+now.stops+' now.\n'+
+    (lost>0?(lost+' stop'+(lost===1?'':'s')+' will be REMOVED.\n'):'')+
+    '\nThis replaces the itinerary on every device.'))return;
+  // force skips ONLY the catastrophic-loss brake. Structural validation stands.
+  const ok=commitReplace('Restored from file "'+_restoreFileName+'"',
+    JSON.parse(JSON.stringify(_restoreFileState)),WRITE.USER,{force:true});
+  if(ok){
+    document.getElementById('trip-recap-modal')?.classList.remove('open');
+    showToast('Restored from '+_restoreFileName+' — '+from.days+' days, '+from.stops+' stops.',5000);
+    renderAll();
+  }
+}
 function _restoreHtml(){
   const cur=_stateCounts(state);
   if(!_restoreList.length){
-    return '<div style="padding:var(--space-4);font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);line-height:1.5">'+
+    return _restoreUploadHtml()+
+      '<div style="padding:var(--space-4);font-family:var(--font-ui);font-size:var(--text-md);color:var(--muted);line-height:1.5">'+
       'No saved copies yet. Press <b>&#128190; Save</b> to keep one — then it will be listed here and you can bring it back at any time.</div>';
   }
   const rows=_restoreList.map((e,i)=>{
@@ -3498,7 +3563,9 @@ function _restoreHtml(){
   }).join('');
   return '<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);margin-bottom:var(--space-2)">'+
       'You have <b>'+cur.days+' days, '+cur.stops+' stops</b> right now. Restoring replaces that on every device.</div>'+
-    '<div style="max-height:60vh;overflow-y:auto">'+rows+'</div>';
+    _restoreUploadHtml()+
+    '<div style="font-family:var(--font-ui);font-size:var(--text-xs);font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:var(--space-1)">Or a copy already saved</div>'+
+    '<div style="max-height:45vh;overflow-y:auto">'+rows+'</div>';
 }
 function downloadSaved(i){
   const e=_restoreList[i]; if(!e)return;
@@ -4416,12 +4483,10 @@ async function _restoreSavedPlan(){
     plan=await r.json();
   }catch(e){ alert('Restore failed — could not load the saved plan: '+(e&&e.message||e)); return false; }
   if(!plan||!Array.isArray(plan.days)||!plan.days.length){ alert('Restore failed — the saved plan looks empty.'); return false; }
-  // london-scotland: replace the seed's old Day 7 (Rosslyn) with the corrected
-  // one the user dictated. _SCOTLAND_DAY7 is used ONLY here, on explicit request.
-  if(tripId==='london-scotland' && typeof _SCOTLAND_DAY7!=='undefined'){
-    const di=plan.days.findIndex(d=>/glenfinnan|glencoe|rosslyn/i.test((d.title||'')+' '+(d.stops||[]).map(s=>s.name||'').join(' ')));
-    if(di>=0) plan.days[di].stops=JSON.parse(JSON.stringify(_SCOTLAND_DAY7));
-  }
+  // REMOVED: this used to overwrite Day 7 with a hardcoded _SCOTLAND_DAY7 array
+  // whenever london-scotland was restored, which would have destroyed Stirling
+  // Castle and the rest of the real Day 7. A restore returns the saved plan
+  // EXACTLY as stored. Nothing is special-cased.
   const fam=getTripType()!=='solo';
   plan.tripType=fam?'family':'solo';
   const dayCount=plan.days.length;

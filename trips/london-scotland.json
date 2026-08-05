@@ -1037,7 +1037,7 @@
           "dayHours": "Open access",
           "dayHoursSrc": "ai",
           "duration": "28min",
-          "endTime": "8:38 PM",
+          "endTime": "8:28 PM",
           "lat": 55.9481,
           "lng": -3.1924,
           "name": "Victoria Street",
@@ -1045,6 +1045,16 @@
           "stars": 4,
           "time": "8:10 PM",
           "type": "hike"
+        },
+        {
+          "name": "Greyfriars Kirkyard",
+          "type": "hike",
+          "time": "8:31 PM",
+          "endTime": "8:41 PM",
+          "lat": 55.9469,
+          "lng": -3.1918,
+          "stars": 4,
+          "notes": "Historic kirkyard off Candlemaker Row — Greyfriars Bobby, and the Potter-adjacent headstones. Open access, a 2-minute walk from Victoria Street and 3 minutes from the Vaults."
         },
         {
           "dayHours": "Hours vary",
@@ -1255,39 +1265,39 @@
           "dayHours": "9:00 AM - 5:00 PM",
           "dayHoursSrc": "ai",
           "duration": "1h 29min",
-          "endTime": "12:01 PM",
+          "endTime": "11:45 AM",
           "lat": 51.2795,
           "lng": 1.0829,
           "name": "Canterbury Cathedral",
           "notes": "Mother church of the worldwide Anglican Communion. UNESCO World Heritage Site. Where Thomas Becket was murdered in 1170. Stunning medieval interior. Allow 1.5 hours.",
           "stars": 5,
-          "time": "10:32 AM",
+          "time": "10:45 AM",
           "type": "hike"
         },
         {
           "dayHours": "Open access",
           "dayHoursSrc": "ai",
           "duration": "59min",
-          "endTime": "1:05 PM",
+          "endTime": "12:00 PM",
           "lat": 51.2795,
           "lng": 1.0789,
           "name": "Canterbury City Walls Walk",
           "notes": "Walk along the well-preserved medieval walls around the city. Good views and free.",
           "stars": 3,
-          "time": "12:06 PM",
+          "time": "11:50 AM",
           "type": "hike"
         },
         {
           "dayHours": "Hours vary",
           "dayHoursSrc": "ai",
           "duration": "1h 5min",
-          "endTime": "2:15 PM",
+          "endTime": "12:20 PM",
           "lat": 51.2793,
           "lng": 1.0827,
           "name": "Lunch — Cathedral Lodge Cafe",
           "notes": "Café within the Cathedral grounds. Convenient and pleasant setting.",
           "stars": 3,
-          "time": "1:10 PM",
+          "time": "12:00 PM",
           "type": "food"
         },
         {
@@ -1298,21 +1308,22 @@
           "lng": 1.0789,
           "name": "Train — Canterbury to Dover",
           "notes": "~25 minutes. Southeastern service.",
-          "time": "2:20 PM",
+          "time": "12:20 PM",
           "to": "Dover Priory",
-          "type": "train"
+          "type": "train",
+          "endTime": "12:45 PM"
         },
         {
           "dayHours": "9:30 AM - 6:00 PM",
           "dayHoursSrc": "ai",
           "duration": "2hrs",
-          "endTime": "4:37 PM",
+          "endTime": "2:30 PM",
           "lat": 51.1279,
           "lng": 1.3213,
           "name": "Dover Castle — Secret Wartime Tunnels",
           "notes": "Clifftop castle above the White Cliffs. The underground tunnels used in WWII as a military HQ (Dunkirk evacuation was planned here) are extraordinary. Book in advance. Allow 2 hours.",
           "stars": 5,
-          "time": "2:37 PM",
+          "time": "12:45 PM",
           "type": "hike"
         },
         {
@@ -1323,9 +1334,21 @@
           "lng": 1.3213,
           "name": "Train — Dover to London",
           "notes": "~1h 40min back to London.",
-          "time": "4:42 PM",
+          "time": "2:35 PM",
           "to": "London Bridge",
-          "type": "train"
+          "type": "train",
+          "endTime": "4:00 PM"
+        },
+        {
+          "name": "National Gallery",
+          "type": "hike",
+          "time": "4:06 PM",
+          "endTime": "5:36 PM",
+          "lat": 51.5089,
+          "lng": -0.1283,
+          "stars": 5,
+          "dayHours": "10:00 AM - 6:00 PM",
+          "notes": "One of the world's great art collections — free entry. Trafalgar Square. Van Gogh's Sunflowers, Turner, da Vinci, Vermeer. Closes 6:00 PM on Thursdays. A short tube or walk from Victoria/Charing Cross after the train from Dover."
         },
         {
           "dayHours": "12:00 PM - 10:00 PM",

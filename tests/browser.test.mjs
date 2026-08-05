@@ -643,7 +643,11 @@ test('import creates a new trip with every stop preserved', async () => {
     _importMode = 'new';
     await importTrip();
   });
-  await page.waitForURL(/trip\.html/, { timeout: 15000 });
+  // Wait for the navigation to COMMIT, not for the full load event. The trip
+  // page boots Leaflet and the whole itinerary, so "load" is slow and got slower
+  // as the itinerary grew — this test only needs the URL and localStorage, both
+  // of which are set before the new page finishes loading.
+  await page.waitForURL(/trip\.html/, { timeout: 30000, waitUntil: 'commit' });
   const nav = page.url();
   const res = await page.evaluate((nav) => {
     const id = (nav.match(/id=([^&]+)/) || [])[1];
@@ -669,7 +673,11 @@ test('import survives an AI reply wrapped in markdown fences', async () => {
     _importMode = 'new';
     await importTrip();
   });
-  await page.waitForURL(/trip\.html/, { timeout: 15000 });
+  // Wait for the navigation to COMMIT, not for the full load event. The trip
+  // page boots Leaflet and the whole itinerary, so "load" is slow and got slower
+  // as the itinerary grew — this test only needs the URL and localStorage, both
+  // of which are set before the new page finishes loading.
+  await page.waitForURL(/trip\.html/, { timeout: 30000, waitUntil: 'commit' });
   const ok = await page.evaluate((nav) => {
     const id = ((nav || '').match(/id=([^&]+)/) || [])[1];
     const saved = id ? JSON.parse(localStorage.getItem('tripState_' + id) || 'null') : null;
@@ -3716,5 +3724,116 @@ test('a device that cannot reach the shared copy does not push blind', async () 
   const writes = puts.filter((p) => /\/state\.json/.test(p.url)).slice(before);
   assert.equal(writes.length, 0, 'a blind overwrite must never happen, got ' + writes.length);
   assert.match(toast, /NOT SYNCED/, 'and the user is told: ' + toast);
+  await page.close();
+});
+
+// ===========================================================================
+// v209 — RESTORE FROM A FILE. The Restore panel listed only saved copies and
+// automatic backups. When every automatic backup holds the same corrupted copy,
+// that list is worthless — and a correct itinerary in a file had nowhere to go.
+// ===========================================================================
+const GOOD_FILE = {
+  tripType: 'family', title: 'UK & Scotland Family Trip 2026',
+  days: [
+    { title: 'Day 1', subtitle: 'Tue, Aug 4, 2026', stops: [
+      { name: 'Flight Z0 784 — MCO to LGW', type: 'flight', time: '8:30 PM', endTime: '10:00 AM',
+        lat: 28.4312, lng: -81.3081, reservation: 'Z0784' }] },
+    { title: 'Day 4', subtitle: 'Fri, Aug 7, 2026', stops: [
+      { name: 'Lincoln Cathedral', type: 'hike', time: '1:52 PM', endTime: '2:52 PM',
+        lat: 53.2344, lng: -0.5361 },
+      { name: 'Lincoln Castle', type: 'hike', time: '2:57 PM', endTime: '4:00 PM',
+        lat: 53.2345, lng: -0.5405 }] },
+  ],
+};
+
+async function openRestorePanel(page) {
+  await page.evaluate(() => openRestore());
+  await page.waitForSelector('#restore-file', { state: 'attached', timeout: 15000 });
+}
+// Feed the panel a file the way a real picker would.
+async function chooseRestoreFile(page, name, obj) {
+  await page.evaluate(({ name, text }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], name, { type: 'application/json' }));
+    const input = document.getElementById('restore-file');
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, { name, text: JSON.stringify(obj) });
+  await page.waitForFunction(
+    () => (document.getElementById('restore-file-verdict') || {}).textContent, null, { timeout: 15000 });
+}
+
+test('the Restore panel takes a file', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await openRestorePanel(page);
+  const has = await page.evaluate(() => !!document.getElementById('restore-file'));
+  assert.ok(has, 'there is a file picker in the Restore panel');
+  await page.close();
+});
+
+test('choosing a good file shows what is in it', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await openRestorePanel(page);
+  await chooseRestoreFile(page, 'london-scotland-FINAL.json', GOOD_FILE);
+  const out = await page.evaluate(() => ({
+    verdict: document.getElementById('restore-file-verdict').textContent,
+    canRestore: /Restore from this file/.test(document.getElementById('restore-file-actions').innerHTML),
+  }));
+  assert.match(out.verdict, /london-scotland-FINAL\.json/, 'names the file: ' + out.verdict);
+  assert.match(out.verdict, /2 days/, 'and states what is in it');
+  assert.match(out.verdict, /3 stops/);
+  assert.ok(out.canRestore, 'and offers to restore it');
+  await page.close();
+});
+
+test('restoring from a file replaces the itinerary with exactly that file', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await openRestorePanel(page);
+  await chooseRestoreFile(page, 'london-scotland-FINAL.json', GOOD_FILE);
+  const out = await page.evaluate(() => {
+    _restoreFromFile();
+    return { days: state.days.length,
+      stops: state.days.reduce((n, d) => n + d.stops.length, 0),
+      lincoln: /lincoln/i.test(JSON.stringify(state)),
+      resv: state.days[0].stops[0].reservation,
+      log: _loadChangeLog().map((e) => e.desc) };
+  });
+  assert.equal(out.days, 2);
+  assert.equal(out.stops, 3, 'exactly the file, got ' + out.stops);
+  assert.ok(out.lincoln, 'Lincoln is in the restored itinerary');
+  assert.equal(out.resv, 'Z0784', 'confirmation numbers come across');
+  assert.ok(out.log.some((d) => /Restored from file/.test(d)), 'and the restore is logged');
+  await page.close();
+});
+
+test('a file with FEWER stops still restores — that is the whole point', async () => {
+  // WP_DAY has more stops than GOOD_FILE. The catastrophic-loss brake would
+  // normally refuse this exact write; a deliberate restore must override it.
+  const big = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+    Array.from({ length: 12 }, (_, i) => ({ name: 'Stop ' + i, type: 'hike',
+      time: (8 + (i % 10)) + ':00 AM', endTime: (8 + (i % 10)) + ':45 AM', lat: 51.5 + i / 100, lng: -0.12 })) }];
+  const { page } = await openTrip(big, { day: null });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await openRestorePanel(page);
+  await chooseRestoreFile(page, 'smaller.json', GOOD_FILE);
+  const stops = await page.evaluate(() => { _restoreFromFile();
+    return state.days.reduce((n, d) => n + d.stops.length, 0); });
+  assert.equal(stops, 3, 'the smaller file won, got ' + stops + ' stops');
+  await page.close();
+});
+
+test('a file that is not an itinerary is refused, and nothing changes', async () => {
+  const { page } = await openTrip(WP_DAY, { day: null });
+  await openRestorePanel(page);
+  await chooseRestoreFile(page, 'notes.json', { hello: 'world' });
+  const out = await page.evaluate(() => ({
+    verdict: document.getElementById('restore-file-verdict').textContent,
+    actions: document.getElementById('restore-file-actions').innerHTML,
+    stops: state.days.reduce((n, d) => n + d.stops.length, 0),
+  }));
+  assert.match(out.verdict, /not an itinerary/i, 'says why: ' + out.verdict);
+  assert.equal(out.actions, '', 'and offers no way to restore it');
+  assert.equal(out.stops, 4, 'the itinerary is untouched');   // WP_DAY: 3 + 1
   await page.close();
 });

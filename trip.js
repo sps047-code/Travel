@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v210';
+window.APP_CODE_VERSION='v211';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -136,7 +136,7 @@ function _repairState(st){
 // form and dropped everything the form had no input for; that is invisible until
 // you look for a reservation number that is gone.
 const _PRECIOUS_FIELDS=['reservation','notes','ticket','ticketName','photo','desc','audioUrl',
-  'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours','ticketRef'];
+  'url','airline','flightNumber','lat','lng','destLat','destLng','stars','dayHours','ticketRef','locked'];
 // Marker set when a swap leaves a stop without a location. Cleared as soon as
 // one is found; surfaced on the card so it is never a silent gap.
 const _NEEDS_PIN='needsPin';
@@ -4401,13 +4401,13 @@ function downloadExcel(){
   if(!state||!state.days||!state.days.length){alert('No trip data to export.');return;}
   const typeLabel={hike:'Hike / Park',food:'Food',lodge:'Lodging',drive:'Drive',flight:'Flight',train:'Train',bus:'Bus'};
   /* ---- Itinerary sheet ---- */
-  const rows=[['Day','Date / Theme','Stop #','Time','Place','Type','Stars','Confirmation #','Airline','Flight #','Notes']];
+  const rows=[['Day','Date / Theme','Stop #','Time','End Time','Locked','Place','Type','Stars','Confirmation #','Airline','Flight #','Notes']];
   state.days.forEach((day,di)=>{
     const theme=day.title.replace(/^Day \d+\s*[—–]\s*/,'');
     const sub=day.subtitle||(day.title)||'';
     const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
     if(day.stops.length===0){
-      rows.push(['Day '+(di+1),datePart||theme,'','','(no stops yet)','','','','','','']);
+      rows.push(['Day '+(di+1),datePart||theme,'','','','','(no stops yet)','','','','','','']);
     } else {
       day.stops.forEach((s,si)=>{
         rows.push([
@@ -4415,6 +4415,8 @@ function downloadExcel(){
           datePart||theme,
           si+1,
           s.time||'',
+          s.endTime||'',
+          s.locked?'LOCKED':'',
           s.name||'',
           typeLabel[s.type]||s.type||'',
           s.stars?parseFloat(s.stars)||s.stars:'',

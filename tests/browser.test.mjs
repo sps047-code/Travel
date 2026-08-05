@@ -4008,3 +4008,86 @@ test('the same ticket on two stops is stored once', async () => {
   assert.ok(out.resolves, 'and still opens from either stop');
   await page.close();
 });
+
+// ===========================================================================
+// A LOCKED TIME IS A RESERVATION. It must survive a save, a restore, an edit
+// and an export — losing it silently moves a booked table or a timed entry.
+// ===========================================================================
+const LOCK_DAY = [
+  { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: "St Paul's Cathedral", type: 'hike', time: '2:00 PM', endTime: '3:25 PM',
+      lat: 51.5138, lng: -0.0984, locked: true },
+    { name: 'Tower of London', type: 'hike', time: '3:30 PM', endTime: '5:00 PM',
+      lat: 51.5081, lng: -0.0759, locked: true, reservation: 'TOL-771' },
+    { name: 'Dinner', type: 'food', time: '7:00 PM', endTime: '8:15 PM',
+      lat: 51.5121, lng: -0.1241 },
+  ] },
+];
+
+test('a locked time survives a save and restore', async () => {
+  const { page } = await openTrip(LOCK_DAY);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(async () => {
+    _writeLocalSaves([{ at: Date.now(), name: 'with locks', by: 'x', days: 1, stops: 3,
+      state: JSON.parse(JSON.stringify(state)) }]);
+    commit('unlock everything', () => { state.days[0].stops.forEach((s) => { delete s.locked; }); }, WRITE.USER);
+    _restoreList = await _gatherRestorable();
+    restoreSaved(0);
+    return state.days[0].stops.map((s) => !!s.locked);
+  });
+  assert.deepEqual([...out], [true, true, false], 'the locks came back, got ' + JSON.stringify(out));
+  await page.close();
+});
+
+test('losing a lock is recorded, not silent', async () => {
+  const { page } = await openTrip(LOCK_DAY);
+  const losses = await page.evaluate(() => {
+    localStorage.removeItem(_changeLogKey()); _changeLog = null;
+    _markCommitted();
+    commit('rebuild the stop without its lock', () => {
+      state.days[0].stops[0] = { name: "St Paul's Cathedral", type: 'hike',
+        time: '2:00 PM', endTime: '3:25 PM', lat: 51.5138, lng: -0.0984 };
+    }, WRITE.USER);
+    const log = _loadChangeLog();
+    return log[log.length - 1].losses || [];
+  });
+  assert.ok(losses.some((l) => /locked/.test(l)),
+    'a dropped lock must be reported, got ' + JSON.stringify(losses));
+  await page.close();
+});
+
+test('a locked time is not moved by the auto-fix', async () => {
+  const { page } = await openTrip(LOCK_DAY);
+  const out = await page.evaluate(() => {
+    const before = state.days[0].stops[1].time;
+    // Force a retime of the day; the locked stop must hold its slot.
+    _retimeFromPrev(state.days[0].stops, 1);
+    return { before, after: state.days[0].stops[1].time };
+  });
+  assert.equal(out.after, out.before, 'a reservation holds its time, was ' + out.before + ' now ' + out.after);
+  await page.close();
+});
+
+test('the Excel export carries the lock and the end time', async () => {
+  const { page } = await openTrip(LOCK_DAY, { day: null });
+  const rows = await page.evaluate(() => {
+    let captured = null;
+    const realAoA = XLSX.utils.aoa_to_sheet;
+    XLSX.utils.aoa_to_sheet = (r) => { if (!captured) captured = r; return realAoA(r); };
+    XLSX.writeFile = () => {};                       // do not actually download
+    try { downloadExcel(); } catch (e) { /* ignore */ }
+    XLSX.utils.aoa_to_sheet = realAoA;
+    return captured;
+  });
+  assert.ok(rows, 'the export ran');
+  const header = rows[0];
+  assert.ok(header.includes('Locked'), 'there is a Locked column, got ' + JSON.stringify(header));
+  assert.ok(header.includes('End Time'), 'and an End Time column');
+  const li = header.indexOf('Locked'), pi = header.indexOf('Place'), ei = header.indexOf('End Time');
+  const stPauls = rows.find((r) => String(r[pi]).includes("St Paul"));
+  const dinner = rows.find((r) => String(r[pi]) === 'Dinner');
+  assert.equal(stPauls[li], 'LOCKED', 'a locked stop is marked');
+  assert.equal(stPauls[ei], '3:25 PM', 'and its end time is exported');
+  assert.equal(dinner[li], '', 'an unlocked stop is not');
+  await page.close();
+});

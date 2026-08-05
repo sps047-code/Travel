@@ -3837,3 +3837,52 @@ test('a file that is not an itinerary is refused, and nothing changes', async ()
   assert.equal(out.stops, 4, 'the itinerary is untouched');   // WP_DAY: 3 + 1
   await page.close();
 });
+
+// ===========================================================================
+// REPORTED AFTER v209: a stop cannot be deleted, and tickets have vanished.
+// ===========================================================================
+test('deleting a stop actually removes it', async () => {
+  const { page } = await openTrip(WP_DAY);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(() => {
+    const before = state.days[0].stops.map((s) => s.name);
+    deleteStop(0, 1);
+    return { before, after: state.days[0].stops.map((s) => s.name),
+      log: _loadChangeLog().slice(-3).map((e) => e.desc + '|' + (e.refused || '')) };
+  });
+  assert.equal(out.after.length, out.before.length - 1,
+    'one stop should be gone. before=' + JSON.stringify(out.before)
+      + ' after=' + JSON.stringify(out.after) + ' log=' + JSON.stringify(out.log));
+  assert.ok(!out.after.includes('Dishoom'), 'the right stop went');
+});
+
+test('deleting the LAST stop on a day works too', async () => {
+  const { page } = await openTrip([
+    { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+      { name: 'Only stop', type: 'hike', time: '10:00 AM', endTime: '11:00 AM', lat: 51.5, lng: -0.12 }] },
+    { title: 'Day 2', subtitle: 'Thu, Aug 6, 2026', stops: [
+      { name: 'Another', type: 'hike', time: '10:00 AM', endTime: '11:00 AM', lat: 51.51, lng: -0.13 }] },
+  ]);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(() => {
+    deleteStop(0, 0);
+    return { n: state.days[0].stops.length,
+      log: _loadChangeLog().slice(-3).map((e) => e.desc + '|' + (e.refused || '')) };
+  });
+  assert.equal(out.n, 0, 'the day empties. log=' + JSON.stringify(out.log));
+});
+
+test('deleting a stop from a big day is not blocked by the loss brake', async () => {
+  const big = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
+    Array.from({ length: 14 }, (_, i) => ({ name: 'Stop ' + i, type: 'hike',
+      time: (8 + (i % 12)) + ':00 AM', endTime: (8 + (i % 12)) + ':45 AM',
+      lat: 51.5 + i / 100, lng: -0.12 })) }];
+  const { page } = await openTrip(big);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(() => {
+    deleteStop(0, 5);
+    return { n: state.days[0].stops.length,
+      log: _loadChangeLog().slice(-3).map((e) => e.desc + '|' + (e.refused || '')) };
+  });
+  assert.equal(out.n, 13, 'thirteen left. log=' + JSON.stringify(out.log));
+});

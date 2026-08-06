@@ -4358,3 +4358,158 @@ test('the rate is re-applied on play, because iOS resets it', async () => {
   assert.equal(rate, 1.25, 'the setting is restored rather than silently lost, got ' + rate);
   await page.close();
 });
+
+// ===========================================================================
+// REAL TRAVEL TIMES. The estimate multiplies the straight line by a detour
+// factor, which models a road bending but not network topology: Hampton Court
+// to Windsor is 13 straight-line miles and about two hours by rail, because the
+// line runs back through Clapham Junction. Looked-up times are stored on the
+// arriving stop. Google is stubbed here — no key, no network, no cost.
+// ===========================================================================
+const RAIL_DAY = [
+  { title: 'Day 3', subtitle: 'Thu, Aug 6, 2026', stops: [
+    { name: 'Hampton Court Palace', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.4036, lng: -0.3376 },
+    { name: 'Windsor Castle', type: 'hike', time: '12:30 PM', endTime: '2:30 PM',
+      lat: 51.4843, lng: -0.6048, transitMode: 'train' },
+  ] },
+];
+
+// Stand in for the Maps SDK: records the requests and answers with a fixed leg.
+async function stubGoogle(page, { mins = 118, miles = 27, fail = false } = {}) {
+  await page.evaluate(({ mins, miles, fail }) => {
+    localStorage.setItem('gp_key_london-scotland', 'TEST-KEY');
+    window.__routeReqs = [];
+    window.google = { maps: { DirectionsService: function () {
+      this.route = (req, cb) => {
+        window.__routeReqs.push(JSON.parse(JSON.stringify({
+          travelMode: req.travelMode,
+          hasTransitDepart: !!(req.transitOptions && req.transitOptions.departureTime),
+          hasDriveDepart: !!(req.drivingOptions && req.drivingOptions.departureTime),
+        })));
+        if (fail) return cb(null, 'ZERO_RESULTS');
+        cb({ routes: [{ legs: [{ duration: { value: mins * 60 },
+          distance: { value: Math.round(miles * 1609.344) } }] }] }, 'OK');
+      };
+    } } };
+  }, { mins, miles, fail });
+}
+
+test('a looked-up time is stored on the arriving stop and beats the estimate', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    const before = _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]);
+    await _fetchDayLegs(0);
+    const s = state.days[0].stops[1];
+    return { before, after: _legTravelMins(state.days[0].stops[0], s),
+      mins: s.legMins, miles: s.legMiles, src: s.legSource, mode: s.legMode };
+  });
+  assert.ok(out.before < 60, 'the estimate was the optimistic one, got ' + out.before);
+  assert.equal(out.mins, 118, 'the real time is stored');
+  assert.equal(out.src, 'google');
+  assert.equal(out.mode, 'train');
+  assert.equal(out.after, 118, 'and every consumer now sees it, got ' + out.after);
+  await page.close();
+});
+
+test('looking up times does NOT move any stop', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    const before = state.days[0].stops.map((s) => s.time);
+    await _fetchDayLegs(0);
+    return { before, after: state.days[0].stops.map((s) => s.time) };
+  });
+  assert.deepEqual([...out.after], [...out.before],
+    'a lookup must not reshuffle a live itinerary, got ' + JSON.stringify(out.after));
+  await page.close();
+});
+
+test('a train leg asks for a departure time, because the timetable decides', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page);
+  const reqs = await page.evaluate(async () => { await _fetchDayLegs(0); return window.__routeReqs; });
+  assert.equal(reqs.length, 1, 'one leg was requested');
+  assert.equal(reqs[0].travelMode, 'TRANSIT', 'as transit, got ' + reqs[0].travelMode);
+  assert.ok(reqs[0].hasTransitDepart, 'with a departure time');
+  await page.close();
+});
+
+test('the leg says whether its number is routed or estimated', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await page.waitForFunction(
+    () => document.querySelector('.leg-connector'), null, { timeout: 15000 });
+  const est = await page.evaluate(() => document.querySelector('.leg-connector').innerHTML);
+  assert.match(est, /leg-est/, 'an estimate is labelled est.');
+  await stubGoogle(page);
+  const real = await page.evaluate(async () => {
+    await _fetchDayLegs(0);
+    return document.querySelector('.leg-connector').innerHTML;
+  });
+  assert.match(real, /leg-real/, 'a routed one is labelled real');
+  assert.ok(!/leg-est/.test(real), 'and not both');
+  assert.match(real, /1h 58min/, 'showing the routed time, got: ' + real.replace(/<[^>]*>/g, ' '));
+  await page.close();
+});
+
+test('applying is a separate, confirmed step that moves the stops', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const out = await page.evaluate(async () => {
+    await _fetchDayLegs(0);
+    const before = state.days[0].stops[1].time;
+    applyRealTimes(0);
+    return { before, after: state.days[0].stops[1].time,
+      log: _loadChangeLog().map((e) => e.desc) };
+  });
+  assert.equal(out.before, '12:30 PM', 'unmoved by the lookup');
+  assert.equal(out.after, '1:58 PM', 'and moved to noon + 1h58 once applied, got ' + out.after);
+  assert.ok(out.log.some((d) => /Applied real travel times/.test(d)), 'and it is recorded');
+  await page.close();
+});
+
+test('a locked time is never moved by Apply', async () => {
+  const locked = JSON.parse(JSON.stringify(RAIL_DAY));
+  locked[0].stops[1].locked = true;
+  const { page } = await openTrip(locked);
+  await stubGoogle(page);
+  await page.evaluate(() => { window.confirm = () => true; });
+  const after = await page.evaluate(async () => {
+    await _fetchDayLegs(0);
+    applyRealTimes(0);
+    return state.days[0].stops[1].time;
+  });
+  assert.equal(after, '12:30 PM', 'a reservation holds its slot, got ' + after);
+  await page.close();
+});
+
+test('with no key nothing is fetched and the reason is given', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  const out = await page.evaluate(async () => {
+    localStorage.removeItem('gp_key_london-scotland');
+    const r = await _fetchDayLegs(0);
+    return { r, src: state.days[0].stops[1].legSource,
+      toast: (document.getElementById('share-toast') || {}).textContent || '' };
+  });
+  assert.ok(out.r.noKey, 'it stops before calling anything');
+  assert.equal(out.src, undefined, 'and stores nothing');
+  assert.match(out.toast, /Google API key/, 'and says what it needs: ' + out.toast);
+  await page.close();
+});
+
+test('a failed lookup leaves the estimate alone', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page, { fail: true });
+  const out = await page.evaluate(async () => {
+    const before = _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]);
+    const r = await _fetchDayLegs(0);
+    return { r, before, after: _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]),
+      src: state.days[0].stops[1].legSource };
+  });
+  assert.equal(out.r.ok, 0, 'nothing came back');
+  assert.equal(out.src, undefined, 'nothing was stored');
+  assert.equal(out.after, out.before, 'and the estimate is untouched');
+  await page.close();
+});

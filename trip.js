@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v213';
+window.APP_CODE_VERSION='v214';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -184,9 +184,9 @@ function commit(desc,mutate,source,opts){
 // rollback and recording. Taking a fresh snapshot here would compare the new
 // state against itself and conclude nothing had changed, so the last committed
 // snapshot is the baseline instead.
-function commitApplied(desc,source){
+function commitApplied(desc,source,opts){
   const before=(_lastCommitted!==null)?_lastCommitted:JSON.stringify(state);
-  return _finishCommit(before,desc,source||WRITE.SYSTEM);
+  return _finishCommit(before,desc,source||WRITE.SYSTEM,opts);
 }
 function _finishCommit(before,desc,source,opts){
   const fatal=_fatalStateErrors(state);
@@ -259,9 +259,14 @@ function saveState(changeDesc='',localOnly=false,opts){
     //   2) trim a previous visit so a later stop stays at the time it was given
     //   3) only then push a still-unreachable stop later
     const snap=JSON.stringify(state);
-    const shifted=_shiftStopsAfterArrival(state);
-    const changed=_relaxDurationsToFit(state);
-    const pushed=_pushUnreachableLater(state);
+    // A METADATA-ONLY WRITE MUST NOT MOVE ANYTHING. Storing a looked-up travel
+    // time changes no scheduled time, but it does change what the auto-fix
+    // believes about reachability — so without this, merely LOOKING UP a real
+    // time silently reshuffled the day. Applying is a separate, confirmed step.
+    const _noFix=!!(opts&&opts.noAutoFix);
+    const shifted=_noFix?[]:_shiftStopsAfterArrival(state);
+    const changed=_noFix?[]:_relaxDurationsToFit(state);
+    const pushed=_noFix?[]:_pushUnreachableLater(state);
     errs=_logicErrors(state);
     added=errs.filter(e=>!_baselineErrKeys.has(_errKey(e)));
     if(added.length||shifted.length||changed.length||pushed.length){
@@ -818,16 +823,27 @@ function _airportWarningHtml(prev,s){
 // no numbers, and there was no way to tell "nothing to travel" apart from
 // "we don't know". Every leg now answers, even if the answer is that it cannot
 // be measured yet.
-function legLabel(a,b,mode){
+// `arriving` is the stop being travelled TO, which is where a looked-up real
+// time is stored. Passing it is what lets a leg say whether its number is a
+// routed answer or a guess — after this week, an unlabelled confident number is
+// worse than an honest uncertain one.
+function legLabel(a,b,mode,arriving){
   if(!_validLL(a)||!_validLL(b))return'<span class="leg-unknown">Distance unknown — no location set</span>';
   const straight=haversine(a.lat,a.lng,b.lat,b.lng);
   if(straight<0.02)return'<span class="leg-same">Same place · no travel</span>';
+  const real=_realLegMins(arriving||b);
+  if(real!=null){
+    const rm=Number((arriving||b).legMiles);
+    const mi=(rm>0)?(rm<10?rm.toFixed(1):Math.round(rm)):null;
+    return (mi!=null?mi+' mi · ':'')+_minsToStr(real)+
+      '<span class="leg-real" title="Routed by Google, not estimated">&#10003; real</span>';
+  }
   // Report the distance you actually cover, not the crow's flight, so the miles
   // and the minutes describe the same journey.
   const dist=_routeMiles(straight,mode);
   const mi=dist<0.1?dist.toFixed(2):dist<10?dist.toFixed(1):Math.round(dist);
   const mins=_travelMins(straight,mode);
-  return mi+' mi · '+_minsToStr(mins);
+  return mi+' mi · '+_minsToStr(mins)+'<span class="leg-est" title="Estimated from the straight-line distance">est.</span>';
 }
 // Valid usable coordinates. Treats 0,0 (a real point off West Africa that stops
 // default to when a location is unknown) as missing, matching the old !lat check.
@@ -1510,7 +1526,7 @@ function renderPanel(idx){
         // had no 'walk' case, so a walk was timed at driving speed: 0.9 miles
         // in 3 minutes. One computation now, from the right two points.
         const origin=fromStop?_stopTo(fromStop,null):null;
-        leg=legLabel(origin,next,tmode);
+        leg=legLabel(origin,next,tmode,next);
       }
       const tzc=tzChangeLabel(s,next);
       const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';
@@ -1538,6 +1554,8 @@ function renderPanel(idx){
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
+    '<button class="ai-action-btn" id="reallegs-btn-'+idx+'" onclick="fetchRealTimes('+idx+')" style="background:var(--river)" title="Look up the real travel time for every leg of this day">&#128739; Real times</button>'+
+    (_dayHasRealLegs(idx)?'<button class="ai-action-btn" onclick="applyRealTimes('+idx+')" style="background:var(--amber)" title="Move the stops so they match the real travel times">&#8631; Apply to schedule</button>':'')+
     '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
@@ -1545,7 +1563,7 @@ function renderPanel(idx){
     (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
     (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
-    '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
+    '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode,todayHotel);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
     (showEnd?hotelBookendHtml('Tonight',todayHotel,todayLastStop,_findStopPos(todayHotel)):'')+
     '<button class="add-stop-btn" onclick="openAddStopModal('+idx+')">'+
     '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="4.5" x2="8" y2="11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.5" y1="8" x2="11.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Stop</button></div>'+
@@ -2847,8 +2865,160 @@ const _SCOTLAND_DAY7=[
 // _syncDayHeadings() at render time.
 function _fixScotlandDay7Once(){ return false; }
 // Travel time between two consecutive stops, matching the leg-connector logic.
+/* ============================================================================
+   REAL TRAVEL TIMES
+
+   The estimate multiplies the straight line by a detour factor. That models a
+   road bending. It cannot model NETWORK TOPOLOGY: Hampton Court to Windsor is
+   13 straight-line miles and about two hours by rail, because the line runs
+   back through Clapham Junction and out again with a change. No multiplier
+   reaches that number — only a routing engine that knows the network does.
+
+   So a real time can be looked up and STORED ON THE STOP. Stored means it syncs
+   to every device, survives offline, and is never paid for twice.
+
+   The Maps JavaScript SDK is used rather than the REST Directions endpoint: the
+   web-service endpoints send no CORS headers, which is almost certainly why the
+   existing Places calls fail silently inside their try/catch.
+   ========================================================================== */
+const _LEG_MODE_G={walk:'WALKING',bike:'BICYCLING',drive:'DRIVING',bus:'TRANSIT',train:'TRANSIT',flight:'DRIVING'};
+let _gmapsPromise=null;
+function _loadGoogleMaps(){
+  if(window.google&&window.google.maps&&window.google.maps.DirectionsService)return Promise.resolve(window.google.maps);
+  if(_gmapsPromise)return _gmapsPromise;
+  const key=_gpKey();
+  if(!key)return Promise.reject(new Error('no key'));
+  _gmapsPromise=new Promise((res,rej)=>{
+    const sc=document.createElement('script');
+    sc.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&libraries=routes';
+    sc.async=true;
+    sc.onload=()=>res(window.google&&window.google.maps);
+    sc.onerror=()=>{ _gmapsPromise=null; rej(new Error('could not load Google Maps')); };
+    document.head.appendChild(sc);
+  });
+  return _gmapsPromise;
+}
+// The planned departure for a leg, as a real Date — transit without a departure
+// time is meaningless, because the answer depends on the timetable.
+function _legDepartAt(fromStop,dayISO){
+  try{
+    const end=_stopEnd(fromStop,dayISO)||_stopStart(fromStop,dayISO);
+    const p=end&&_localParts(end.local);
+    if(!p)return null;
+    const [y,mo,d]=p.iso.split('-').map(Number);
+    const dt=new Date(y,mo-1,d,Math.floor(p.mins/60),p.mins%60);
+    // A departure in the past is rejected by the API; ask for the same clock
+    // time on the next occurrence of that weekday instead.
+    const now=Date.now();
+    while(dt.getTime()<now)dt.setDate(dt.getDate()+7);
+    return dt;
+  }catch(e){ return null; }
+}
+// One leg. Resolves {mins,miles,mode} or null — never throws at the caller.
+async function _googleLeg(from,to,mode,departAt){
+  const maps=await _loadGoogleMaps();
+  const travelMode=_LEG_MODE_G[mode]||'DRIVING';
+  const req={origin:{lat:+from.lat,lng:+from.lng},destination:{lat:+to.lat,lng:+to.lng},travelMode:travelMode};
+  if(travelMode==='TRANSIT')req.transitOptions={departureTime:departAt||new Date()};
+  else if(travelMode==='DRIVING'&&departAt)req.drivingOptions={departureTime:departAt};
+  const svc=new maps.DirectionsService();
+  const res=await new Promise((resolve)=>{
+    try{ svc.route(req,(r,status)=>resolve(status==='OK'?r:null)); }catch(e){ resolve(null); }
+  });
+  const leg=res&&res.routes&&res.routes[0]&&res.routes[0].legs&&res.routes[0].legs[0];
+  if(!leg)return null;
+  const secs=(leg.duration_in_traffic&&leg.duration_in_traffic.value)||(leg.duration&&leg.duration.value);
+  const metres=leg.distance&&leg.distance.value;
+  if(!secs)return null;
+  return {mins:Math.max(1,Math.round(secs/60)),miles:metres?metres/1609.344:null,mode:mode};
+}
+// Look up every leg on a day. Stores the result on the ARRIVING stop and does
+// not touch a single scheduled time — applying is a separate, confirmed step.
+async function _fetchDayLegs(dayIdx){
+  const day=state.days[dayIdx]; if(!day)return {ok:0,fail:0};
+  if(!_gpKey()){
+    showToast('Real times need a Google API key. Add one from the Overview, then try again.',7000);
+    return {ok:0,fail:0,noKey:true};
+  }
+  const dayISO=(typeof dayDateStr==='function')?dayDateStr(dayIdx):'';
+  const stops=day.stops||[];
+  let ok=0,fail=0;
+  showToast('Looking up real travel times…',3000);
+  for(let i=1;i<stops.length;i++){
+    const next=stops[i];
+    const fromStop=_validLL(stops[i-1])?stops[i-1]:_legEndpoint(stops,i-1,-1);
+    if(!fromStop||!_validLL(next))continue;
+    const origin=_stopTo(fromStop,null)||fromStop;
+    if(!_validLL(origin))continue;
+    if(Math.abs(origin.lat-next.lat)<1e-6&&Math.abs(origin.lng-next.lng)<1e-6)continue;
+    const mode=next.transitMode||_defaultTransitMode(fromStop,next);
+    let r=null;
+    try{ r=await _googleLeg(origin,next,mode,_legDepartAt(fromStop,dayISO)); }catch(e){ r=null; }
+    if(r){ next.legMins=r.mins; if(r.miles)next.legMiles=Math.round(r.miles*100)/100;
+           next.legMode=mode; next.legSource='google'; next.legFetchedAt=Date.now(); ok++; }
+    else fail++;
+  }
+  if(ok)commitApplied('Looked up real travel times for Day '+(dayIdx+1)+' ('+ok+' leg'+(ok===1?'':'s')+')',WRITE.SYSTEM,{noAutoFix:true});
+  renderAll();
+  showToast(ok?('Real times for '+ok+' leg'+(ok===1?'':'s')+(fail?', '+fail+' could not be found':'')+'. Times on the cards are unchanged — use “Apply” to move them.'):'No routes came back. The estimates are unchanged.',8000);
+  return {ok:ok,fail:fail};
+}
+// A stored real time, if this stop has one.
+function _realLegMins(b){ return (b&&b.legSource==='google'&&Number(b.legMins)>0)?Number(b.legMins):null; }
+
+// Has this day had its legs looked up? Drives whether "Apply" is offered.
+function _dayHasRealLegs(dayIdx){
+  const d=state.days&&state.days[dayIdx];
+  return !!(d&&(d.stops||[]).some(s=>_realLegMins(s)!=null));
+}
+async function fetchRealTimes(dayIdx){
+  const btn=document.getElementById('reallegs-btn-'+dayIdx);
+  if(btn){btn.disabled=true;btn.textContent='Looking up…';}
+  try{ await _fetchDayLegs(dayIdx); }
+  catch(e){ showToast('Could not reach Google: '+((e&&e.message)||e),6000); }
+  const b2=document.getElementById('reallegs-btn-'+dayIdx);
+  if(b2){b2.disabled=false;b2.innerHTML='&#128739; Real times';}
+}
+// APPLYING IS SEPARATE AND CONFIRMED. Real times are usually longer than the
+// estimates, so this moves stops — on a trip in progress that must be a
+// decision, never a side effect of looking something up.
+function applyRealTimes(dayIdx){
+  const day=state.days[dayIdx]; if(!day)return;
+  const stops=day.stops||[];
+  const changes=[];
+  for(let i=1;i<stops.length;i++){
+    const real=_realLegMins(stops[i]); if(real==null)continue;
+    const prev=stops[i-1];
+    const ps=_parseTimeMins(prev.time),pe=_parseTimeMins(prev.endTime);
+    const depart=(pe!=null&&pe>ps)?pe:ps;
+    const cur=_parseTimeMins(stops[i].time);
+    if(depart==null||cur==null)continue;
+    const earliest=depart+real;
+    if(stops[i].locked)continue;                       // a reservation holds
+    if(cur<earliest)changes.push({i:i,name:stops[i].name,from:stops[i].time,to:_formatTimeMins(earliest),mins:earliest-cur});
+  }
+  if(!changes.length){ showToast('Nothing to move — every stop already allows enough travel time.',5000); return; }
+  const list=changes.slice(0,8).map(c=>'• '+c.name+'  '+c.from+' → '+c.to).join('\n');
+  if(!confirm('Move '+changes.length+' stop'+(changes.length===1?'':'s')+' later so the real travel times fit?\n\n'+list+
+    (changes.length>8?'\n…and '+(changes.length-8)+' more':'')+'\n\nLocked times are left alone.'))return;
+  commit('Applied real travel times to Day '+(dayIdx+1)+' ('+changes.length+' stop'+(changes.length===1?'':'s')+' moved)',()=>{
+    changes.forEach(c=>{
+      const s=state.days[dayIdx].stops[c.i];
+      const span=_stopVisitMins(s);
+      _setStopSlot(s,_parseTimeMins(c.to),span);
+    });
+  },WRITE.USER);
+  renderAll();
+  showToast('Moved '+changes.length+' stop'+(changes.length===1?'':'s')+' to fit the real travel times.',5000);
+}
+
 function _legTravelMins(a,b){
   if(!a||!b)return 15;
+  // A real routed time always beats the estimate. Every consumer — the leg
+  // connector, the reachability warning, the auto-fix, _retimeFromPrev — comes
+  // through here, so they all inherit it without knowing about it.
+  const real=_realLegMins(b);
+  if(real!=null)return real;
   const mode=b.transitMode||_defaultTransitMode(a,b);
   const from=_stopTo(a,null)||a;      // same origin the connector uses
   if(_validLL(from)&&_validLL(b))return Math.max(5,_travelMins(haversine(from.lat,from.lng,b.lat,b.lng),mode));

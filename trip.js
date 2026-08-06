@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v211';
+window.APP_CODE_VERSION='v212';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -55,6 +55,11 @@ function _seedLogicBaseline(){ try{ _baselineErrKeys=new Set(_logicErrors(state)
 // changed by itself" is answerable rather than a matter of opinion.
 const WRITE={USER:'user',AUTO:'auto-fix',HEAL:'heal',CLOUD:'cloud',AI:'ai',IMPORT:'import',SYSTEM:'system'};
 let _lastCommitted=null;          // serialised state as of the last successful write
+// The shared-trip version this device is working from. null = not yet read, so
+// the first push after a cold start reads the head rather than assuming.
+let _knownVersion=null;
+// Set by a caller that wants the outcome of the next push (the restore dialog).
+let _syncDone=null;
 
 // ---- CHANGE LOG -------------------------------------------------------------
 // What changed, when, from which device, and which mechanism did it. The cloud
@@ -211,7 +216,7 @@ function _finishCommit(before,desc,source,opts){
   if(after===before&&!repaired.length){ _lastCommitted=after; return true; }   // nothing to do
 
   const losses=_fieldLosses(JSON.parse(before),state);
-  saveState(desc);                       // existing logic gate, persistence, cloud push
+  saveState(desc,false,opts);            // existing logic gate, persistence, cloud push
   // saveState's auto-fix gate may itself have adjusted things, so the baseline is
   // whatever actually ended up stored.
   _lastCommitted=JSON.stringify(state);
@@ -229,7 +234,7 @@ function commitReplace(desc,next,source,opts){
 // mutation.
 function _markCommitted(){ try{_lastCommitted=JSON.stringify(state);}catch(e){_lastCommitted=null;} }
 
-function saveState(changeDesc='',localOnly=false){
+function saveState(changeDesc='',localOnly=false,opts){
   if(IS_READONLY)return; // a read-only viewer must never persist or push changes
   // Structural damage must not reach storage even when something calls saveState
   // directly rather than through commit().
@@ -282,7 +287,7 @@ function saveState(changeDesc='',localOnly=false){
     _baselineErrKeys=new Set(errs.map(_errKey)); // (possibly-adjusted) save becomes the new baseline
   }catch(e){ /* the gate must never itself break saving */ }
   try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
-  if(!localOnly && getTripType()==='family')_syncFamily(changeDesc);
+  if(!localOnly && getTripType()==='family')_syncFamily(changeDesc,opts);
 }
 
 // ---- DATA-LOSS SAFEGUARDS (added after the June-14 overwrite incident) ------
@@ -3626,21 +3631,21 @@ function _restoreFilePicked(ev){
   rd.readAsText(f);
 }
 function _restoreFromFile(){
-  if(!_restoreFileState)return;
+  if(!_restoreFileState)return Promise.resolve({ok:false});
   const from=_stateCounts(_restoreFileState), now=_stateCounts(state);
   const lost=now.stops-from.stops;
   if(!confirm('Restore from "'+_restoreFileName+'"?\n\n'+
     'That copy has '+from.stops+' stops. You have '+now.stops+' now.\n'+
     (lost>0?(lost+' stop'+(lost===1?'':'s')+' will be REMOVED.\n'):'')+
     '\nThis replaces the itinerary on every device.'))return;
-  // force skips ONLY the catastrophic-loss brake. Structural validation stands.
-  const ok=commitReplace('Restored from file "'+_restoreFileName+'"',
-    JSON.parse(JSON.stringify(_restoreFileState)),WRITE.USER,{force:true});
-  if(ok){
+  const label='from '+_restoreFileName;
+  const data=_restoreFileState;
+  return _restoreState(data,'Restored '+label).then(res=>{
     document.getElementById('trip-recap-modal')?.classList.remove('open');
-    showToast('Restored from '+_restoreFileName+' — '+from.days+' days, '+from.stops+' stops.',5000);
     renderAll();
-  }
+    _restoreOutcomeToast(res,label);
+    if(res.ok&&getTripType()==='family'&&(!res.push||!res.push.ok))_offerOverride(data,label);
+  });
 }
 function _restoreHtml(){
   const cur=_stateCounts(state);
@@ -3686,8 +3691,50 @@ function downloadSaved(i){
     document.body.appendChild(a); a.click(); a.remove();
   }catch(err){ showToast('Download failed: '+(err&&err.message||err)); }
 }
+// A restore is an ordinary write, not a special case: read the head so this
+// device is current, then commit the restored content as the next version. The
+// override below exists only for when that is refused.
+async function _restoreState(next,desc){
+  try{ const v=await _dbFamilyGet('/version'); if(v!==undefined&&v!==null)_knownVersion=Number(v)||0; }catch(e){}
+  const counts=_stateCounts(next);
+  let outcome=null;
+  const done=new Promise(res=>{ _syncDone=(r)=>{ _syncDone=null; res(r); }; });
+  // force skips ONLY the LOCAL catastrophic-loss brake — a deliberate restore to
+  // a smaller copy is exactly what that brake stops, and the confirm dialog has
+  // already spelled out how many stops go. It does NOT touch the push
+  // authorisation: `override` is a separate flag and is not set here.
+  const ok=commitReplace(desc,JSON.parse(JSON.stringify(next)),WRITE.USER,{force:true});
+  if(!ok)return {ok:false,local:false,reason:'refused'};
+  if(getTripType()!=='family'){ _syncDone=null; return {ok:true,local:true,counts:counts}; }
+  outcome=await Promise.race([done,new Promise(res=>setTimeout(()=>res(null),8000))]);
+  _syncDone=null;
+  return {ok:true,local:true,counts:counts,push:outcome};
+}
+// THE OVERRIDE. Reachable only from the restore dialog, only after a confirm.
+// It skips the authorisation check and nothing else: it still reads the head to
+// compute the next version, still banks the copy it replaces, and is recorded.
+async function _pushOverride(next,desc){
+  const clean=JSON.parse(JSON.stringify(next));
+  delete clean._provisional;
+  state=clean;
+  _markCommitted();
+  try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
+  const r=await _pushVersioned(clean,desc,true);
+  renderAll();
+  return r;
+}
+function _restoreOutcomeToast(res,label){
+  const c=res.counts||{days:0,stops:0};
+  if(!res.ok){ showToast('Could not restore '+label+'.',5000); return; }
+  const p=res.push;
+  if(!p) showToast('Restored here — '+c.days+' days, '+c.stops+' stops. The shared trip did not answer; other devices still have the old copy.',9000);
+  else if(p.ok) showToast('Restored and sent to every device — '+c.days+' days, '+c.stops+' stops (version '+p.version+').',6000);
+  else if(p.reason==='stale') showToast('Restored here only — another device is at version '+p.head+'. Use “Push anyway” to replace it everywhere.',10000);
+  else showToast('Restored here only — could not write the shared trip. Use “Push anyway” to force it.',10000);
+}
+
 function restoreSaved(i){
-  const e=_restoreList[i]; if(!e||!e.state)return;
+  const e=_restoreList[i]; if(!e||!e.state)return Promise.resolve({ok:false});
   const from=_stateCounts(e.state), now=_stateCounts(state);
   const lost=now.stops-from.stops;
   const when=(()=>{try{return new Date(Number(e.at)).toLocaleString();}catch(x){return '';}})();
@@ -3696,16 +3743,28 @@ function restoreSaved(i){
     (lost>0?(lost+' stop'+(lost===1?'':'s')+' will be REMOVED.\n'):'')+
     '\nThis changes the itinerary on every device. You can save a copy first if you want to keep what you have.';
   if(!confirm(msg))return;
-  // force skips ONLY the catastrophic-loss brake — restoring an older, smaller
-  // copy is exactly the write that brake exists to stop, and here it is what was
-  // asked for. Structural validation still applies.
-  const ok=commitReplace('Restored "'+(e.name||'saved copy')+'"'+(when?' from '+when:''),
-    JSON.parse(JSON.stringify(e.state)),WRITE.USER,{force:true});
-  if(ok){
+  const label='"'+(e.name||'saved copy')+'"'+(when?' from '+when:'');
+  return _restoreState(e.state,'Restored '+label).then(res=>{
     document.getElementById('trip-recap-modal')?.classList.remove('open');
-    showToast('Restored — '+from.days+' days, '+from.stops+' stops.',4000);
     renderAll();
-  }
+    _restoreOutcomeToast(res,label);
+    // Only offer the override when the normal path could NOT reach the others.
+    if(res.ok&&getTripType()==='family'&&(!res.push||!res.push.ok))_offerOverride(e.state,label);
+  });
+}
+// The escape hatch, offered only after a versioned restore failed to publish.
+function _offerOverride(next,label){
+  const c=_stateCounts(next);
+  setTimeout(()=>{
+    if(!confirm('Push this copy to ALL devices anyway?\n\n'+
+      c.days+' days, '+c.stops+' stops.\n\n'+
+      'This replaces the itinerary on every device whatever version they hold. '+
+      'The copy being replaced is backed up first.'))return;
+    _pushOverride(next,'Restored '+label+' (override)').then(r=>{
+      if(r&&r.ok)showToast('Pushed to all devices — replaced version '+r.replaced+' with '+r.version+'.',7000);
+      else showToast('Could not reach the shared trip. Try again when you have signal.',7000);
+    });
+  },400);
 }
 
 /* ---- Audio Tours ---- */
@@ -4487,56 +4546,80 @@ async function _dbFamilyDelete(subpath){
   await fetch(_familyBase()+subpath+'.json',{method:'DELETE',keepalive:true}).catch(()=>{});
 }
 
-function _syncFamily(changeDesc){
+function _syncFamily(changeDesc,opts){
   clearTimeout(_familySyncTimer);
   _familySyncTimer=setTimeout(async()=>{
     const next=JSON.parse(JSON.stringify(state));
-    // Read what's currently in the cloud so we can (a) run the safety brake and
-    // (b) snapshot it into the rolling 5-version history before overwriting.
-    // ---- STALENESS CHECK (compare-and-swap) --------------------------------
-    // A device is only allowed to overwrite the shared copy if it has SEEN the
-    // version it is overwriting. Without this, a device holding a copy from
-    // weeks ago pushes it straight over everyone's current itinerary, and the
-    // loss brake below does not catch it because that only counts stops — an
-    // old copy with a similar number of stops passes.
-    // _lastFamilyAt is the timestamp of the newest change this device has
-    // adopted or made. If the cloud has moved past that, we are stale.
-    try{
-      const lc=await _dbFamilyGet('/lastChange');
-      if(lc&&lc.at&&lc.at>_lastFamilyAt&&lc.by!==_sessionId()){
-        try{console.warn('[family] push blocked — this device has not seen change',lc.at);}catch(e){}
-        try{_recordChange({source:WRITE.SYSTEM,
-          desc:'Push blocked: this device had not seen the newer shared copy'+(lc.desc?' ("'+lc.desc+'")':''),
-          refused:'stale copy'});}catch(e){}
-        try{showToast('⚠ NOT SYNCED — another device changed the itinerary since this one last updated. Reload before editing so you do not overwrite it.',7000);}catch(e){}
-        return;
-      }
-    }catch(e){
-      // COULD NOT READ THE MARKER. Do not push. A device that cannot see what is
-      // in the cloud cannot know whether it is about to overwrite something
-      // newer, and the loss brake below cannot run either without a cloud copy
-      // to compare against. Refusing to sync is recoverable; a blind overwrite
-      // is not.
-      try{console.warn('[family] push blocked — could not read the shared copy');}catch(err){}
-      try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: could not reach the shared copy to check it',refused:'cloud unreadable'});}catch(err){}
-      try{showToast('⚠ NOT SYNCED — could not reach the shared itinerary to check it. Your change is saved on this device only.',6000);}catch(err){}
-      return;
-    }
-    let cloud=null;
-    try{ const st=await _dbFamilyGet('/state'); if(_validTripState(st))cloud=st; }catch(e){}
-    if(cloud&&_wouldLoseData(cloud,next)){
-      // Safety brake: this push would erase most of the shared itinerary. Never
-      // silently overwrite it — keep the change local and say so out loud.
-      try{console.warn('[family] push blocked — would lose data vs the shared copy');}catch(e){}
-      try{showToast('⚠ NOT SYNCED — this change would erase most of the shared itinerary, so it was kept only on this device.');}catch(e){}
-      return;
-    }
-    const ts=Date.now();_lastFamilyAt=ts;
-    // Rolling cloud history: bank the copy we're about to replace, keep newest 5.
-    if(cloud){ await _dbBackupBeforeOverwrite(cloud,ts,changeDesc); }
-    await _dbFamilyPut('/state',next).catch(()=>{});
-    await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:changeDesc||''}).catch(()=>{});
+    // ---- COMPARE-AND-SWAP ON A VERSION NUMBER ------------------------------
+    // Wall-clock timestamps say nothing about LINEAGE. A device closed for weeks
+    // can hold an ancient copy and still have the later clock reading, which is
+    // how a weeks-old itinerary overwrote everyone. A version number cannot be
+    // wrong about that: you may only write N+1 if you are holding N.
+    //
+    // Reading is how a device becomes current — adopt the head and you may write
+    // again, carrying the head's content rather than your own stale copy.
+    const result=await _pushVersioned(next,changeDesc,!!(opts&&opts.override));
+    if(_syncDone)_syncDone(result);
   },600);
+}
+// The one place the shared itinerary is written. `override` skips only the
+// AUTHORISATION check — never the bookkeeping. It still reads the head to
+// compute the next version and still banks the copy it replaces. Nothing
+// automatic may pass override:true; only a person, from the restore dialog.
+async function _pushVersioned(next,changeDesc,override){
+  // A copy that came from the bundled plan because the cloud could not be read
+  // is a placeholder, not an authority. It may never be published by accident.
+  if(state&&state._provisional&&!override){
+    try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: this copy came from the bundled plan, not the shared trip',refused:'provisional copy'});}catch(e){}
+    try{showToast('⚠ NOT SYNCED — this device is showing the bundled plan because it could not reach the shared trip. Reload before editing.',7000);}catch(e){}
+    return {ok:false,reason:'provisional'};
+  }
+  let head=null;
+  try{ head=await _dbFamilyGet('/version'); }catch(e){ head=undefined; }
+  if(head===undefined&&!override){
+    try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: could not read the shared version',refused:'cloud unreadable'});}catch(e){}
+    try{showToast('⚠ NOT SYNCED — could not reach the shared itinerary. Your change is saved on this device only.',6000);}catch(e){}
+    return {ok:false,reason:'unreachable'};
+  }
+  const cur=Number(head)||0;
+  if(!override&&_knownVersion===null&&cur>0){
+    try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: this device has not read the shared version yet',refused:'no version'});}catch(e){}
+    try{showToast('⚠ NOT SYNCED — this device has not read the shared itinerary yet. Reload before editing.',7000);}catch(e){}
+    return {ok:false,reason:'stale',head:cur,held:null};
+  }
+  if(!override&&_knownVersion!==null&&cur!==_knownVersion){
+    try{console.warn('[family] push blocked — holding version',_knownVersion,'head is',cur);}catch(e){}
+    try{_recordChange({source:WRITE.SYSTEM,
+      desc:'Push blocked: this device holds version '+_knownVersion+' but the shared trip is at '+cur,
+      refused:'stale version'});}catch(e){}
+    try{showToast('⚠ NOT SYNCED — another device changed the itinerary (version '+cur+'). Reload to get it, or use Restore → Push anyway.',8000);}catch(e){}
+    return {ok:false,reason:'stale',head:cur,held:_knownVersion};
+  }
+  let cloud=null;
+  try{ const st=await _dbFamilyGet('/state'); if(_validTripState(st))cloud=st; }catch(e){}
+  if(!override&&cloud&&_wouldLoseData(cloud,next)){
+    try{_recordChange({source:WRITE.SYSTEM,desc:'Push blocked: would erase most of the shared itinerary',refused:'data loss'});}catch(e){}
+    try{showToast('⚠ NOT SYNCED — this change would erase most of the shared itinerary, so it was kept only on this device.',7000);}catch(e){}
+    return {ok:false,reason:'loss'};
+  }
+  const ts=Date.now();
+  const nextVersion=cur+1;
+  // Bank the copy about to be destroyed BEFORE replacing it. This matters most
+  // on an override, which is the write with the least checking in front of it.
+  if(cloud){ try{ await _dbBackupBeforeOverwrite(cloud,ts,(override?'[override] ':'')+(changeDesc||'')); }catch(e){} }
+  try{
+    await _dbFamilyPut('/state',next);
+    await _dbFamilyPut('/version',nextVersion);
+    await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:changeDesc||'',version:nextVersion,override:!!override});
+  }catch(e){
+    try{showToast('⚠ NOT SYNCED — the shared itinerary could not be written.',6000);}catch(err){}
+    return {ok:false,reason:'write-failed'};
+  }
+  _lastFamilyAt=ts; _knownVersion=nextVersion;
+  if(override){
+    try{_recordChange({source:WRITE.USER,desc:'OVERRIDE: pushed to all devices, replacing version '+cur+' with '+nextVersion});}catch(e){}
+  }
+  return {ok:true,version:nextVersion,replaced:cur,override:!!override};
 }
 
 function _startPresence(){
@@ -4567,7 +4650,12 @@ function _watchFamily(){
       // empty push must never silently wipe/corrupt everyone's itinerary.
       if(!_validTripState(incoming)){ _lastFamilyAt=lc.at; return; }
       _lastFamilyAt=lc.at;
+      // Adopting the head IS how a device becomes writable again. Take its
+      // version with its content — never one without the other.
+      try{ const v=await _dbFamilyGet('/version'); _knownVersion=Number(v)||0; }
+      catch(e){ _knownVersion=(lc&&lc.version)||_knownVersion; }
       state=incoming;
+      delete state._provisional;
       _markCommitted();   // a legitimate whole-state replacement, not a rogue write
       try{_recordChange({source:WRITE.CLOUD,desc:(lc.desc||'itinerary updated')+' (from another device)'});}catch(e){}
       // Adopt EXACTLY what the cloud holds. Re-sorting here mutated the adopted
@@ -4790,27 +4878,19 @@ function _recLoadFile(ev){
 // the shared cloud so every device syncs it. Used by both the per-copy buttons
 // and the paste/file box.
 async function _recPushRaw(raw){
+  let next=null;
+  try{ next=JSON.parse(raw); }catch(e){ alert('That copy is not valid JSON.'); return; }
+  if(!_validTripState(next)){ alert('That copy is not an itinerary — no days were found in it.'); return; }
+  const c=_stateCounts(next);
+  if(!confirm('Push this copy to ALL devices?\n\n'+c.days+' days, '+c.stops+' stops.\n\n'+
+    'This replaces the itinerary on every device whatever version they hold. The copy being replaced is backed up first.'))return;
+  // ONE override, shared with the restore dialog — not a second way in.
+  next.tripType=(getTripType()!=='solo')?'family':'solo';
+  const r=await _pushOverride(next,'Recovery screen: pushed a copy to all devices');
   const msg=document.getElementById('rec-msg');
-  const setMsg=(s,c)=>{ if(msg){ msg.textContent=s; msg.style.color=c||'#111'; } };
-  let st;
-  try{ st=JSON.parse((raw||'').trim()); }
-  catch(e){ alert('That copy is not valid JSON.'); return; }
-  if(!st||!Array.isArray(st.days)||!st.days.length){ alert('That copy has no days in it — refusing to restore an empty itinerary.'); return; }
-  const days=st.days.length, stops=st.days.reduce((n,d)=>n+((d.stops||[]).length),0);
-  const hasKw=(raw||'').toLowerCase().indexOf('lincoln')>=0;
-  if(!confirm('Restore this copy — '+days+' days, '+stops+' stops'+(hasKw?' (contains “Lincoln”)':' — does NOT contain “Lincoln”')+' — to EVERY device sharing this trip?\n\nThis overwrites the current shared itinerary. Do this only if this is the correct copy.')) return;
-  if(!st.tripType) st.tripType='family';
-  try{ localStorage.setItem(LS_KEY,JSON.stringify(st)); }catch(e){}
-  try{
-    const ts=Date.now(); _lastFamilyAt=ts;
-    // Bank the copy we're about to overwrite into the rolling 5-version history.
-    try{ const all=await _dbFamilyGetAll(); if(all&&_validTripState(all.state))await _dbBackupBeforeOverwrite(all.state,ts,'Before restore'); }catch(e){}
-    await _dbFamilyPut('/state',JSON.parse(JSON.stringify(st)));
-    await _dbFamilyPut('/lastChange',{at:ts,by:_sessionId(),desc:'Restored from a saved copy'});
-    setMsg('Restored ('+days+' days, '+stops+' stops) and pushed to the cloud. Other devices update within a few seconds. Reloading…','#059669');
-    alert('Restored '+days+' days, '+stops+' stops and pushed to the cloud. Reloading…');
-    setTimeout(()=>{ location.href=location.pathname+'?id='+encodeURIComponent(tripId)+'&fam=1'; },1400);
-  }catch(e){ alert('Saved on THIS device, but pushing to the cloud failed: '+((e&&e.message)||e)+'. Try again.'); }
+  const say=(t)=>{ if(msg)msg.textContent=t; else alert(t); };
+  if(r&&r.ok){ say('Pushed to all devices — replaced version '+r.replaced+' with '+r.version+'. Reload the other devices.'); }
+  else{ say('Could not write the shared trip. It is saved on this device.'); }
 }
 function _recImport(){ const t=document.getElementById('rec-in'); return _recPushRaw((t&&t.value)||''); }
 
@@ -7196,6 +7276,8 @@ async function init(){
             _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
             if(JSON.stringify(data.state)!==JSON.stringify(state)){
               state=data.state; if(!state.tripType)state.tripType='family';
+              delete state._provisional;
+              _knownVersion=Number(data.version)||0;
               try{ _sortAllDaysByTime(); }catch(e){}
               _markCommitted();
               try{_recordChange({source:WRITE.CLOUD,desc:'Adopted a newer shared copy on open'});}catch(e){}
@@ -7215,6 +7297,8 @@ async function init(){
         const data=await raw.json();
         if(data&&_validTripState(data.state)){
           state=data.state;
+          delete state._provisional;
+          _knownVersion=Number(data.version)||0;
           _lastFamilyAt=(data.lastChange&&data.lastChange.at)||0;
           try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch(e){}
         }else{
@@ -7226,9 +7310,13 @@ async function init(){
           // edit seeds the cloud safely through the guarded sync.
           const r=await fetch('trips/'+tripId+'.json');state=await r.json();
           state.tripType='family';
+          // A PLACEHOLDER, NOT AN AUTHORITY. This copy came from the bundled
+          // plan because the shared trip could not be read. It must never be
+          // pushed — that is precisely how a month of edits was lost.
+          state._provisional=true;
         }
       }catch(e){
-        try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();}
+        try{const r=await fetch('trips/'+tripId+'.json');state=await r.json();state._provisional=true;}
         catch(e2){state={days:[],title:'Trip'};}
       }
     }

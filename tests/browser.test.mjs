@@ -278,7 +278,7 @@ test('End Time and Duration stay in sync in the real Edit Stop form', async () =
         lat: 51.5194, lng: -0.127 },
     ] },
   ]);
-  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.evaluate(async () => openEditStopModal(0, 0));
   await page.waitForSelector('#f-duration', { state: 'attached' });
   // Opening the form must already show the TRUE span, not the stale "2hrs".
   const shown = await page.inputValue('#f-duration');
@@ -333,15 +333,15 @@ test('EVERY hotel surface shows the reservation and its ticket', async () => {
 
   const surfaces = [];
   // 1. The OVERVIEW lodging cards.
-  await page.evaluate(() => switchDay(-1));
+  await page.evaluate(async () => switchDay(-1));
   await page.waitForFunction(() => /lodge-card/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
   surfaces.push(['overview lodging card', await page.innerHTML('#content-area')]);
   // 2. The end-of-day "Tonight" bookend.
-  await page.evaluate(() => switchDay(1));
+  await page.evaluate(async () => switchDay(1));
   await page.waitForFunction(() => /hotel-bookend/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
   surfaces.push(['day hotel bookend', await page.innerHTML('#content-area')]);
   // 3. The hotel's own stop card.
-  await page.evaluate(() => switchDay(0));
+  await page.evaluate(async () => switchDay(0));
   await page.waitForFunction(() => /stop-card/.test(document.getElementById('content-area').innerHTML), null, { timeout: 8000 });
   surfaces.push(['hotel stop card', await page.innerHTML('#content-area')]);
 
@@ -957,7 +957,7 @@ test('Edit Stop shows BOTH times, and no field is clipped', async () => {
         duration: '1h 20min', lat: 51.4994, lng: -0.1273 },
     ] },
   ]);
-  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.evaluate(async () => openEditStopModal(0, 0));
   await page.waitForSelector('#f-endtime', { state: 'attached' });
   await page.waitForTimeout(300);
   const f = await page.evaluate(() => {
@@ -1009,11 +1009,11 @@ test('no two Edit Stop fields ever overlap, at any width', async () => {
         duration: '1h', lat: 51.4994, lng: -0.1273 },
     ] },
   ]);
-  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.evaluate(async () => openEditStopModal(0, 0));
   await page.waitForSelector('#f-endtime', { state: 'attached' });
   for (const w of OVERLAP_WIDTHS) {
     await page.setViewportSize({ width: w, height: 900 });
-    await page.evaluate(() => _fitFieldRows());
+    await page.evaluate(async () => _fitFieldRows());
     await page.waitForTimeout(60);
     const rows = await measureRows(page);
     for (const cells of rows) {
@@ -1043,7 +1043,7 @@ test('a control that refuses to shrink makes the row stack, not overlap', async 
         lat: 51.4994, lng: -0.1273 },
     ] },
   ]);
-  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.evaluate(async () => openEditStopModal(0, 0));
   await page.waitForSelector('#f-date', { state: 'attached' });
   // Simulate the iOS control: intrinsic width, immune to width:100%.
   const res = await page.evaluate(() => {
@@ -1087,11 +1087,11 @@ test('a train journey is drawn on the map', async () => {
   await page.waitForFunction(
     () => document.querySelectorAll('#map .leaflet-overlay-pane path').length > 0,
     null, { timeout: 15000 });
-  const legs = await page.evaluate(() => _transitLegs(state.days[0].stops));
+  const legs = await page.evaluate(async () => _transitLegs(state.days[0].stops));
   assert.equal(legs.length, 1, 'the train is one transit leg');
   assert.equal(legs[0].mode, 'train');
   assert.equal(legs[0].to[0], 51.4952, 'it ends at Victoria, its stated destination');
-  const paths = await page.evaluate(() => document.querySelectorAll('#map .leaflet-overlay-pane path').length);
+  const paths = await page.evaluate(async () => document.querySelectorAll('#map .leaflet-overlay-pane path').length);
   assert.ok(paths >= 1, 'and a line is actually rendered, got ' + paths);
   await page.close();
 });
@@ -1106,7 +1106,7 @@ test('a transit leg with no destination coords uses the next stop', async () => 
         lat: 51.5063, lng: -0.1237 },
     ] },
   ]);
-  const legs = await page.evaluate(() => _transitLegs(state.days[0].stops));
+  const legs = await page.evaluate(async () => _transitLegs(state.days[0].stops));
   assert.equal(legs.length, 1, 'the train still produces a leg');
   assert.equal(legs[0].to[0], 51.5063, 'it runs to the next located stop');
   await page.close();
@@ -1225,7 +1225,7 @@ async function attach(page, files) {
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 
 async function openChat(page) {
-  await page.evaluate(() => openPlanChat());
+  await page.evaluate(async () => openPlanChat());
   await page.waitForSelector('#pc-input', { state: 'attached' });
 }
 
@@ -1245,7 +1245,7 @@ test('pasting a text confirmation attaches it and sends its contents', async () 
   assert.equal(tray.bad, 0, 'a plain text file must not be reported as unreadable');
 
   // What the model actually receives.
-  const sent = await page.evaluate(() => _pcComposeMessage('When do I check in?'));
+  const sent = await page.evaluate(async () => _pcComposeMessage('When do I check in?'));
   assert.match(sent, /=== ATTACHED FILE: hotel\.txt ===/);
   assert.match(sent, /VZ88421/, 'the confirmation number must reach the model');
   assert.match(sent, /When do I check in\?$/, 'the question comes after the file');
@@ -1260,13 +1260,13 @@ test('an attached file is actually put on the wire when you hit send', async () 
   await attach(page, [{ name: 'flight.txt', type: 'text/plain',
     b64: b64('Norse Atlantic Z0 784, MCO to LGW, 4 Aug 2026, seat 21A, ref QK7T2M') }]);
   await page.evaluate(() => { document.getElementById('pc-input').value = 'Is this on my itinerary?'; });
-  await page.evaluate(() => _planSendMessage());
+  await page.evaluate(async () => _planSendMessage());
   const body = await aiRequestBody(page);
   assert.match(body.user, /QK7T2M/, 'the booking reference must be in the request body');
   assert.match(body.user, /ATTACHED FILE: flight\.txt/);
   assert.match(body.user, /Is this on my itinerary\?/);
   // And the tray clears, so the same file is not re-sent with the next question.
-  const left = await page.evaluate(() => document.querySelectorAll('.pc-file').length);
+  const left = await page.evaluate(async () => document.querySelectorAll('.pc-file').length);
   assert.equal(left, 0, 'the tray clears after sending');
   await page.close();
 });
@@ -1351,11 +1351,11 @@ test('attachments can be removed, and the same file is not added twice', async (
   const f = { name: 'a.txt', type: 'text/plain', b64: b64('hello') };
   await attach(page, [f]);
   await attach(page, [f]);
-  assert.equal(await page.evaluate(() => document.querySelectorAll('.pc-file').length), 1,
+  assert.equal(await page.evaluate(async () => document.querySelectorAll('.pc-file').length), 1,
     'the same file pasted twice stays one attachment');
-  await page.evaluate(() => document.querySelector('.pc-file-x').click());
-  assert.equal(await page.evaluate(() => document.querySelectorAll('.pc-file').length), 0);
-  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('pc-attach')).display), 'none',
+  await page.evaluate(async () => document.querySelector('.pc-file-x').click());
+  assert.equal(await page.evaluate(async () => document.querySelectorAll('.pc-file').length), 0);
+  assert.equal(await page.evaluate(async () => getComputedStyle(document.getElementById('pc-attach')).display), 'none',
     'the empty tray hides itself');
   await page.close();
 });
@@ -1365,7 +1365,7 @@ test('a file alone, with no typed question, is still a valid message', async () 
   await openChat(page);
   await captureAiRequest(page);
   await attach(page, [{ name: 'ticket.txt', type: 'text/plain', b64: b64('Ref RJ4419 Edinburgh Waverley 09:12') }]);
-  await page.evaluate(() => _planSendMessage());        // input left empty on purpose
+  await page.evaluate(async () => _planSendMessage());        // input left empty on purpose
   const body = await aiRequestBody(page);
   assert.match(body.user, /RJ4419/);
   await page.close();
@@ -1506,11 +1506,11 @@ test('the system prompt actually sent contains the attachment rules', async () =
         lat: 51.5194, lng: -0.127 },
     ] },
   ]);
-  await page.evaluate(() => openPlanChat());
+  await page.evaluate(async () => openPlanChat());
   await page.waitForSelector('#pc-input', { state: 'attached' });
   await captureAiRequest(page);
   await page.evaluate(() => { document.getElementById('pc-input').value = 'hello'; });
-  await page.evaluate(() => _planSendMessage());
+  await page.evaluate(async () => _planSendMessage());
   const body = await aiRequestBody(page);
   // Before the merge these rules lived on PLAN_CHAT_SYSTEM, which nothing sent.
   assert.match(body.system, /ATTACHED FILE markers/,
@@ -1530,7 +1530,7 @@ test('the card augmentation merged out of trip-extras still runs', async () => {
   ]);
   await page.waitForFunction(
     () => !!document.querySelector('.stop-card .card-endtime'), null, { timeout: 15000 });
-  const txt = await page.evaluate(() => document.querySelector('.card-endtime').textContent);
+  const txt = await page.evaluate(async () => document.querySelector('.card-endtime').textContent);
   assert.match(txt, /12:00 PM/, 'the end time is still drawn on the card, got ' + txt);
   await page.close();
 });
@@ -1542,9 +1542,9 @@ test('the audio-tour field still pre-fills when editing a stop', async () => {
         lat: 51.4994, lng: -0.1273, audioUrl: 'https://example.com/tour.mp3' },
     ] },
   ]);
-  await page.evaluate(() => openEditStopModal(0, 0));
+  await page.evaluate(async () => openEditStopModal(0, 0));
   await page.waitForSelector('#f-audiourl', { state: 'attached' });
-  const v = await page.evaluate(() => document.getElementById('f-audiourl').value);
+  const v = await page.evaluate(async () => document.getElementById('f-audiourl').value);
   assert.equal(v, 'https://example.com/tour.mp3',
     'the prefill that lived in the openEditStopModal wrapper must survive the merge');
   await page.close();
@@ -1738,7 +1738,7 @@ test('the History button opens a readable log', async () => {
     _markCommitted();
     commit('Moved dinner later on Day 1', () => { state.days[0].stops[1].time = '2:00 PM'; }, WRITE.USER);
   });
-  await page.evaluate(() => openChangeLog());
+  await page.evaluate(async () => openChangeLog());
   const shown = await page.evaluate(() => ({
     open: document.getElementById('trip-recap-modal').classList.contains('open'),
     text: document.getElementById('trip-recap-content').textContent,
@@ -1878,7 +1878,7 @@ test('crossing the date line does not produce a 37-hour flight', async () => {
         tz: 'Australia/Sydney', endTz: 'America/Los_Angeles', lat: -33.94, lng: 151.18 },
     ] },
   ]);
-  const mins = await page.evaluate(() => _stopDurationMins(state.days[0].stops[0], '2026-08-04'));
+  const mins = await page.evaluate(async () => _stopDurationMins(state.days[0].stops[0], '2026-08-04'));
   assert.ok(mins > 700 && mins < 900, 'about 13 hours, got ' + mins + ' minutes');
   await page.close();
 });
@@ -1891,7 +1891,7 @@ test('a same-zone stop is unaffected by any of this', async () => {
         lat: 51.5194, lng: -0.127 },
     ] },
   ]);
-  const out = await page.evaluate(() => _displayDuration(state.days[0].stops[0], '2026-08-05'));
+  const out = await page.evaluate(async () => _displayDuration(state.days[0].stops[0], '2026-08-05'));
   assert.equal(out, '2h 30min');
   await page.close();
 });
@@ -2011,7 +2011,7 @@ test('a journey with no stated destination ends where it delivers you', async ()
         lat: 51.5063, lng: -0.1237 },
     ] },
   ]);
-  const to = await page.evaluate(() =>
+  const to = await page.evaluate(async () =>
     _stopTo(state.days[0].stops[0], state.days[0].stops.slice(1)));
   assert.equal(to.lat, 51.5063, 'the next located stop, got ' + to.lat);
   await page.close();
@@ -2205,7 +2205,7 @@ test('every hotel surface shows the confirmation and the ticket button', async (
   assert.match(card.txt, /1072991266/, 'the card shows the number');
   assert.equal(card.btn, 1, 'exactly one ticket button, not zero and not two, got ' + card.btn);
   // And the green bookend on the FOLLOWING day, where you wake up in it.
-  await page.evaluate(() => switchDay(1));
+  await page.evaluate(async () => switchDay(1));
   await page.waitForTimeout(200);
   const bookend = await page.evaluate(() => {
     const b = document.querySelector('.day-panel.active .hotel-bookend');
@@ -2280,7 +2280,7 @@ test('a YouTube tour plays in the stop picture slot', async () => {
 
 test('every YouTube link shape is recognised, and non-YouTube is left alone', async () => {
   const { page } = await openTrip(WP_DAY);
-  const ids = await page.evaluate(() => [
+  const ids = await page.evaluate(async () => [
     _youTubeId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
     _youTubeId('https://youtu.be/dQw4w9WgXcQ'),
     _youTubeId('https://www.youtube.com/embed/dQw4w9WgXcQ'),
@@ -2304,7 +2304,7 @@ test('an ordinary audio tour still gets its player', async () => {
   ]);
   await page.waitForFunction(
     () => !!document.querySelector('#stop-card-0-0 audio'), null, { timeout: 15000 });
-  const n = await page.evaluate(() => document.querySelectorAll('#stopimg-0-0 iframe').length);
+  const n = await page.evaluate(async () => document.querySelectorAll('#stopimg-0-0 iframe').length);
   assert.equal(n, 0, 'an mp3 must not become a video embed');
   await page.close();
 });
@@ -2508,7 +2508,7 @@ test('the Nights stat on screen shows the real number', async () => {
 
 test('a one-day trip has no nights', async () => {
   const { page } = await openTrip(tripOfDays(1), { day: null });
-  const n = await page.evaluate(() => _tripNights());
+  const n = await page.evaluate(async () => _tripNights());
   assert.equal(n, 0, 'a single day has nowhere to sleep afterwards, got ' + n);
   await page.close();
 });
@@ -2631,7 +2631,7 @@ test('a leg after a train starts where the train ARRIVES', async () => {
   ]);
   await page.waitForFunction(
     () => !!document.querySelector('.leg-connector'), null, { timeout: 15000 });
-  const text = await page.evaluate(() =>
+  const text = await page.evaluate(async () =>
     document.querySelector('.leg-connector').textContent.replace(/\s+/g, ' ').trim());
   const miles = parseFloat(/([\d.]+) mi/.exec(text)[1]);
   // Victoria to Whitehall is about a mile. Gatwick to Whitehall is about 25.
@@ -2655,7 +2655,7 @@ test('the grader is told the weekday and each stop\'s hours', async () => {
     ] },
   ], { day: null });
   await captureAiRequest(page);
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   const body = await aiRequestBody(page);
   assert.match(body.system, /OPENING HOURS ARE A HARD CONSTRAINT/,
     'hours must be a stated criterion, not an afterthought');
@@ -2687,7 +2687,7 @@ test('a suggestion that would be closed never reaches the screen', async () => {
       ],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Consider Adding|Discarded/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2723,11 +2723,11 @@ test('a stop scheduled after closing is flagged even if the model missed it', as
       timing_conflicts: [],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
-  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  const txt = await page.evaluate(async () => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /Tate Modern/, 'the app found it itself: ' + txt);
   assert.match(txt, /10:00 AM - 6:00 PM/, 'and says which hours it breaks');
   await page.close();
@@ -2742,10 +2742,10 @@ test('a suggestion shows the time and hours it is claiming', async () => {
         suggested_day: 1, suggested_time: '11:00 AM', hours: '10:00 AM - 5:00 PM', fits_near: 'British Museum' }],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Soane/.test(document.getElementById('ai-grader-content').textContent), null, { timeout: 20000 });
-  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  const txt = await page.evaluate(async () => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /11:00 AM/, 'the proposed time is shown so it can be judged');
   assert.match(txt, /10:00 AM - 5:00 PM/, 'and the hours it claims');
   await page.close();
@@ -2771,7 +2771,7 @@ test('a clean itinerary can score an A', async () => {
       overall_grade: { letter: 'A', rationale: 'Exceptional.' },
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2796,7 +2796,7 @@ test('a hard conflict caps the letter and says what to fix', async () => {
       overall_grade: { letter: 'A', rationale: 'Flawless.' },
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2822,7 +2822,7 @@ test('a two-minute early arrival is shown as minor and does not cap', async () =
       overall_grade: { letter: 'A-', rationale: 'Strong.' },
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2868,7 +2868,7 @@ test('one overrun out of many stops does not cost the A', async () => {
       overall_grade: { letter: 'A', rationale: 'Impressively constructed.' },
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2893,7 +2893,7 @@ test('one genuinely impossible stop out of many costs only a half step', async (
       overall_grade: { letter: 'A', rationale: 'Strong.' },
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2926,7 +2926,7 @@ test('a review note without a severity is not stamped MUST MOVE', async () => {
         issue: 'Tight but workable for a highlights run. Not a hard conflict.' }],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -2957,11 +2957,11 @@ test('the app\'s OWN finding is still labelled Must move when it truly is', asyn
       overall_grade: { letter: 'A', rationale: 'Flawless.' }, timing_conflicts: [],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
-  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  const txt = await page.evaluate(async () => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /Must move/, 'arriving two hours after closing really is one');
   await page.close();
 });
@@ -2978,11 +2978,11 @@ test('a visit is told to run TO closing, never to end early', async () => {
       overall_grade: { letter: 'A', rationale: 'Strong.' }, timing_conflicts: [],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
-  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  const txt = await page.evaluate(async () => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /Ends at closing/, 'labelled for what it is');
   assert.match(txt, /Stay to closing/, 'and the advice is to use the whole visit: ' + txt);
   assert.ok(!/leave earlier/i.test(txt), 'never told to cut the visit short');
@@ -2992,7 +2992,7 @@ test('a visit is told to run TO closing, never to end early', async () => {
 test('the grader is instructed that closing time is a target, not a hazard', async () => {
   const { page } = await openTrip(WP_DAY, { day: null });
   await captureAiRequest(page);
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   const body = await aiRequestBody(page);
   assert.match(body.system, /STAYING UNTIL A PLACE CLOSES IS THE POINT/);
   assert.match(body.system, /NEVER advise leaving early/);
@@ -3011,7 +3011,7 @@ test('a swap that replaces a stop with itself is not shown as a swap', async () 
         reason: 'Already in the plan; this is a pacing note, not a true swap.' }],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /National Gallery/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -3309,7 +3309,7 @@ test('speculative timing notes never reach the screen', async () => {
       ],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -3341,7 +3341,7 @@ test('a stop you hold a ticket for is never questioned on hours', async () => {
         scheduled_time: '9:00 PM', hours: '9:30 AM - 5:00 PM', issue: 'Scheduled after closing.' }],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /holding the grade back/i.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
@@ -3367,11 +3367,11 @@ test('a real, unbooked closure is still reported', async () => {
       overall_grade: { letter: 'A', rationale: 'Strong.' }, timing_conflicts: [],
     }) }] }) });
   });
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   await page.waitForFunction(
     () => /Timing Issues/.test(document.getElementById('ai-grader-content').textContent),
     null, { timeout: 20000 });
-  const txt = await page.evaluate(() => document.getElementById('ai-grader-content').textContent);
+  const txt = await page.evaluate(async () => document.getElementById('ai-grader-content').textContent);
   assert.match(txt, /Tate Modern/, 'filtering noise must not silence the real findings');
   assert.match(txt, /Must move/);
   await page.close();
@@ -3380,7 +3380,7 @@ test('a real, unbooked closure is still reported', async () => {
 test('the grader is told not to speculate and that a booking settles it', async () => {
   const { page } = await openTrip(WP_DAY, { day: null });
   await captureAiRequest(page);
-  await page.evaluate(() => gradeItinerary());
+  await page.evaluate(async () => gradeItinerary());
   const body = await aiRequestBody(page);
   assert.match(body.system, /DO NOT RAISE SPECULATION/);
   assert.match(body.system, /A BOOKING SETTLES THE QUESTION/);
@@ -3446,7 +3446,7 @@ test('Restore brings back exactly what was saved', async () => {
     }, WRITE.AI);
     const broken = { time: state.days[0].stops[0].time, stops: state.days[0].stops.length };
     await openRestore();
-    restoreSaved(0);
+    await restoreSaved(0);
     return { broken, time: state.days[0].stops[0].time,
       names: state.days[0].stops.map((s) => s.name),
       resv: state.days[0].stops[0].reservation };
@@ -3485,7 +3485,7 @@ test('restoring a much smaller copy succeeds, but only deliberately', async () =
     const afterBlocked = state.days[0].stops.length;
     // Through the Restore button, it must go through.
     await openRestore();
-    restoreSaved(_restoreList.findIndex((e) => e.name === 'small'));
+    await restoreSaved(_restoreList.findIndex((e) => e.name === 'small'));
     return { grown, blocked, afterBlocked, afterRestore: state.days[0].stops.length };
   });
   assert.equal(out.grown, 12);
@@ -3517,7 +3517,7 @@ test('a restore is itself recorded, so it can be undone too', async () => {
     await saveItinerary();
     commit('later edit', () => { state.days[0].stops[0].notes = 'changed'; }, WRITE.USER);
     await openRestore();
-    restoreSaved(0);
+    await restoreSaved(0);
     return _loadChangeLog().map((e) => e.desc);
   });
   assert.ok(log.some((d) => /Saved a copy: "checkpoint"/.test(d)), 'the save is logged: ' + JSON.stringify(log));
@@ -3528,10 +3528,10 @@ test('a restore is itself recorded, so it can be undone too', async () => {
 test('the Save and Restore buttons are on the trip overview', async () => {
   const page = await openSaveTrip();
   // Make sure we are actually on the Overview before looking for its header.
-  await page.evaluate(() => switchDay(-1));
+  await page.evaluate(async () => switchDay(-1));
   await page.waitForFunction(
     () => !!document.querySelector('.ov-trip-head'), null, { timeout: 15000 });
-  const btns = await page.evaluate(() =>
+  const btns = await page.evaluate(async () =>
     Array.from(document.querySelectorAll('.ov-trip-head .ai-action-btn')).map((b) => b.textContent.trim()));
   assert.ok(btns.some((b) => /Save/.test(b)), 'a Save button exists: ' + JSON.stringify(btns));
   assert.ok(btns.some((b) => /Restore/.test(b)), 'and a Restore button: ' + JSON.stringify(btns));
@@ -3589,8 +3589,10 @@ async function openFamilyTrip(days, cloud) {
         headers: { 'Access-Control-Allow-Origin': '*' }, body });
       if (m === 'PUT') { puts.push({ url: u, body: route.request().postData() }); return json('null'); }
       if (/\/lastChange\.json/.test(u)) return json(JSON.stringify(cloud.lastChange));
+      if (/\/version\.json/.test(u)) return json(JSON.stringify(cloud.version ?? null));
       if (/\/state\.json/.test(u)) return json(JSON.stringify(cloud.state));
-      return json('null');
+      return json(JSON.stringify({ state: cloud.state, lastChange: cloud.lastChange,
+        version: cloud.version ?? null }));
     }
     // Real Leaflet, or trip.js throws during init and never sets up `state`.
     if (u.includes('leaflet')) {
@@ -3629,15 +3631,14 @@ const CURRENT = { days: [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops:
 
 test('a device that has not seen the current copy cannot overwrite it', async () => {
   const { page, puts } = await openFamilyTrip(STALE, {
-    state: CURRENT,
-    // The cloud moved on LONG after anything this device knows about.
-    lastChange: { at: Date.now() + 5_000_000, by: 'other-device', desc: 'edits from the other phone' },
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now() + 5_000_000, by: 'other-device', desc: 'edits from the other phone', version: 47 },
   });
   // Count only what happens AFTER the trigger; loading the page can push on its
   // own, which is itself the same failure and is covered by its own test below.
   const before = puts.filter((p) => /\/state\.json/.test(p.url)).length;
   const out = await page.evaluate(async () => {
-    _lastFamilyAt = 1;                     // this device is far behind
+    _knownVersion = 12;                    // this device is far behind the head
     _syncFamily('an edit from the stale device');
     await new Promise((r) => setTimeout(r, 1500));
     return { toast: (document.getElementById('share-toast') || {}).textContent || '',
@@ -3647,7 +3648,7 @@ test('a device that has not seen the current copy cannot overwrite it', async ()
   assert.equal(stateWrites.length, 0,
     'the stale copy must never reach the shared itinerary, got ' + stateWrites.length + ' writes');
   assert.match(out.toast, /NOT SYNCED/, 'and the user is told: ' + out.toast);
-  assert.ok(out.log.some((l) => /had not seen the newer shared copy/.test(l)),
+  assert.ok(out.log.some((l) => /holds version 12 but the shared trip is at 47/.test(l)),
     'and it is recorded: ' + JSON.stringify(out.log));
   await page.close();
 });
@@ -3655,12 +3656,12 @@ test('a device that has not seen the current copy cannot overwrite it', async ()
 test('a device that IS up to date still syncs normally', async () => {
   const at = Date.now() - 10_000;
   const { page, puts } = await openFamilyTrip(STALE, {
-    state: CURRENT,
-    lastChange: { at, by: 'other-device', desc: 'an earlier change we already have' },
+    state: CURRENT, version: 20,
+    lastChange: { at, by: 'other-device', desc: 'an earlier change we already have', version: 20 },
   });
   const before2 = puts.filter((p) => /\/state\.json/.test(p.url)).length;
   await page.evaluate(async (seen) => {
-    _lastFamilyAt = seen;                  // we have already adopted that change
+    _knownVersion = 20;                    // we hold the head
     _syncFamily('a legitimate edit');
     await new Promise((r) => setTimeout(r, 1500));
   }, at);
@@ -3671,13 +3672,13 @@ test('a device that IS up to date still syncs normally', async () => {
 
 test('our own change is not mistaken for someone else moving ahead', async () => {
   const { page, puts } = await openFamilyTrip(STALE, {
-    state: CURRENT,
-    lastChange: { at: Date.now() + 5_000_000, by: 'THIS-SESSION', desc: 'our own push' },
+    state: CURRENT, version: 31,
+    lastChange: { at: Date.now() + 5_000_000, by: 'THIS-SESSION', desc: 'our own push', version: 31 },
   });
   const before3 = puts.filter((p) => /\/state\.json/.test(p.url)).length;
   await page.evaluate(async () => {
     sessionStorage.setItem('_csid', 'THIS-SESSION');
-    _lastFamilyAt = 1;
+    _knownVersion = 31;
     _syncFamily('a follow-up edit');
     await new Promise((r) => setTimeout(r, 1500));
   });
@@ -3752,7 +3753,7 @@ const GOOD_FILE = {
 };
 
 async function openRestorePanel(page) {
-  await page.evaluate(() => openRestore());
+  await page.evaluate(async () => openRestore());
   await page.waitForSelector('#restore-file', { state: 'attached', timeout: 15000 });
 }
 // Feed the panel a file the way a real picker would.
@@ -3771,7 +3772,7 @@ async function chooseRestoreFile(page, name, obj) {
 test('the Restore panel takes a file', async () => {
   const { page } = await openTrip(WP_DAY, { day: null });
   await openRestorePanel(page);
-  const has = await page.evaluate(() => !!document.getElementById('restore-file'));
+  const has = await page.evaluate(async () => !!document.getElementById('restore-file'));
   assert.ok(has, 'there is a file picker in the Restore panel');
   await page.close();
 });
@@ -3796,8 +3797,8 @@ test('restoring from a file replaces the itinerary with exactly that file', asyn
   await page.evaluate(() => { window.confirm = () => true; });
   await openRestorePanel(page);
   await chooseRestoreFile(page, 'london-scotland-FINAL.json', GOOD_FILE);
-  const out = await page.evaluate(() => {
-    _restoreFromFile();
+  const out = await page.evaluate(async () => {
+    await _restoreFromFile();
     return { days: state.days.length,
       stops: state.days.reduce((n, d) => n + d.stops.length, 0),
       lincoln: /lincoln/i.test(JSON.stringify(state)),
@@ -3808,7 +3809,8 @@ test('restoring from a file replaces the itinerary with exactly that file', asyn
   assert.equal(out.stops, 3, 'exactly the file, got ' + out.stops);
   assert.ok(out.lincoln, 'Lincoln is in the restored itinerary');
   assert.equal(out.resv, 'Z0784', 'confirmation numbers come across');
-  assert.ok(out.log.some((d) => /Restored from file/.test(d)), 'and the restore is logged');
+  assert.ok(out.log.some((d) => /Restored from london-scotland-FINAL\.json/.test(d)),
+    'and the restore is logged by name: ' + JSON.stringify(out.log.slice(-3)));
   await page.close();
 });
 
@@ -3822,7 +3824,7 @@ test('a file with FEWER stops still restores — that is the whole point', async
   await page.evaluate(() => { window.confirm = () => true; });
   await openRestorePanel(page);
   await chooseRestoreFile(page, 'smaller.json', GOOD_FILE);
-  const stops = await page.evaluate(() => { _restoreFromFile();
+  const stops = await page.evaluate(async () => { await _restoreFromFile();
     return state.days.reduce((n, d) => n + d.stops.length, 0); });
   assert.equal(stops, 3, 'the smaller file won, got ' + stops + ' stops');
   await page.close();
@@ -3933,7 +3935,7 @@ test('moving a ticket out shrinks the saved itinerary', async () => {
   const { page } = await openTrip(TICKET_DAY);
   await page.waitForFunction(
     () => state.days[0].stops[0].ticketRef, null, { timeout: 15000 });
-  const bytes = await page.evaluate(() => JSON.stringify(state).length);
+  const bytes = await page.evaluate(async () => JSON.stringify(state).length);
   assert.ok(bytes < 4000, 'the itinerary no longer carries the ticket, got ' + bytes + ' bytes');
   await page.close();
 });
@@ -3950,7 +3952,7 @@ test('a stored ticket survives a restore', async () => {
       days: 1, stops: 2, state: snapshot }]);
     commit('wreck it', () => { state.days[0].stops[0].reservation = ''; delete state.days[0].stops[0].ticketRef; }, WRITE.USER);
     _restoreList = await _gatherRestorable();
-    restoreSaved(0);
+    await restoreSaved(0);
     const s = state.days[0].stops[0];
     return { ref: s.ticketRef, data: await _stopTicketData(s), resv: s.reservation };
   });
@@ -3999,13 +4001,21 @@ test('the same ticket on two stops is stored once', async () => {
     () => state.days[0].stops.every((s) => s.ticketRef), null, { timeout: 15000 });
   const out = await page.evaluate(async () => {
     const [a, b] = state.days[0].stops;
-    const c = await caches.open('seasons-tickets');
-    return { same: a.ticketRef === b.ticketRef, entries: (await c.keys()).length,
-      resolves: (await _stopTicketData(b)).startsWith('data:application/pdf') };
+    // ONE reference for the same bytes is what "stored once" means — counting
+    // cache entries is a race, because the cache is shared across tests.
+    return { same: a.ticketRef === b.ticketRef, ref: a.ticketRef,
+      fromA: await _stopTicketData(a), fromB: await _stopTicketData(b),
+      // The same content must always produce the same id.
+      stable: (await _ticketId('data:application/pdf;base64,AAAA'))
+            === (await _ticketId('data:application/pdf;base64,AAAA')),
+      differs: (await _ticketId('data:application/pdf;base64,AAAA'))
+            !== (await _ticketId('data:application/pdf;base64,BBBB')) };
   });
-  assert.ok(out.same, 'both stops point at the same ticket');
-  assert.equal(out.entries, 1, 'and it is stored once, got ' + out.entries);
-  assert.ok(out.resolves, 'and still opens from either stop');
+  assert.ok(out.same, 'both stops point at the same ticket, got ' + out.ref);
+  assert.equal(out.fromA, out.fromB, 'and both open the same bytes');
+  assert.ok(out.fromB.startsWith('data:application/pdf'), 'which are the ticket');
+  assert.ok(out.stable, 'the same file always gets the same id');
+  assert.ok(out.differs, 'and different files do not collide');
   await page.close();
 });
 
@@ -4032,7 +4042,7 @@ test('a locked time survives a save and restore', async () => {
       state: JSON.parse(JSON.stringify(state)) }]);
     commit('unlock everything', () => { state.days[0].stops.forEach((s) => { delete s.locked; }); }, WRITE.USER);
     _restoreList = await _gatherRestorable();
-    restoreSaved(0);
+    await restoreSaved(0);
     return state.days[0].stops.map((s) => !!s.locked);
   });
   assert.deepEqual([...out], [true, true, false], 'the locks came back, got ' + JSON.stringify(out));
@@ -4089,5 +4099,138 @@ test('the Excel export carries the lock and the end time', async () => {
   assert.equal(stPauls[li], 'LOCKED', 'a locked stop is marked');
   assert.equal(stPauls[ei], '3:25 PM', 'and its end time is exported');
   assert.equal(dinner[li], '', 'an unlocked stop is not');
+  await page.close();
+});
+
+// ===========================================================================
+// VERSION CONTROL. Wall-clock timestamps say nothing about lineage: a device
+// closed for weeks can hold an ancient copy and still have the later clock
+// reading, which is how a weeks-old itinerary overwrote everyone. A version
+// number cannot be wrong about that — you may only write N+1 holding N.
+// A human restore can still force it through; nothing automatic can.
+// ===========================================================================
+async function pushOnce(page, fn) {
+  const before = Date.now();
+  await page.evaluate(fn);
+  await page.waitForTimeout(1500);
+  return before;
+}
+const stateWrites = (puts) => puts.filter((p) => /\/state\.json/.test(p.url));
+const versionWrites = (puts) => puts.filter((p) => /\/version\.json/.test(p.url));
+
+test('a device holding an old version cannot write over the head', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'their edits', version: 47 },
+  });
+  const n = stateWrites(puts).length;
+  const log = await page.evaluate(async () => {
+    _knownVersion = 12;
+    _syncFamily('an edit from three weeks ago');
+    await new Promise((r) => setTimeout(r, 1500));
+    return _loadChangeLog().map((e) => e.desc + '|' + (e.refused || ''));
+  });
+  assert.equal(stateWrites(puts).length - n, 0, 'nothing was written');
+  assert.ok(log.some((l) => /stale version/.test(l)), 'and it says why: ' + JSON.stringify(log.slice(-2)));
+  await page.close();
+});
+
+test('reading the head makes a device writable again, and it lands at head+1', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'their edits', version: 47 },
+  });
+  const n = versionWrites(puts).length;
+  await pushOnce(page, async () => {
+    _knownVersion = 47;                       // this is what adopting the head does
+    _syncFamily('an edit made from the current copy');
+    await new Promise((r) => setTimeout(r, 1400));
+  });
+  const vw = versionWrites(puts).slice(n);
+  assert.equal(vw.length, 1, 'the version was written once, got ' + vw.length);
+  assert.equal(JSON.parse(vw[0].body), 48, 'as head+1, got ' + vw[0].body);
+  await page.close();
+});
+
+test('a device that has never read the head is refused', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'x', version: 47 },
+  });
+  const n = stateWrites(puts).length;
+  await pushOnce(page, async () => {
+    _knownVersion = null;                     // cold, never adopted
+    _syncFamily('a blind edit');
+    await new Promise((r) => setTimeout(r, 1400));
+  });
+  assert.equal(stateWrites(puts).length - n, 0, 'it must not guess');
+  await page.close();
+});
+
+test('a copy loaded from the bundled plan is never pushed', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'x', version: 47 },
+  });
+  const n = stateWrites(puts).length;
+  const log = await page.evaluate(async () => {
+    state._provisional = true; _knownVersion = 47;
+    _syncFamily('an edit on a placeholder copy');
+    await new Promise((r) => setTimeout(r, 1400));
+    return _loadChangeLog().map((e) => e.desc + '|' + (e.refused || ''));
+  });
+  assert.equal(stateWrites(puts).length - n, 0, 'a placeholder is not an authority');
+  assert.ok(log.some((l) => /provisional/.test(l)), 'and it says so: ' + JSON.stringify(log.slice(-2)));
+  await page.close();
+});
+
+test('THE OVERRIDE: a person can push from a stale device, and it is recorded', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'x', version: 47 },
+  });
+  const sn = stateWrites(puts).length, vn = versionWrites(puts).length;
+  const log = await page.evaluate(async () => {
+    _knownVersion = 12;                        // as stale as it gets
+    await _pushOverride(JSON.parse(JSON.stringify(state)), 'Restored from a file (override)');
+    return _loadChangeLog().map((e) => e.desc);
+  });
+  assert.equal(stateWrites(puts).length - sn, 1, 'the override wrote the state');
+  const vw = versionWrites(puts).slice(vn);
+  assert.equal(JSON.parse(vw[0].body), 48, 'still head+1, so the counter stays sane');
+  assert.ok(log.some((d) => /OVERRIDE/.test(d)), 'and it is recorded as an override: ' + JSON.stringify(log.slice(-2)));
+  await page.close();
+});
+
+test('the override banks the copy it replaces before overwriting it', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'x', version: 47 },
+  });
+  await page.evaluate(async () => {
+    _knownVersion = 12;
+    await _pushOverride(JSON.parse(JSON.stringify(state)), 'override');
+  });
+  const banked = puts.filter((p) => /\/history\//.test(p.url));
+  assert.ok(banked.length >= 1, 'the replaced copy was banked first, got ' + banked.length);
+  await page.close();
+});
+
+test('no automatic path can reach the override', async () => {
+  const { page, puts } = await openFamilyTrip(STALE, {
+    state: CURRENT, version: 47,
+    lastChange: { at: Date.now(), by: 'other', desc: 'x', version: 47 },
+  });
+  const n = stateWrites(puts).length;
+  await pushOnce(page, async () => {
+    _knownVersion = 12;
+    // Every ordinary route into the sync, with every shape of options.
+    _syncFamily('plain');
+    _syncFamily('with force', { force: true });
+    saveState('via saveState', false, { force: true });
+    await new Promise((r) => setTimeout(r, 1400));
+  });
+  assert.equal(stateWrites(puts).length - n, 0,
+    'only a person may override, got ' + (stateWrites(puts).length - n) + ' writes');
   await page.close();
 });

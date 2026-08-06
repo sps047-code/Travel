@@ -4234,3 +4234,127 @@ test('no automatic path can reach the override', async () => {
     'only a person may override, got ' + (stateWrites(puts).length - n) + ' writes');
   await page.close();
 });
+
+// ===========================================================================
+// PLAYBACK SPEED. iOS Safari draws <audio controls> as a bare play/scrub bar —
+// the three-dot menu carrying "Playback speed" is desktop-only, so on an iPhone
+// there was no way to speed up or slow down a tour at all.
+// ===========================================================================
+const AUDIO_DAY = [
+  { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'Westminster Abbey', type: 'hike', time: '10:00 AM', endTime: '12:00 PM',
+      lat: 51.4994, lng: -0.1273, audioUrl: 'https://example.com/abbey.mp3' },
+    { name: 'British Museum', type: 'hike', time: '1:00 PM', endTime: '3:00 PM',
+      lat: 51.5194, lng: -0.127, audioUrl: 'https://example.com/museum.mp3' },
+  ] },
+];
+
+test('an audio tour has a speed control the app draws itself', async () => {
+  const { page } = await openTrip(AUDIO_DAY);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.audio-rate-btn').length >= 2, null, { timeout: 15000 });
+  const out = await page.evaluate(() => {
+    const b = document.querySelector('.audio-rate-btn');
+    return { label: b.textContent, title: b.title,
+      rate: document.querySelector('audio').playbackRate };
+  });
+  assert.equal(out.label, '1×', 'it starts at normal speed, got ' + out.label);
+  assert.match(out.title, /speed/i, 'and says what it does');
+  assert.equal(out.rate, 1);
+  await page.close();
+});
+
+test('tapping it cycles the speed and applies it to the player', async () => {
+  const { page } = await openTrip(AUDIO_DAY);
+  await page.waitForFunction(
+    () => document.querySelector('.audio-rate-btn'), null, { timeout: 15000 });
+  const seq = await page.evaluate(() => {
+    const out = [];
+    for (let i = 0; i < 6; i++) {
+      document.querySelector('.audio-rate-btn').click();
+      out.push({ label: document.querySelector('.audio-rate-btn').textContent,
+        rate: document.querySelector('audio').playbackRate });
+    }
+    return out;
+  });
+  assert.deepEqual(seq.map((x) => x.label), ['1.25×', '1.5×', '1.75×', '2×', '0.75×', '1×'],
+    'it cycles through the useful rates, got ' + JSON.stringify(seq.map((x) => x.label)));
+  assert.equal(seq[0].rate, 1.25, 'and the player actually changes speed');
+  assert.equal(seq[3].rate, 2);
+  await page.close();
+});
+
+test('the speed applies to every tour, not one at a time', async () => {
+  const { page } = await openTrip(AUDIO_DAY);
+  await page.waitForFunction(
+    () => document.querySelectorAll('audio').length >= 2, null, { timeout: 15000 });
+  const out = await page.evaluate(() => {
+    document.querySelector('.audio-rate-btn').click();          // -> 1.25
+    return { rates: Array.from(document.querySelectorAll('audio')).map((a) => a.playbackRate),
+      labels: Array.from(document.querySelectorAll('.audio-rate-btn')).map((b) => b.textContent) };
+  });
+  assert.deepEqual([...out.rates], [1.25, 1.25], 'both players changed, got ' + JSON.stringify(out.rates));
+  assert.deepEqual([...out.labels], ['1.25×', '1.25×'], 'and both buttons agree');
+  await page.close();
+});
+
+test('the chosen speed is remembered', async () => {
+  // Own context with the service worker blocked: a reload in a worker-controlled
+  // page is served by the worker, which is a different code path from the one
+  // this test is about. Reload behaviour has bitten this suite before.
+  const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  await page.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith(origin)) return route.continue();
+    if (u.includes('leaflet')) {
+      const ext = u.endsWith('.css') ? '.css' : '.js';
+      const lf = path.join(LEAFLET_DIR, 'leaflet' + ext);
+      if (fs.existsSync(lf)) return route.fulfill({ status: 200,
+        contentType: ext === '.css' ? 'text/css' : 'application/javascript', body: fs.readFileSync(lf) });
+    }
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.addInitScript((d) => {
+    localStorage.setItem('tripState_london-scotland',
+      JSON.stringify({ tripType: 'solo', title: 'Test', days: d }));
+    localStorage.setItem('tripFamily_london-scotland', '0');
+  }, AUDIO_DAY);
+  const ready = async () => {
+    await page.waitForFunction(
+      () => typeof state !== 'undefined' && state && Array.isArray(state.days), null, { timeout: 20000 });
+    await page.evaluate(() => switchDay(0));
+    await page.waitForFunction(
+      () => document.querySelector('.audio-rate-btn'), null, { timeout: 20000 });
+  };
+  await page.goto(`${origin}/Travel/trip.html?id=london-scotland`, { waitUntil: 'domcontentloaded' });
+  await ready();
+  await page.evaluate(() => { document.querySelector('.audio-rate-btn').click(); });   // -> 1.25
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  const out = await page.evaluate(() => ({
+    label: document.querySelector('.audio-rate-btn').textContent,
+    rate: document.querySelector('audio').playbackRate,
+    stored: localStorage.getItem('seasons_audio_rate'),
+  }));
+  assert.equal(out.stored, '1.25', 'the preference is persisted');
+  assert.equal(out.label, '1.25×', 'the setting survived a reload, got ' + out.label);
+  assert.equal(out.rate, 1.25, 'and is applied to the player on load');
+  await ctx.close();
+});
+
+test('the rate is re-applied on play, because iOS resets it', async () => {
+  const { page } = await openTrip(AUDIO_DAY);
+  await page.waitForFunction(
+    () => document.querySelector('.audio-rate-btn'), null, { timeout: 15000 });
+  const rate = await page.evaluate(() => {
+    document.querySelector('.audio-rate-btn').click();          // -> 1.25
+    const a = document.querySelector('audio');
+    a.playbackRate = 1;                                          // what iOS does
+    a.dispatchEvent(new Event('play'));
+    return a.playbackRate;
+  });
+  assert.equal(rate, 1.25, 'the setting is restored rather than silently lost, got ' + rate);
+  await page.close();
+});

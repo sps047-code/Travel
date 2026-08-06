@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v212';
+window.APP_CODE_VERSION='v213';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -7545,6 +7545,31 @@ async function _audioSave(url){
   return true;
 }
 
+// PLAYBACK SPEED ON iOS. The three-dot overflow menu that carries "Playback
+// speed" is drawn by desktop browsers only — iOS Safari renders <audio controls>
+// as a bare play/scrub bar with no way to change rate at all. So the app has to
+// offer it, rather than relying on controls that are not there.
+const _AUDIO_RATES=[0.75,1,1.25,1.5,1.75,2];
+const _AUDIO_RATE_KEY='seasons_audio_rate';
+function _audioRate(){
+  const v=parseFloat(localStorage.getItem(_AUDIO_RATE_KEY)||'1');
+  return _AUDIO_RATES.includes(v)?v:1;
+}
+function _fmtRate(r){ return (r===1?'1':String(r).replace(/0+$/,'').replace(/\.$/,''))+'×'; }
+// Apply to every player on the page, so changing it on one tour changes it for
+// all of them — nobody wants to set the speed once per stop.
+function _applyAudioRate(r){
+  document.querySelectorAll('audio').forEach(a=>{ try{ a.playbackRate=r; a.defaultPlaybackRate=r; }catch(e){} });
+  document.querySelectorAll('.audio-rate-btn').forEach(b=>{ b.textContent=_fmtRate(r); });
+}
+function _cycleAudioRate(){
+  const cur=_audioRate();
+  const next=_AUDIO_RATES[(_AUDIO_RATES.indexOf(cur)+1)%_AUDIO_RATES.length];
+  try{ localStorage.setItem(_AUDIO_RATE_KEY,String(next)); }catch(e){}
+  _applyAudioRate(next);
+  showToast('Audio speed '+_fmtRate(next),1500);
+}
+
 function _augmentAudioBadges(){
   if(typeof state==='undefined'||!state) return;
   document.querySelectorAll('.stop-card').forEach(card=>{
@@ -7561,9 +7586,22 @@ function _augmentAudioBadges(){
     const bar=document.createElement('div');
     bar.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:var(--space-2) var(--space-4) var(--space-2);background:rgba(46,125,82,0.07);border-top:1px solid rgba(46,125,82,0.15);margin-top:var(--space-1);border-radius:0 0 10px 10px';
     bar.innerHTML='<span style="font-size:var(--text-xs);font-weight:700;color:var(--pine);white-space:nowrap">🎤 Audio Tour</span>'+
-      '<audio controls preload="none" src="'+_escHtml(url)+'" style="flex:1;min-width:180px;height:28px"></audio>'+
+      '<audio controls preload="none" src="'+_escHtml(url)+'" style="flex:1;min-width:160px;height:28px"></audio>'+
+      '<button type="button" class="audio-rate-btn" title="Playback speed — tap to change" '+
+        'style="font-size:var(--text-xs);font-weight:700;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;'+
+        'padding:var(--space-1) var(--space-2);border:1px solid rgba(46,125,82,0.4);border-radius:6px;min-width:44px">'+
+        _fmtRate(_audioRate())+'</button>'+
       '<button type="button" class="audio-save-btn" style="font-size:var(--text-xs);font-weight:600;color:var(--pine);background:none;cursor:pointer;white-space:nowrap;padding:var(--space-1) var(--space-2);border:1px solid rgba(46,125,82,0.4);border-radius:6px">⬇ Save to device</button>';
     card.appendChild(bar);
+    const au=bar.querySelector('audio');
+    const rateBtn=bar.querySelector('.audio-rate-btn');
+    rateBtn.addEventListener('click',(e)=>{ e.stopPropagation(); _cycleAudioRate(); });
+    // iOS resets playbackRate when the source loads and again on play, so it has
+    // to be re-applied at both points or the setting silently does nothing.
+    const setRate=()=>{ try{ au.playbackRate=_audioRate(); au.defaultPlaybackRate=_audioRate(); }catch(e){} };
+    setRate();
+    au.addEventListener('loadedmetadata',setRate);
+    au.addEventListener('play',setRate);
     const btn=bar.querySelector('.audio-save-btn');
     const _markSaved=()=>{
       btn.textContent='✓ Saved on device'; btn.disabled=true;

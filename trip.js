@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v216';
+window.APP_CODE_VERSION='v217';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1554,6 +1554,9 @@ function renderPanel(idx){
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
     (_dayLegsNotFitting(idx)?'<button class="ai-action-btn" onclick="applyRealTimes('+idx+')" style="background:var(--amber)" title="Some stops do not allow enough travel time">&#8631; '+_dayLegsNotFitting(idx)+' need more travel time</button>':'')+
+    // Say it HERE, on the day, not only on the Overview. This is where the wrong
+    // number is being read, and without a key routing fails in silence.
+    (_gpKey()?'':'<button class="ai-action-btn" onclick="promptGoogleKey()" style="background:var(--amber)" title="Travel times on this day are straight-line estimates. A Google key on this device makes them real routes.">&#128273; Times are estimates &mdash; add a key</button>')+
     '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
@@ -1938,16 +1941,25 @@ function _migrateGooglePlacesKey(){
   }catch(e){ return false; }
 }
 function promptGoogleKey(){
-  const key=prompt('Enter your Google Places API key (stored in trip settings):');
-  if(key&&key.trim()){
-    if(!state.settings)state.settings={};
-    // SECURITY: never in `state` — family trips sync `state` to a world-readable
-    // Firebase DB, so a key stored there is published. Device-local only.
-    try{localStorage.setItem('gp_key_'+tripId,key.trim());}catch(e){}
-    saveState('Set Google Places key');
-    showToast('Google Places key saved');
-    renderAll(); // refresh so the "add a key" hint disappears
-  }
+  const had=_gpKey();
+  const key=prompt(had
+    ? 'Replace the Google API key on THIS device (leave blank to keep the current one):'
+    : 'Paste your Google API key.\n\nIt needs the Maps JavaScript API and the Directions API enabled. It is stored on THIS device only — never in the shared itinerary — so add it on each phone.');
+  if(!key||!key.trim())return;
+  // SECURITY: never in `state` — family trips sync `state` to a world-readable
+  // Firebase DB, so a key stored there is published. Device-local only.
+  // And never claim it was saved without checking: a full localStorage throws
+  // here, and "saved" over a failed write is how a setting silently vanishes.
+  let stored=false;
+  try{ localStorage.setItem('gp_key_'+tripId,key.trim()); stored=(_gpKey()===key.trim()); }catch(e){ stored=false; }
+  if(!stored){ alert('The key could NOT be saved on this device — storage is full or blocked (private browsing blocks it). Nothing was changed.'); return; }
+  // Dismissing the notice is no longer meaningful once a key exists, and if the
+  // key is later removed the explanation should come back.
+  try{ localStorage.removeItem(_ROUTE_NOTICE_KEY); }catch(e){}
+  showToast('Key saved on this device. Opening a day will now route its legs for real.',6000);
+  renderAll();
+  // Route what is on screen right away, rather than making them switch days.
+  try{ if(typeof currentDayIdx==='number'&&currentDayIdx>=0)_autoFetchLegs(currentDayIdx); }catch(e){}
 }
 
 /* ---- Stop descriptions (AI) ---- */
@@ -4458,6 +4470,10 @@ function renderOverview(){
     '<button class="ai-action-btn" onclick="saveItinerary()" style="background:var(--pine)" title="Keep a copy of the itinerary exactly as it is now">&#128190; Save</button>'+
     '<button class="ai-action-btn" onclick="openRestore()" style="background:var(--river)" title="Bring back a saved copy of the itinerary">&#8634; Restore</button>'+
     '<button class="ai-action-btn" onclick="openChangeLog()" style="background:var(--slate,#4A6572)" title="Every change to this itinerary: what changed, when, and what made it">&#128220; History</button>'+
+    // ALWAYS HERE. The notice below can be dismissed; this cannot. Real travel
+    // times are impossible without a key, so the way to enter one must never be
+    // something you can lose by tapping "Not now".
+    '<button class="ai-action-btn" onclick="promptGoogleKey()" style="background:'+(_gpKey()?'var(--pine)':'var(--amber)')+'" title="'+(_gpKey()?'A routing key is set on this device. Tap to replace it.':'Real travel times need a Google key on THIS device. Tap to add one.')+'">&#128273; '+(_gpKey()?'Key set':'Add key')+'</button>'+
     '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+

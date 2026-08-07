@@ -4624,6 +4624,74 @@ test('routing on open never moves a stop', async () => {
   await page.close();
 });
 
+// v216 shipped with ONE way to enter a key — a notice that hides itself forever
+// once dismissed — and no key means nothing in the app is ever routed. Tapping
+// "Not now" locked the feature away with no route back to it.
+test('the way to add a key survives dismissing the notice', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  const out = await page.evaluate(() => {
+    localStorage.removeItem('gp_key_london-scotland');
+    switchDay(-1);
+    dismissRoutingNotice();               // the notice is gone for good
+    switchDay(-1);
+    const ov = document.getElementById('content-area').innerHTML;
+    switchDay(0);
+    return { ov, day: document.getElementById('content-area').innerHTML,
+      notice: !!document.getElementById('routing-key-notice') };
+  });
+  assert.equal(out.notice, false, 'the notice really is dismissed');
+  assert.match(out.ov, /promptGoogleKey\(\)/, 'the Overview still offers a way in');
+  assert.match(out.day, /promptGoogleKey\(\)/, 'and so does the day being read');
+  await page.close();
+});
+
+test('a day with no key says so on the day itself, not just the Overview', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  const html = await page.evaluate(() => {
+    localStorage.removeItem('gp_key_london-scotland');
+    switchDay(0);
+    return document.getElementById('content-area').innerHTML;
+  });
+  assert.match(html, /Times are estimates/, 'the day admits its numbers are guesses');
+  await page.close();
+});
+
+test('once a key is set the day stops nagging and the button says so', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  const out = await page.evaluate(() => {
+    localStorage.setItem('gp_key_london-scotland', 'TEST-KEY');
+    switchDay(0);
+    const day = document.getElementById('content-area').innerHTML;
+    switchDay(-1);
+    return { day, ov: document.getElementById('content-area').innerHTML };
+  });
+  assert.doesNotMatch(out.day, /Times are estimates/);
+  assert.match(out.ov, /Key set/, 'and the Overview shows the key is in place');
+  assert.doesNotMatch(out.ov, /routing-key-notice/, 'with no notice left to show');
+  await page.close();
+});
+
+test('a key that cannot be stored is reported, never announced as saved', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  const out = await page.evaluate(() => {
+    localStorage.removeItem('gp_key_london-scotland');
+    const said = [];
+    window.prompt = () => 'KEY-THAT-WONT-STICK';
+    window.alert = (m) => said.push(String(m));
+    const realSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (String(k).startsWith('gp_key_')) throw new Error('QuotaExceededError');
+      return realSet.call(this, k, v);
+    };
+    try { promptGoogleKey(); } finally { Storage.prototype.setItem = realSet; }
+    return { said, key: _gpKey() };
+  });
+  assert.equal(out.key, '', 'nothing was stored');
+  assert.equal(out.said.length, 1, 'and the failure was not swallowed');
+  assert.match(out.said[0], /could NOT be saved/i, 'got: ' + out.said[0]);
+  await page.close();
+});
+
 test('with no key nothing is fetched and the leg stays marked as an estimate', async () => {
   const { page } = await openTrip(RAIL_DAY, { day: null });
   await page.evaluate(() => { localStorage.removeItem('gp_key_london-scotland'); window.__routeReqs = []; });

@@ -1184,7 +1184,13 @@ async function captureAiRequest(page) {
       let parsed = null;
       try { parsed = JSON.parse(body); } catch (e) { /* not JSON */ }
       if (parsed && typeof parsed.system === 'string') {
-        window.__sent.push({ url, body, parsed });
+        // Rendering a day fires AI calls of its own — the morning briefing, the
+        // opening-hours fill, stop descriptions. They race whatever the test
+        // deliberately sent, and __sent[0] would sometimes be one of them. They
+        // are answered (so the app behaves normally) but never recorded.
+        const bg = ['charismatic tour guide', 'travel guidebook author',
+          'typical opening hours for attractions'];
+        if (!bg.some((m) => parsed.system.includes(m))) window.__sent.push({ url, body, parsed });
         return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) };
       }
       return real ? real(u, o) : { ok: true, json: async () => ({}) };
@@ -4376,8 +4382,8 @@ const RAIL_DAY = [
 ];
 
 // Stand in for the Maps SDK: records the requests and answers with a fixed leg.
-async function stubGoogle(page, { mins = 118, miles = 27, fail = false } = {}) {
-  await page.evaluate(({ mins, miles, fail }) => {
+async function stubGoogle(page, { mins = 118, miles = 27, fail = false, status = 'ZERO_RESULTS' } = {}) {
+  await page.evaluate(({ mins, miles, fail, status }) => {
     localStorage.setItem('gp_key_london-scotland', 'TEST-KEY');
     window.__routeReqs = [];
     window.google = { maps: { DirectionsService: function () {
@@ -4387,12 +4393,12 @@ async function stubGoogle(page, { mins = 118, miles = 27, fail = false } = {}) {
           hasTransitDepart: !!(req.transitOptions && req.transitOptions.departureTime),
           hasDriveDepart: !!(req.drivingOptions && req.drivingOptions.departureTime),
         })));
-        if (fail) return cb(null, 'ZERO_RESULTS');
+        if (fail) return cb(null, status);
         cb({ routes: [{ legs: [{ duration: { value: mins * 60 },
           distance: { value: Math.round(miles * 1609.344) } }] }] }, 'OK');
       };
     } } };
-  }, { mins, miles, fail });
+  }, { mins, miles, fail, status });
 }
 
 test('a looked-up time is stored on the arriving stop and beats the estimate', async () => {
@@ -4447,8 +4453,8 @@ test('the leg says whether its number is routed or estimated', async () => {
     await _fetchDayLegs(0);
     return document.querySelector('.leg-connector').innerHTML;
   });
-  assert.match(real, /leg-real/, 'a routed one is labelled real');
-  assert.ok(!/leg-est/.test(real), 'and not both');
+  assert.ok(!/leg-est/.test(real), 'a routed one carries no estimate marker');
+  assert.ok(!/leg-real/.test(real), 'and no badge either — correct is the baseline, not an achievement');
   assert.match(real, /1h 58min/, 'showing the routed time, got: ' + real.replace(/<[^>]*>/g, ' '));
   await page.close();
 });
@@ -4506,10 +4512,169 @@ test('a failed lookup leaves the estimate alone', async () => {
     const before = _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]);
     const r = await _fetchDayLegs(0);
     return { r, before, after: _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]),
-      src: state.days[0].stops[1].legSource };
+      src: state.days[0].stops[1].legSource, again: _dayNeedsLegs(0) };
   });
   assert.equal(out.r.ok, 0, 'nothing came back');
-  assert.equal(out.src, undefined, 'nothing was stored');
+  // ZERO_RESULTS means there genuinely is no such route, so it is remembered —
+  // otherwise the day would be re-asked, and re-billed, on every single open.
+  assert.equal(out.src, 'none', 'the dead end is remembered');
+  assert.equal(out.again, false, 'so opening the day again asks nothing');
   assert.equal(out.after, out.before, 'and the estimate is untouched');
+  await page.close();
+});
+
+test('a rejected key is reported as such, and the leg is left to retry', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page, { fail: true, status: 'REQUEST_DENIED' });
+  const out = await page.evaluate(async () => {
+    const r = await _fetchDayLegs(0);
+    return { r, src: state.days[0].stops[1].legSource, again: _dayNeedsLegs(0),
+      toast: (document.getElementById('share-toast') || {}).textContent || '' };
+  });
+  assert.equal(out.r.error, 'REQUEST_DENIED');
+  assert.match(out.toast, /Directions API/, 'it says what to fix, got: ' + out.toast);
+  // A bad key is fixable. Marking these legs dead would mean fixing the key
+  // never brought the real times back.
+  assert.equal(out.src, undefined, 'nothing was written off');
+  assert.equal(out.again, true, 'and they are tried again once the key works');
+  await page.close();
+});
+
+// ===========================================================================
+// v216 — REAL IS NOT A MODE. Routing was behind a per-day button, so a time was
+// only correct if you asked for it. Opening a day now routes its legs, once.
+// ===========================================================================
+test('opening a day routes its legs without being asked', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    const s = state.days[0].stops[1];
+    return { mins: s.legMins, src: s.legSource, reqs: window.__routeReqs.length };
+  });
+  assert.equal(out.src, 'google', 'the leg was routed with no button pressed');
+  assert.equal(out.mins, 118);
+  assert.equal(out.reqs, 1, 'exactly one lookup');
+  await page.close();
+});
+
+test('there is no Real times button any more', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  const html = await page.evaluate(() => document.getElementById('content-area').innerHTML);
+  assert.ok(!/Real times/.test(html), 'accuracy is not something you opt into');
+  await page.close();
+});
+
+test('reopening a day routes nothing — it is cached', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const reqs = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    const first = window.__routeReqs.length;
+    switchDay(-1); switchDay(0); switchDay(-1); switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    return { first, after: window.__routeReqs.length };
+  });
+  assert.equal(reqs.first, 1);
+  assert.equal(reqs.after, 1, 'stored once, never fetched again, got ' + reqs.after);
+  await page.close();
+});
+
+test('flicking between days cannot stack lookups', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const n = await page.evaluate(async () => {
+    for (let i = 0; i < 8; i++) switchDay(0);
+    await new Promise((r) => setTimeout(r, 800));
+    return window.__routeReqs.length;
+  });
+  assert.equal(n, 1, 'one in-flight pass per day, got ' + n);
+  await page.close();
+});
+
+test('a leg with no route is not retried on every open', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page, { fail: true });
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    const first = window.__routeReqs.length;
+    switchDay(-1); switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    return { first, after: window.__routeReqs.length, src: state.days[0].stops[1].legSource };
+  });
+  assert.equal(out.first, 1);
+  assert.equal(out.src, 'none', 'the absence of a route is remembered');
+  assert.equal(out.after, 1, 'and not asked again, got ' + out.after);
+  await page.close();
+});
+
+test('routing on open never moves a stop', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    const before = state.days[0].stops.map((s) => s.time);
+    await new Promise((r) => setTimeout(r, 800));
+    return { before, after: state.days[0].stops.map((s) => s.time) };
+  });
+  assert.deepEqual([...out.after], [...out.before], 'got ' + JSON.stringify(out.after));
+  await page.close();
+});
+
+test('with no key nothing is fetched and the leg stays marked as an estimate', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await page.evaluate(() => { localStorage.removeItem('gp_key_london-scotland'); window.__routeReqs = []; });
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    return { reqs: (window.__routeReqs || []).length, src: state.days[0].stops[1].legSource,
+      html: document.querySelector('.leg-connector').innerHTML };
+  });
+  assert.equal(out.reqs, 0, 'nothing is attempted without a key');
+  assert.equal(out.src, undefined);
+  assert.match(out.html, /leg-est/, 'and the number is honestly marked as a guess');
+  await page.close();
+});
+
+// THE BUG THAT GOT THROUGH. {noAutoFix:true} only protects the write that stores
+// the real time. The time then LIVES on the itinerary, so the next save from
+// anywhere — the opening-hours autofill, a checklist tick, a cloud sync — used to
+// re-run the "push unreachable stops later" pass, see a 2-hour journey in a
+// 30-minute gap, and quietly move Windsor to 1:58 PM. That is a day rearranging
+// itself under someone standing in it.
+test('a routed time never moves a stop on some LATER, unrelated save', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    await _fetchDayLegs(0);
+    const afterRouting = state.days[0].stops.map((s) => s.time);
+    // Any ordinary save at all, with the auto-fix fully armed.
+    state.days[0].stops[0].notes = 'touched';
+    saveState('an unrelated edit');
+    return { afterRouting, afterSave: state.days[0].stops.map((s) => s.time),
+      real: _legTravelMins(state.days[0].stops[0], state.days[0].stops[1]) };
+  });
+  assert.equal(out.real, 118, 'the real time is still in force for display');
+  assert.deepEqual([...out.afterSave], [...out.afterRouting],
+    'but it moved nothing, got ' + JSON.stringify(out.afterSave));
+  assert.equal(out.afterSave[1], '12:30 PM');
+  await page.close();
+});
+
+test('stops that no longer fit are counted, not moved', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 800));
+    return { n: _dayLegsNotFitting(0), time: state.days[0].stops[1].time,
+      html: document.getElementById('content-area').innerHTML };
+  });
+  assert.equal(out.n, 1, 'the 30-minute gap cannot hold a 2-hour journey');
+  assert.equal(out.time, '12:30 PM', 'but nothing moved on its own');
+  assert.match(out.html, /need more travel time/, 'it is offered, not done');
   await page.close();
 });

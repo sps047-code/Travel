@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v215';
+window.APP_CODE_VERSION='v216';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -835,8 +835,7 @@ function legLabel(a,b,mode,arriving){
   if(real!=null){
     const rm=Number((arriving||b).legMiles);
     const mi=(rm>0)?(rm<10?rm.toFixed(1):Math.round(rm)):null;
-    return (mi!=null?mi+' mi · ':'')+_minsToStr(real)+
-      '<span class="leg-real" title="Routed by Google, not estimated">&#10003; real</span>';
+    return (mi!=null?mi+' mi · ':'')+_minsToStr(real);
   }
   // Report the distance you actually cover, not the crow's flight, so the miles
   // and the minutes describe the same journey.
@@ -1554,8 +1553,7 @@ function renderPanel(idx){
     '<button class="ai-action-btn" onclick="optimizeDay('+idx+')">&#10024; Optimize Day</button>'+
     '<button class="ai-action-btn" id="hours-btn-'+idx+'" onclick="addDayOpeningHours('+idx+')" title="Add each stop\'s opening hours for this day">&#128337; Hours</button>'+
     '<button class="ai-action-btn" id="alerts-btn-'+idx+'" onclick="enableTravelAlerts('+idx+')" title="Schedule departure reminders for each stop">&#128276; Alerts</button>'+
-    '<button class="ai-action-btn" id="reallegs-btn-'+idx+'" onclick="fetchRealTimes('+idx+')" style="background:var(--river)" title="Look up the real travel time for every leg of this day">&#128739; Real times</button>'+
-    (_dayHasRealLegs(idx)?'<button class="ai-action-btn" onclick="applyRealTimes('+idx+')" style="background:var(--amber)" title="Move the stops so they match the real travel times">&#8631; Apply to schedule</button>':'')+
+    (_dayLegsNotFitting(idx)?'<button class="ai-action-btn" onclick="applyRealTimes('+idx+')" style="background:var(--amber)" title="Some stops do not allow enough travel time">&#8631; '+_dayLegsNotFitting(idx)+' need more travel time</button>':'')+
     '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
@@ -2035,6 +2033,40 @@ function switchDay(idx){
   if(idx===-1)renderOverviewMap();
   else renderDayMap(idx);
   window.scrollTo({top:0,behavior:'smooth'});
+  // A travel time should just be correct. Route this day's legs the first time
+  // it is opened — not on a button, not per day, not opt-in. Cached on the stop
+  // afterwards, so it happens once ever and works offline from then on.
+  if(idx>=0)_autoFetchLegs(idx);
+}
+// One in-flight pass per day, so flicking between days cannot stack requests.
+const _legFetchInFlight={};
+function _autoFetchLegs(dayIdx){
+  if(_legFetchInFlight[dayIdx])return;
+  const day=state.days&&state.days[dayIdx];
+  if(!day||!_gpKey())return;                      // no key: nothing to route with
+  if(!_dayNeedsLegs(dayIdx))return;               // already routed
+  _legFetchInFlight[dayIdx]=true;
+  Promise.resolve()
+    .then(()=>_fetchDayLegs(dayIdx,{quiet:true}))
+    .catch(()=>{})
+    .then(()=>{ delete _legFetchInFlight[dayIdx]; });
+}
+// Is there a leg on this day that has never been routed?
+function _dayNeedsLegs(dayIdx){
+  const day=state.days&&state.days[dayIdx];
+  const stops=(day&&day.stops)||[];
+  for(let i=1;i<stops.length;i++){
+    const next=stops[i];
+    if(_realLegMins(next)!=null)continue;
+    if(next.legSource==='none')continue;          // tried and there is no route
+    const fromStop=_validLL(stops[i-1])?stops[i-1]:_legEndpoint(stops,i-1,-1);
+    if(!fromStop||!_validLL(next))continue;
+    const origin=_stopTo(fromStop,null)||fromStop;
+    if(!_validLL(origin))continue;
+    if(Math.abs(origin.lat-next.lat)<1e-6&&Math.abs(origin.lng-next.lng)<1e-6)continue;
+    return true;
+  }
+  return false;
 }
 
 function addDay(){
@@ -2724,7 +2756,9 @@ function _pushUnreachableLater(st){
       if(t==null||ps==null)continue;
       const pe=_parseTimeMins(prev.endTime);
       const depart=(pe!=null&&pe>ps)?pe:ps+Math.min(_stopVisitMins(prev),_MAX_VISIT_CASCADE);
-      const travel=Math.min(_legTravelMins(prev,cur),_MAX_LEG_TRAVEL);
+      // The ESTIMATE, never the routed time — see _estLegTravelMins. Learning
+      // the true length of a journey must not move a stop by itself.
+      const travel=Math.min(_estLegTravelMins(prev,cur),_MAX_LEG_TRAVEL);
       const earliest=depart+travel;
       if(t>=earliest||cur.locked)continue;
       const start=Math.min(earliest,_DAY_END_CAP);
@@ -2922,28 +2956,45 @@ async function _googleLeg(from,to,mode,departAt){
   if(travelMode==='TRANSIT')req.transitOptions={departureTime:departAt||new Date()};
   else if(travelMode==='DRIVING'&&departAt)req.drivingOptions={departureTime:departAt};
   const svc=new maps.DirectionsService();
-  const res=await new Promise((resolve)=>{
-    try{ svc.route(req,(r,status)=>resolve(status==='OK'?r:null)); }catch(e){ resolve(null); }
+  // Keep the status. "No routes came back" is useless when the real answer is
+  // that the key was rejected or the Directions API was never switched on.
+  const out=await new Promise((resolve)=>{
+    try{ svc.route(req,(r,status)=>resolve({res:status==='OK'?r:null,status:status||'NO_STATUS'})); }
+    catch(e){ resolve({res:null,status:(e&&e.message)||'threw'}); }
   });
+  const res=out.res;
   const leg=res&&res.routes&&res.routes[0]&&res.routes[0].legs&&res.routes[0].legs[0];
-  if(!leg)return null;
+  if(!leg)return {error:out.status};
   const secs=(leg.duration_in_traffic&&leg.duration_in_traffic.value)||(leg.duration&&leg.duration.value);
   const metres=leg.distance&&leg.distance.value;
-  if(!secs)return null;
+  if(!secs)return {error:'route had no duration'};
   return {mins:Math.max(1,Math.round(secs/60)),miles:metres?metres/1609.344:null,mode:mode};
+}
+// Plain English for the statuses that mean "you have something to fix", so the
+// user is told what to do rather than that it didn't work.
+function _routeFailReason(status){
+  switch(String(status||'')){
+    case 'REQUEST_DENIED':   return 'Google rejected the key — check it allows the Directions API and this site.';
+    case 'OVER_QUERY_LIMIT': return 'Google’s quota or billing blocked the lookup.';
+    case 'ZERO_RESULTS':     return 'Google knows no route for that leg.';
+    case 'NOT_FOUND':        return 'Google could not place one end of that leg.';
+    case 'UNKNOWN_ERROR':    return 'Google had a temporary error — try again.';
+    default:                 return 'Routing failed ('+status+').';
+  }
 }
 // Look up every leg on a day. Stores the result on the ARRIVING stop and does
 // not touch a single scheduled time — applying is a separate, confirmed step.
-async function _fetchDayLegs(dayIdx){
+async function _fetchDayLegs(dayIdx,opts){
+  const quiet=!!(opts&&opts.quiet);
   const day=state.days[dayIdx]; if(!day)return {ok:0,fail:0};
   if(!_gpKey()){
-    showToast('Real times need a Google API key. Add one from the Overview, then try again.',7000);
+    if(!quiet)showToast('Real times need a Google API key. Add one from the Overview, then try again.',7000);
     return {ok:0,fail:0,noKey:true};
   }
   const dayISO=(typeof dayDateStr==='function')?dayDateStr(dayIdx):'';
   const stops=day.stops||[];
-  let ok=0,fail=0;
-  showToast('Looking up real travel times…',3000);
+  let ok=0,fail=0,lastErr='';
+  if(!quiet)showToast('Looking up real travel times…',3000);
   for(let i=1;i<stops.length;i++){
     const next=stops[i];
     const fromStop=_validLL(stops[i-1])?stops[i-1]:_legEndpoint(stops,i-1,-1);
@@ -2953,20 +3004,46 @@ async function _fetchDayLegs(dayIdx){
     if(Math.abs(origin.lat-next.lat)<1e-6&&Math.abs(origin.lng-next.lng)<1e-6)continue;
     const mode=next.transitMode||_defaultTransitMode(fromStop,next);
     let r=null;
-    try{ r=await _googleLeg(origin,next,mode,_legDepartAt(fromStop,dayISO)); }catch(e){ r=null; }
-    if(r){ next.legMins=r.mins; if(r.miles)next.legMiles=Math.round(r.miles*100)/100;
-           next.legMode=mode; next.legSource='google'; next.legFetchedAt=Date.now(); ok++; }
-    else fail++;
+    try{ r=await _googleLeg(origin,next,mode,_legDepartAt(fromStop,dayISO)); }
+    catch(e){ r={error:(e&&e.message)||'could not reach Google'}; }
+    if(r&&r.mins){ next.legMins=r.mins; if(r.miles)next.legMiles=Math.round(r.miles*100)/100;
+           next.legMode=mode; next.legSource='google'; next.legFetchedAt=Date.now(); ok++; continue; }
+    fail++;
+    const st=(r&&r.error)||'NO_STATUS';
+    lastErr=st;
+    // Only a genuine "there is no such route" is remembered, so the day is not
+    // re-asked on every open. A rejected key or a spent quota is fixable — leave
+    // those legs unmarked so they are tried again once it is.
+    if(st==='ZERO_RESULTS'||st==='NOT_FOUND')next.legSource='none';
   }
-  if(ok)commitApplied('Looked up real travel times for Day '+(dayIdx+1)+' ('+ok+' leg'+(ok===1?'':'s')+')',WRITE.SYSTEM,{noAutoFix:true});
+  if(ok||fail)commitApplied('Routed Day '+(dayIdx+1)+' — '+ok+' real, '+fail+' with no route',WRITE.SYSTEM,{noAutoFix:true});
   renderAll();
-  showToast(ok?('Real times for '+ok+' leg'+(ok===1?'':'s')+(fail?', '+fail+' could not be found':'')+'. Times on the cards are unchanged — use “Apply” to move them.'):'No routes came back. The estimates are unchanged.',8000);
-  return {ok:ok,fail:fail};
+  if(!quiet)showToast(ok?('Real times for '+ok+' leg'+(ok===1?'':'s')+(fail?', '+fail+' could not be found':'')+'. Times on the cards are unchanged — use “Apply” to move them.'):_routeFailReason(lastErr)+' The estimates are unchanged.',8000);
+  return {ok:ok,fail:fail,error:lastErr||null};
 }
 // A stored real time, if this stop has one.
 function _realLegMins(b){ return (b&&b.legSource==='google'&&Number(b.legMins)>0)?Number(b.legMins):null; }
 
 // Has this day had its legs looked up? Drives whether "Apply" is offered.
+// Stops whose scheduled gap is shorter than the real travel time. Surfaced as a
+// count rather than moving anything: the numbers becoming correct must not
+// reshuffle a trip that is under way.
+function _dayLegsNotFitting(dayIdx){
+  const stops=(state.days&&state.days[dayIdx]&&state.days[dayIdx].stops)||[];
+  let n=0;
+  for(let i=1;i<stops.length;i++){
+    const real=_realLegMins(stops[i]); if(real==null)continue;
+    if(stops[i].locked)continue;
+    const prev=stops[i-1];
+    const ps=_parseTimeMins(prev.time),pe=_parseTimeMins(prev.endTime);
+    const depart=(pe!=null&&pe>ps)?pe:ps;
+    const cur=_parseTimeMins(stops[i].time);
+    if(depart==null||cur==null)continue;
+    if(cur<depart+real)n++;
+  }
+  return n;
+}
+
 function _dayHasRealLegs(dayIdx){
   const d=state.days&&state.days[dayIdx];
   return !!(d&&(d.stops||[]).some(s=>_realLegMins(s)!=null));
@@ -3015,10 +3092,25 @@ function applyRealTimes(dayIdx){
 function _legTravelMins(a,b){
   if(!a||!b)return 15;
   // A real routed time always beats the estimate. Every consumer — the leg
-  // connector, the reachability warning, the auto-fix, _retimeFromPrev — comes
-  // through here, so they all inherit it without knowing about it.
+  // connector, the reachability warning, _retimeFromPrev — comes through here,
+  // so they all inherit it without knowing about it.
   const real=_realLegMins(b);
   if(real!=null)return real;
+  return _estLegTravelMins(a,b);
+}
+// The ESTIMATE ONLY, deliberately ignoring any routed time.
+//
+// Exists for one caller: the auto-fix that pushes an unreachable stop later.
+// A looked-up time is persistent state, so once it is stored the NEXT save from
+// anywhere — the opening-hours autofill, a place-details lookup, a checklist
+// tick, a cloud sync — would re-run that mover, find the real (longer) journey,
+// and silently reshuffle a day the user is standing in the middle of. Scoping
+// {noAutoFix:true} to the lookup itself cannot prevent that; only refusing to
+// move on the strength of a real time can. A gap too short for the real journey
+// is COUNTED by _dayLegsNotFitting and offered as "N need more travel time" —
+// applying it is the user's decision.
+function _estLegTravelMins(a,b){
+  if(!a||!b)return 15;
   const mode=b.transitMode||_defaultTransitMode(a,b);
   const from=_stopTo(a,null)||a;      // same origin the connector uses
   if(_validLL(from)&&_validLL(b))return Math.max(5,_travelMins(haversine(from.lat,from.lng,b.lat,b.lng),mode));
@@ -4336,7 +4428,9 @@ function renderOverview(){
     '</div>';
   const panelPack='<div class="ov-tab-panel" id="ovtab-packing"'+(activeOvTab!=='packing'?' style="display:none"':'')+'>'+
     renderPackingListHtml()+
-    (_gpKey()?'':'<div style="font-family:var(--font-ui);font-size:var(--text-sm);color:var(--muted);padding:var(--space-3) var(--space-4);background:var(--mist);border-radius:var(--radius-md);border:1px dashed var(--border);margin-top:var(--space-3)">&#128269; <strong>Tip:</strong> Add a <a href="#" onclick="promptGoogleKey();return false" style="color:var(--river)">Google Places API key</a> in settings to auto-populate opening hours and websites for stops.</div>')+
+    // (The "add a Google key" prompt used to live here, in the PACKING tab, which
+    //  is nowhere near where it matters. It is now a notice at the top of the
+    //  Overview — see _routingKeyNoticeHtml.)
     '</div>';
   const panelAudio='<div class="ov-tab-panel" id="ovtab-audio"'+(activeOvTab!=='audio'?' style="display:none"':'')+'>'+
     renderAudioToursHtml()+'</div>';
@@ -4367,10 +4461,38 @@ function renderOverview(){
     '<button class="ai-action-btn" onclick="deleteTripFromView()" style="background:var(--ruby)">&#128465; Delete</button>'+
     '</div></div>':'')
     +startDateHtml+statsHtml+budgetHtml+'</div>'+
+    _routingKeyNoticeHtml()+
     (jnl?_tripHighlightsHtml():'')+
     renderUnbookedSection()+
     tabBar+panelCal+panelLodge+panelCheck+panelPack+panelAudio+
     '</div>';
+}
+// WITHOUT A KEY, NOTHING ON THIS DEVICE IS ROUTED. The key is per-device on
+// purpose (a family trip syncs `state` to a world-readable DB, so a key stored
+// there would be published) — which means adding it on the laptop does nothing
+// for the phone. That used to be silent, and a silent straight-line estimate
+// reads exactly like a real answer. Say it, on the Overview, until it is fixed.
+const _ROUTE_NOTICE_KEY='seasons_routing_notice_dismissed';
+function _routingNoticeDismissed(){ try{ return localStorage.getItem(_ROUTE_NOTICE_KEY)==='1'; }catch(e){ return false; } }
+function dismissRoutingNotice(){
+  try{ localStorage.setItem(_ROUTE_NOTICE_KEY,'1'); }catch(e){}
+  const el=document.getElementById('routing-key-notice'); if(el)el.remove();
+}
+function _routingKeyNoticeHtml(){
+  if(_gpKey())return '';                       // routed already — nothing to say
+  if(_routingNoticeDismissed())return '';
+  return '<div class="ov-section" id="routing-key-notice" style="border:1.5px solid var(--amber);background:rgba(214,158,46,0.10)">'+
+    '<div style="display:flex;align-items:flex-start;gap:var(--space-3)">'+
+    '<div style="font-size:var(--text-xl);line-height:1.2">&#128739;</div>'+
+    '<div style="flex:1;min-width:0;font-family:var(--font-ui);font-size:var(--text-md);line-height:1.5">'+
+    '<div style="font-weight:700;margin-bottom:var(--space-2)">Travel times on this device are estimates, not real routes.</div>'+
+    '<div style="color:var(--muted)">Without a Google key every time is measured in a straight line, so a train that doubles back through London reads as if it went direct &mdash; Hampton&nbsp;Court to Windsor shows about 30&nbsp;min when it really takes about 2&nbsp;hours. Add a key and each day&rsquo;s legs are routed the moment you open it.</div>'+
+    '<div style="color:var(--muted);margin-top:var(--space-2)">Enable the <strong>Directions API</strong> on the key. It costs roughly $10 per 1,000 lookups &mdash; well under a dollar for this whole trip, because each leg is looked up once and then stored on the itinerary.</div>'+
+    '<div style="color:var(--muted);margin-top:var(--space-2)"><strong>The key is stored on this device only</strong>, never in the shared itinerary &mdash; so add it on each phone you use.</div>'+
+    '<div style="margin-top:var(--space-3);display:flex;gap:var(--space-2);flex-wrap:wrap">'+
+    '<button class="ai-action-btn" onclick="promptGoogleKey()" style="background:var(--pine)">&#128273; Add a key</button>'+
+    '<button class="btn-cancel" style="padding:var(--space-2) var(--space-4);font-size:var(--text-md)" onclick="dismissRoutingNotice()">Not now</button>'+
+    '</div></div></div></div>';
 }
 function switchOvTab(id){
   ['calendar','lodging','checklist','packing','audio'].forEach(t=>{

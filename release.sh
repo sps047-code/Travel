@@ -89,4 +89,11 @@ REMOTE=$(git ls-remote origin gh-pages | cut -f1)
 git push -f origin "v$NEXT" 2>/dev/null && echo "==> tag v$NEXT pushed" \
   || echo "==> note: tag v$NEXT is local only (remote rejected the tag push)"
 
-echo "==> released v$NEXT ($(git rev-parse --short HEAD)) — verified on origin/gh-pages"
+# The branch is verified above. GITHUB PAGES IS A SEPARATE STEP and it can fail
+# on its own — v214 sat on gh-pages with a failed deployment while the live site
+# still served v213, and this script called that a release. It cannot be checked
+# from here (github.io is unreachable in this sandbox), so say what was and was
+# not verified rather than implying the site is live.
+echo "==> pushed v$NEXT ($(git rev-parse --short HEAD)) — branch verified on origin/gh-pages"
+echo "==> NOT YET VERIFIED: the GitHub Pages deployment. Check it before telling"
+echo "    anyone this is live:  https://github.com/sps047-code/Travel/actions"

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v217';
+window.APP_CODE_VERSION='v218';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1557,6 +1557,12 @@ function renderPanel(idx){
     // Say it HERE, on the day, not only on the Overview. This is where the wrong
     // number is being read, and without a key routing fails in silence.
     (_gpKey()?'':'<button class="ai-action-btn" onclick="promptGoogleKey()" style="background:var(--amber)" title="Travel times on this day are straight-line estimates. A Google key on this device makes them real routes.">&#128273; Times are estimates &mdash; add a key</button>')+
+    // A key that IS present but is not working must not look the same as one
+    // that is. The reason stays on screen after the toast has gone, with a way
+    // to try again once it has been fixed.
+    ((_gpKey()&&_routingStatusText(idx))
+      ? '<button class="ai-action-btn" onclick="retryDayLegs('+idx+')" style="background:var(--ruby)" title="'+_escHtml(_routingStatusText(idx))+'">&#9888; Routing failed &mdash; why?</button>'
+      : '')+
     '</div>'+
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
@@ -1952,14 +1958,23 @@ function promptGoogleKey(){
   // here, and "saved" over a failed write is how a setting silently vanishes.
   let stored=false;
   try{ localStorage.setItem('gp_key_'+tripId,key.trim()); stored=(_gpKey()===key.trim()); }catch(e){ stored=false; }
+  _clearKeyRejected();      // a newly entered key gets a fresh chance
+  _gmapsPromise=null;       // and must be loaded again, not reused from the old one
   if(!stored){ alert('The key could NOT be saved on this device — storage is full or blocked (private browsing blocks it). Nothing was changed.'); return; }
   // Dismissing the notice is no longer meaningful once a key exists, and if the
   // key is later removed the explanation should come back.
   try{ localStorage.removeItem(_ROUTE_NOTICE_KEY); }catch(e){}
   showToast('Key saved on this device. Opening a day will now route its legs for real.',6000);
   renderAll();
-  // Route what is on screen right away, rather than making them switch days.
-  try{ if(typeof currentDayIdx==='number'&&currentDayIdx>=0)_autoFetchLegs(currentDayIdx); }catch(e){}
+  // Route something IMMEDIATELY, so entering a key produces a real answer — it
+  // either works or it says why. The key is usually entered from the Overview,
+  // where currentDayIdx is -1, so fall back to today's day, else the first.
+  try{
+    let d=(typeof currentDayIdx==='number'&&currentDayIdx>=0)?currentDayIdx:-1;
+    if(d<0&&typeof _getTodayDayIdx==='function'){ const t=_getTodayDayIdx(); if(t>=0)d=t; }
+    if(d<0)d=0;
+    _autoFetchLegs(d);
+  }catch(e){}
 }
 
 /* ---- Stop descriptions (AI) ---- */
@@ -2056,6 +2071,7 @@ function _autoFetchLegs(dayIdx){
   if(_legFetchInFlight[dayIdx])return;
   const day=state.days&&state.days[dayIdx];
   if(!day||!_gpKey())return;                      // no key: nothing to route with
+  if(_keyRejected())return;                       // Google said no — the Overview explains
   if(!_dayNeedsLegs(dayIdx))return;               // already routed
   _legFetchInFlight[dayIdx]=true;
   Promise.resolve()
@@ -2929,17 +2945,41 @@ function _fixScotlandDay7Once(){ return false; }
    ========================================================================== */
 const _LEG_MODE_G={walk:'WALKING',bike:'BICYCLING',drive:'DRIVING',bus:'TRANSIT',train:'TRANSIT',flight:'DRIVING'};
 let _gmapsPromise=null;
+// THE DEFINITIVE "your key is bad" SIGNAL. The SDK calls this global itself when
+// it refuses a key. Without it a rejection only shows up later as a per-leg
+// REQUEST_DENIED, which is far weaker evidence and arrives once per leg.
+const _KEY_REJECTED='seasons_gkey_rejected';
+function _keyRejected(){ try{ return localStorage.getItem(_KEY_REJECTED)===_gpKey()&&!!_gpKey(); }catch(e){ return false; } }
+function _clearKeyRejected(){ try{ localStorage.removeItem(_KEY_REJECTED); }catch(e){} }
+// Remembered against the KEY ITSELF, so entering a different key starts clean
+// while re-entering the same broken one does not restart the retry loop.
+window.gm_authFailure=function(){
+  try{ localStorage.setItem(_KEY_REJECTED,_gpKey()); }catch(e){}
+  _gmapsPromise=null;
+  try{ showToast('Google rejected this key. Two things to check: the <b>Directions API</b> and <b>Maps JavaScript API</b> are enabled on it, and its website restriction allows https://sps047-code.github.io/*',12000); }catch(e){}
+  try{ renderAll(); }catch(e){}
+};
 function _loadGoogleMaps(){
   if(window.google&&window.google.maps&&window.google.maps.DirectionsService)return Promise.resolve(window.google.maps);
   if(_gmapsPromise)return _gmapsPromise;
   const key=_gpKey();
   if(!key)return Promise.reject(new Error('no key'));
+  if(_keyRejected())return Promise.reject(new Error('REJECTED_KEY'));
   _gmapsPromise=new Promise((res,rej)=>{
     const sc=document.createElement('script');
-    sc.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&libraries=routes';
+    // NO `libraries` PARAMETER. It used to ask for `libraries=routes`, which is
+    // not a value this loader accepts (it belongs to importLibrary('routes') in
+    // the newer API) — an unrecognised library makes the loader raise
+    // InvalidValueError. DirectionsService is part of the core API and needs no
+    // library at all.
+    sc.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key);
     sc.async=true;
-    sc.onload=()=>res(window.google&&window.google.maps);
-    sc.onerror=()=>{ _gmapsPromise=null; rej(new Error('could not load Google Maps')); };
+    sc.onload=()=>{
+      const m=window.google&&window.google.maps;
+      if(m&&m.DirectionsService)res(m);
+      else { _gmapsPromise=null; rej(new Error('Google Maps loaded but has no DirectionsService')); }
+    };
+    sc.onerror=()=>{ _gmapsPromise=null; rej(new Error('could not reach Google Maps — no connection, or the script was blocked')); };
     document.head.appendChild(sc);
   });
   return _gmapsPromise;
@@ -2985,28 +3025,42 @@ async function _googleLeg(from,to,mode,departAt){
 // Plain English for the statuses that mean "you have something to fix", so the
 // user is told what to do rather than that it didn't work.
 function _routeFailReason(status){
-  switch(String(status||'')){
-    case 'REQUEST_DENIED':   return 'Google rejected the key — check it allows the Directions API and this site.';
-    case 'OVER_QUERY_LIMIT': return 'Google’s quota or billing blocked the lookup.';
+  const s=String(status||'');
+  switch(s){
+    case 'REQUEST_DENIED':   return 'Google rejected the key. Enable the Directions API and the Maps JavaScript API on it, and allow https://sps047-code.github.io/* in its website restriction.';
+    case 'REJECTED_KEY':     return 'Google already rejected this key. Fix it in the Google Cloud console, then enter it again.';
+    case 'OVER_QUERY_LIMIT': return 'Google’s quota or billing blocked the lookup. Check billing is active on the project.';
     case 'ZERO_RESULTS':     return 'Google knows no route for that leg.';
     case 'NOT_FOUND':        return 'Google could not place one end of that leg.';
     case 'UNKNOWN_ERROR':    return 'Google had a temporary error — try again.';
-    default:                 return 'Routing failed ('+status+').';
+    case 'no key':           return 'No Google key on this device yet.';
+    default:                 return s?('Routing failed: '+s):'Routing failed for an unknown reason.';
   }
 }
+// Where a day's last routing attempt got to. Drives the day header and the
+// Overview status, so "why are the times still estimates?" has an answer on
+// screen instead of only in a toast that has already gone.
+const _legFetchStatus={};
 // Look up every leg on a day. Stores the result on the ARRIVING stop and does
 // not touch a single scheduled time — applying is a separate, confirmed step.
+// `quiet` means DON'T CELEBRATE — it suppresses "Looking up…" and the success
+// message on the automatic path. It has never been right for it to suppress a
+// FAILURE: v216 made the automatic path the only path, so a rejected key, a
+// disabled API and an unpaid account all became indistinguishable from a working
+// one. Nothing happened and nothing was said. A failure always speaks.
 async function _fetchDayLegs(dayIdx,opts){
   const quiet=!!(opts&&opts.quiet);
+  const say=(msg,ms)=>{ try{ showToast(msg,ms||9000); }catch(e){} };
   const day=state.days[dayIdx]; if(!day)return {ok:0,fail:0};
   if(!_gpKey()){
-    if(!quiet)showToast('Real times need a Google API key. Add one from the Overview, then try again.',7000);
+    _legFetchStatus[dayIdx]={ok:0,fail:0,error:'no key'};
+    if(!quiet)say('Real times need a Google API key. Add one from the Overview, then try again.',7000);
     return {ok:0,fail:0,noKey:true};
   }
   const dayISO=(typeof dayDateStr==='function')?dayDateStr(dayIdx):'';
   const stops=day.stops||[];
   let ok=0,fail=0,lastErr='';
-  if(!quiet)showToast('Looking up real travel times…',3000);
+  if(!quiet)say('Looking up real travel times…',3000);
   for(let i=1;i<stops.length;i++){
     const next=stops[i];
     const fromStop=_validLL(stops[i-1])?stops[i-1]:_legEndpoint(stops,i-1,-1);
@@ -3029,8 +3083,13 @@ async function _fetchDayLegs(dayIdx,opts){
     if(st==='ZERO_RESULTS'||st==='NOT_FOUND')next.legSource='none';
   }
   if(ok||fail)commitApplied('Routed Day '+(dayIdx+1)+' — '+ok+' real, '+fail+' with no route',WRITE.SYSTEM,{noAutoFix:true});
+  _legFetchStatus[dayIdx]={ok:ok,fail:fail,error:lastErr||null,at:Date.now()};
   renderAll();
-  if(!quiet)showToast(ok?('Real times for '+ok+' leg'+(ok===1?'':'s')+(fail?', '+fail+' could not be found':'')+'. Times on the cards are unchanged — use “Apply” to move them.'):_routeFailReason(lastErr)+' The estimates are unchanged.',8000);
+  // ONE message per day, never one per leg — a broken key would otherwise fire
+  // a toast for every stop on the day.
+  if(fail&&!ok)      say('Day '+(dayIdx+1)+': '+_routeFailReason(lastErr)+' Times shown are estimates.',12000);
+  else if(fail)      say('Day '+(dayIdx+1)+': routed '+ok+' leg'+(ok===1?'':'s')+'. '+fail+' could not be routed — '+_routeFailReason(lastErr),10000);
+  else if(ok&&!quiet)say('Real times for '+ok+' leg'+(ok===1?'':'s')+'.',6000);
   return {ok:ok,fail:fail,error:lastErr||null};
 }
 // A stored real time, if this stop has one.
@@ -3060,13 +3119,37 @@ function _dayHasRealLegs(dayIdx){
   const d=state.days&&state.days[dayIdx];
   return !!(d&&(d.stops||[]).some(s=>_realLegMins(s)!=null));
 }
-async function fetchRealTimes(dayIdx){
-  const btn=document.getElementById('reallegs-btn-'+dayIdx);
-  if(btn){btn.disabled=true;btn.textContent='Looking up…';}
-  try{ await _fetchDayLegs(dayIdx); }
-  catch(e){ showToast('Could not reach Google: '+((e&&e.message)||e),6000); }
-  const b2=document.getElementById('reallegs-btn-'+dayIdx);
-  if(b2){b2.disabled=false;b2.innerHTML='&#128739; Real times';}
+// Try a day again by hand, after fixing whatever the message said was wrong.
+// (This replaces fetchRealTimes(), which drove the "Real times" button v216
+// deleted — it went on looking for a reallegs-btn element that no longer
+// exists, so it could never have worked again.)
+async function retryDayLegs(dayIdx){
+  _clearKeyRejected();                 // the point of retrying is that it is fixed
+  delete _legFetchInFlight[dayIdx];
+  const stops=(state.days[dayIdx]&&state.days[dayIdx].stops)||[];
+  stops.forEach(s=>{ if(s.legSource==='none')delete s.legSource; });   // ask again
+  try{ await _fetchDayLegs(dayIdx,{quiet:false}); }
+  catch(e){ showToast('Could not reach Google: '+((e&&e.message)||e),8000); }
+}
+// One line saying where routing stands, for the day header and the Overview.
+// "Nothing happened and I cannot tell why" is the failure this exists to end.
+function _routingStatusText(dayIdx){
+  if(!_gpKey())return 'No Google key on this device — times are estimates.';
+  if(_keyRejected())return 'Google rejected this key — times are estimates.';
+  const st=_legFetchStatus[dayIdx];
+  if(!st)return '';
+  if(st.error&&!st.ok)return _routeFailReason(st.error);
+  if(st.fail)return st.fail+' leg'+(st.fail===1?'':'s')+' could not be routed — '+_routeFailReason(st.error);
+  return '';
+}
+// Across the whole trip, for the Overview.
+function _routedLegCounts(){
+  let real=0,total=0;
+  ((state&&state.days)||[]).forEach(d=>{
+    const stops=d.stops||[];
+    for(let i=1;i<stops.length;i++){ total++; if(_realLegMins(stops[i])!=null)real++; }
+  });
+  return {real:real,total:total};
 }
 // APPLYING IS SEPARATE AND CONFIRMED. Real times are usually longer than the
 // estimates, so this moves stops — on a trip in progress that must be a
@@ -4495,7 +4578,34 @@ function dismissRoutingNotice(){
   const el=document.getElementById('routing-key-notice'); if(el)el.remove();
 }
 function _routingKeyNoticeHtml(){
-  if(_gpKey())return '';                       // routed already — nothing to say
+  // A KEY THAT IS PRESENT BUT NOT WORKING gets its own panel, and this one is
+  // never dismissible: it is the answer to "I added the key and nothing changed".
+  if(_gpKey()){
+    const c=_routedLegCounts();
+    const rejected=_keyRejected();
+    // Only after something has ACTUALLY been tried and failed. "No legs routed
+    // yet" is true the instant a key is entered, and crying failure then would
+    // be its own false alarm.
+    const failed=Object.keys(_legFetchStatus).some(k=>_legFetchStatus[k]&&_legFetchStatus[k].error&&_legFetchStatus[k].error!=='no key');
+    if(!rejected&&!failed)return '';
+    if(!rejected&&c.real>0)return '';                      // some legs work — not a key problem
+    const why=rejected
+      ? 'Google rejected this key.'
+      : 'A key is set, but Google would not route with it.';
+    return '<div class="ov-section" id="routing-key-status" style="border:1.5px solid var(--ruby);background:rgba(194,59,59,0.10)">'+
+      '<div style="font-family:var(--font-ui);font-size:var(--text-md);line-height:1.5">'+
+      '<div style="font-weight:700;margin-bottom:var(--space-2)">&#9888;&#65039; '+why+' Travel times are still estimates.</div>'+
+      '<div style="color:var(--muted)">Routed '+c.real+' of '+c.total+' legs. Check all three on the key in the Google Cloud console:</div>'+
+      '<ul style="color:var(--muted);margin:var(--space-2) 0 0 var(--space-4);padding:0">'+
+      '<li><strong>Directions API</strong> enabled</li>'+
+      '<li><strong>Maps JavaScript API</strong> enabled</li>'+
+      '<li>Website restriction allows <code>https://sps047-code.github.io/*</code> (or set it to None while testing)</li>'+
+      '</ul>'+
+      '<div style="margin-top:var(--space-3);display:flex;gap:var(--space-2);flex-wrap:wrap">'+
+      '<button class="ai-action-btn" onclick="retryDayLegs(Math.max(0,currentDayIdx))" style="background:var(--pine)">&#8635; Try again</button>'+
+      '<button class="ai-action-btn" onclick="promptGoogleKey()" style="background:var(--river)">&#128273; Use a different key</button>'+
+      '</div></div></div>';
+  }
   if(_routingNoticeDismissed())return '';
   return '<div class="ov-section" id="routing-key-notice" style="border:1.5px solid var(--amber);background:rgba(214,158,46,0.10)">'+
     '<div style="display:flex;align-items:flex-start;gap:var(--space-3)">'+

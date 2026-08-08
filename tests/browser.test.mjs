@@ -4624,6 +4624,171 @@ test('routing on open never moves a stop', async () => {
   await page.close();
 });
 
+// ===========================================================================
+// v218 — SILENCE IS THE BUG. v216 made the automatic path the only path and it
+// passes {quiet:true}, which suppressed the failure report along with the
+// success one. A rejected key, a disabled API and a working key all looked
+// identical: nothing happened and nothing was said.
+// ===========================================================================
+async function toastText(page) {
+  return page.evaluate(() => (document.getElementById('share-toast') || {}).textContent || '');
+}
+
+test('a failure on the AUTOMATIC path still reports the reason', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page, { fail: true, status: 'REQUEST_DENIED' });
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 800));
+    return { toast: (document.getElementById('share-toast') || {}).textContent || '',
+      status: _routingStatusText(0),
+      html: document.getElementById('content-area').innerHTML };
+  });
+  assert.match(out.toast, /Directions API/, 'the quiet path still speaks up, got: ' + out.toast);
+  assert.match(out.status, /Directions API/, 'and the reason stays on screen after the toast');
+  assert.match(out.html, /Routing failed/, 'with a visible way back into it');
+  await page.close();
+});
+
+test('each failure gets its own reason, not one generic message', async () => {
+  const cases = [
+    ['REQUEST_DENIED', /Directions API/],
+    ['OVER_QUERY_LIMIT', /quota or billing/],
+    ['NOT_FOUND', /could not place/],
+  ];
+  for (const [status, expect] of cases) {
+    const { page } = await openTrip(RAIL_DAY);
+    await stubGoogle(page, { fail: true, status });
+    const toast = await page.evaluate(async () => {
+      await _fetchDayLegs(0, { quiet: true });
+      return (document.getElementById('share-toast') || {}).textContent || '';
+    });
+    assert.match(toast, expect, status + ' got: ' + toast);
+    await page.close();
+  }
+});
+
+test('a broken key reports once for the day, not once per leg', async () => {
+  const THREE = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.50, lng: -0.12 },
+    { name: 'B', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', lat: 51.52, lng: -0.16 },
+    { name: 'C', type: 'hike', time: '1:00 PM', endTime: '2:00 PM', lat: 51.48, lng: -0.20 },
+  ] }];
+  const { page } = await openTrip(THREE);
+  await stubGoogle(page, { fail: true, status: 'REQUEST_DENIED' });
+  const out = await page.evaluate(async () => {
+    let toasts = 0;
+    const real = window.showToast;
+    window.showToast = (...a) => { toasts++; return real.apply(null, a); };
+    const r = await _fetchDayLegs(0, { quiet: true });
+    return { toasts, reqs: (window.__routeReqs || []).length, fail: r.fail };
+  });
+  assert.equal(out.reqs, 2, 'both legs were attempted');
+  assert.equal(out.fail, 2, 'and both failed');
+  assert.equal(out.toasts, 1, 'but the user is told once, got ' + out.toasts);
+  await page.close();
+});
+
+test('success on the automatic path stays silent', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 800));
+    return { toast: (document.getElementById('share-toast') || {}).textContent || '',
+      mins: state.days[0].stops[1].legMins, status: _routingStatusText(0) };
+  });
+  assert.equal(out.mins, 118, 'it worked');
+  assert.equal(out.status, '', 'so there is nothing to explain');
+  assert.doesNotMatch(out.toast, /Routing failed|Directions API/, 'and nothing to apologise for');
+  await page.close();
+});
+
+test('the Maps script asks for no bogus library', async () => {
+  const { page } = await openTrip(RAIL_DAY);
+  const src = await page.evaluate(async () => {
+    localStorage.setItem('gp_key_london-scotland', 'TEST-KEY');
+    delete window.google;
+    let captured = '';
+    const realAppend = document.head.appendChild.bind(document.head);
+    document.head.appendChild = (el) => {
+      if (el.tagName === 'SCRIPT' && /maps\.googleapis/.test(el.src || '')) { captured = el.src; return el; }
+      return realAppend(el);
+    };
+    _loadGoogleMaps().catch(() => {});
+    await new Promise((r) => setTimeout(r, 50));
+    document.head.appendChild = realAppend;
+    return captured;
+  });
+  assert.match(src, /maps\.googleapis\.com/, 'it is the Maps SDK, got: ' + src);
+  // `libraries=routes` is not a value this loader takes; DirectionsService is core.
+  assert.doesNotMatch(src, /libraries=/, 'and asks for no library at all, got: ' + src);
+  await page.close();
+});
+
+test('gm_authFailure names both things to fix and stops the retry loop', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    window.gm_authFailure();
+    const toast = (document.getElementById('share-toast') || {}).textContent || '';
+    window.__routeReqs = [];
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 600));
+    switchDay(-1);
+    return { toast, reqs: window.__routeReqs.length, rejected: _keyRejected(),
+      ov: document.getElementById('content-area').innerHTML };
+  });
+  assert.match(out.toast, /Directions API/);
+  assert.match(out.toast, /Maps JavaScript API/, 'both APIs are named, got: ' + out.toast);
+  assert.equal(out.rejected, true);
+  assert.equal(out.reqs, 0, 'and it stops hammering Google with a key it knows is refused');
+  assert.match(out.ov, /Google rejected this key/, 'the Overview says so plainly');
+  await page.close();
+});
+
+test('a new key clears the rejection and lets routing work again', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page);
+  const out = await page.evaluate(async () => {
+    window.gm_authFailure();
+    window.prompt = () => 'A-BETTER-KEY';
+    promptGoogleKey();
+    await new Promise((r) => setTimeout(r, 600));
+    return { rejected: _keyRejected(), mins: state.days[0].stops[1].legMins };
+  });
+  assert.equal(out.rejected, false, 'the new key is not presumed broken');
+  assert.equal(out.mins, 118, 'and the day it was entered on routes straight away');
+  await page.close();
+});
+
+test('a key that is set but routes nothing is called out on the Overview', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  await stubGoogle(page, { fail: true, status: 'REQUEST_DENIED' });
+  const ov = await page.evaluate(async () => {
+    await _fetchDayLegs(0, { quiet: true });
+    switchDay(-1);
+    return document.getElementById('content-area').innerHTML;
+  });
+  assert.match(ov, /Google would not route with it/, 'silence is not treated as success');
+  assert.match(ov, /Routed 0 of 1 legs/);
+  assert.match(ov, /Try again/, 'with something to do about it');
+  await page.close();
+});
+
+// The opposite error: crying failure before anything has been attempted. Adding
+// a key from the Overview must not immediately accuse it of being broken.
+test('a freshly added key is not accused of failing before it has been tried', async () => {
+  const { page } = await openTrip(RAIL_DAY, { day: null });
+  const ov = await page.evaluate(() => {
+    localStorage.setItem('gp_key_london-scotland', 'TEST-KEY');
+    switchDay(-1);
+    return document.getElementById('content-area').innerHTML;
+  });
+  assert.doesNotMatch(ov, /would not route|rejected this key/, 'nothing has failed yet');
+  await page.close();
+});
+
 // v216 shipped with ONE way to enter a key — a notice that hides itself forever
 // once dismissed — and no key means nothing in the app is ever routed. Tapping
 // "Not now" locked the feature away with no route back to it.

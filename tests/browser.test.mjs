@@ -4911,3 +4911,127 @@ test('stops that no longer fit are counted, not moved', async () => {
   assert.match(out.html, /need more travel time/, 'it is offered, not done');
   await page.close();
 });
+
+// ===========================================================================
+// v219 — SWIPING DAYS. Real TouchEvents against the real listeners, because the
+// bug was in how the listeners read a gesture, not in the arithmetic alone.
+// ===========================================================================
+const THREE_DAYS = [
+  { title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+    { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.50, lng: -0.12 }] },
+  { title: 'Day 2', subtitle: 'Thu, Aug 6, 2026', stops: [
+    { name: 'B', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.52, lng: -0.16 }] },
+  { title: 'Day 3', subtitle: 'Fri, Aug 7, 2026', stops: [
+    { name: 'C', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.48, lng: -0.20 }] },
+];
+
+// Drive the app's own document listeners with genuine TouchEvents, moving in
+// steps so the axis lock sees the gesture develop the way a finger does.
+async function swipe(page, { dx, dy, ms = 250, steps = 8, selector = '.day-panel.active', fingers = 1 }) {
+  await page.evaluate(async (g) => {
+    const x0 = 200, y0 = 400;
+    // RE-QUERY EVERY TIME. The app re-renders #content-area on its own (the
+    // briefing and the hours fill both land mid-gesture), which detaches any
+    // node held from before — and an event dispatched on a detached node never
+    // reaches the document listeners, so the whole gesture silently vanishes.
+    const at = () => document.querySelector(g.selector) || document.body;
+    const fire = (type, x, y) => {
+      const el = at();
+      const mk = (tx, ty) => {
+        const list = [new Touch({ identifier: 1, target: el, clientX: tx, clientY: ty })];
+        if (g.fingers > 1) list.push(new Touch({ identifier: 2, target: el, clientX: tx + 60, clientY: ty }));
+        return list;
+      };
+      const touches = mk(x, y);
+      return el.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, cancelable: type === 'touchmove',
+        touches: type === 'touchend' ? [] : touches,
+        targetTouches: type === 'touchend' ? [] : touches,
+        changedTouches: touches,
+      }));
+    };
+    fire('touchstart', x0, y0);
+    for (let i = 1; i <= g.steps; i++) {
+      await new Promise((r) => setTimeout(r, g.ms / g.steps));
+      fire('touchmove', x0 + (g.dx * i) / g.steps, y0 + (g.dy * i) / g.steps);
+    }
+    fire('touchend', x0 + g.dx, y0 + g.dy);
+  }, { dx, dy, ms, steps, selector, fingers });
+  await page.waitForTimeout(60);
+}
+
+test('a small sideways move over a stop card does not change the day', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  // The reported bug: reaching across to the side of a card paged the day.
+  await swipe(page, { dx: -40, dy: 8, ms: 200 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1,
+    'reaching across a card must not throw you onto another day');
+  await page.close();
+});
+
+test('scrolling a day with a sideways drift does not change the day', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  await swipe(page, { dx: -35, dy: 240, ms: 400 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1,
+    'reading the stop list must not throw you onto another day');
+  await page.close();
+});
+
+test('a deliberate flick still changes the day, both directions', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  await swipe(page, { dx: -140, dy: 6, ms: 200 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 2, 'left goes forward');
+  await swipe(page, { dx: 140, dy: 6, ms: 200 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1, 'right goes back');
+  await page.close();
+});
+
+test('a slow sideways drag while reading does not page', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  await swipe(page, { dx: -160, dy: 10, ms: 1400, steps: 14 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1);
+  await page.close();
+});
+
+test('two fingers never page the day', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  await swipe(page, { dx: -160, dy: 4, ms: 200, fingers: 2 });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1, 'a pinch is not a page turn');
+  await page.close();
+});
+
+test('dragging the day tab bar scrolls it instead of paging', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  // Force the tab strip to actually be scrollable, as it is on a phone.
+  await page.evaluate(() => {
+    const t = document.querySelector('.tabs');
+    t.style.maxWidth = '120px'; t.style.overflowX = 'auto'; t.scrollLeft = 0;
+  });
+  await swipe(page, { dx: -140, dy: 4, ms: 200, selector: '.tabs' });
+  assert.equal(await page.evaluate(() => currentDayIdx), 1,
+    'the scroller gets the gesture, not the pager');
+  await page.close();
+});
+
+test('the gesture is judged on how it started, not where it ended', async () => {
+  const { page } = await openTrip(THREE_DAYS, { day: 1 });
+  // Straight down first, then hard left: a scroll that changed its mind.
+  await page.evaluate(async () => {
+    const el = document.querySelector('.day-panel.active');
+    const mk = (x, y) => [new Touch({ identifier: 1, target: el, clientX: x, clientY: y })];
+    const fire = (type, t) => el.dispatchEvent(new TouchEvent(type, {
+      bubbles: true, cancelable: type === 'touchmove',
+      touches: type === 'touchend' ? [] : t, targetTouches: type === 'touchend' ? [] : t,
+      changedTouches: t,
+    }));
+    fire('touchstart', mk(300, 500));
+    for (let i = 1; i <= 5; i++) { await new Promise((r) => setTimeout(r, 20)); fire('touchmove', mk(300, 500 + i * 20)); }
+    for (let i = 1; i <= 5; i++) { await new Promise((r) => setTimeout(r, 20)); fire('touchmove', mk(300 - i * 40, 604)); }
+    fire('touchend', mk(100, 604));
+  });
+  await page.waitForTimeout(60);
+  assert.equal(await page.evaluate(() => currentDayIdx), 1,
+    'once it locks vertical it stays vertical');
+  await page.close();
+});
+

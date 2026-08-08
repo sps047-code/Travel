@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v218';
+window.APP_CODE_VERSION='v219';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -6770,27 +6770,87 @@ function _checkinLink(flightNumber,airline){
 }
 
 /* --- Swipe Gestures --- */
+// PAGING THE DAY MUST TAKE INTENT, NOT A TWITCH. The old rule fired on 30px of
+// sideways movement with no test beyond |dx|>|dy|, judged from start-to-end
+// displacement at touchend. 30px is about 4mm — a thumb scrolling down the page
+// covers that sideways without meaning anything by it, so reading a stop card
+// paged the itinerary. Worse, touchmove called preventDefault() at that same
+// 30px, so the scroll died AND the day changed.
+const _SWIPE={DEADZONE:10,MIN_DX:80,RATIO:2,MAX_DY:60,MAX_MS:700};
+// Which way is this gesture going? Decided ONCE, at the first movement past the
+// deadzone, and never revisited — a gesture that started as a scroll stays a
+// scroll however it ends up. Returns 'h', 'v', or '' while still undecided.
+function _swipeAxis(dx,dy){
+  const ax=Math.abs(dx),ay=Math.abs(dy);
+  if(Math.max(ax,ay)<_SWIPE.DEADZONE)return '';
+  return ax>ay?'h':'v';
+}
+// Does this completed gesture page the day? Pure, so the thresholds can be
+// tested directly instead of only through synthesised touch events.
+function _swipeDecision(g){
+  if(!g||g.axis!=='h')return 0;                  // locked vertical, or never moved
+  const dx=Number(g.dx)||0, ay=Math.abs(Number(g.dy)||0), ms=Number(g.ms)||0;
+  if(Math.abs(dx)<_SWIPE.MIN_DX)return 0;        // too small to be meant
+  if(Math.abs(dx)<ay*_SWIPE.RATIO)return 0;      // too diagonal to be meant
+  if(ay>_SWIPE.MAX_DY)return 0;                  // wandered too far down the page
+  if(ms>_SWIPE.MAX_MS)return 0;                  // a slow drag is not a flick
+  return dx<0?1:-1;                              // 1 = next day, -1 = previous
+}
+// Something under the finger that scrolls sideways gets the gesture instead —
+// the day tabs (.tabs) and the Overview tabs (.ov-tab-bar) are overflow-x:auto,
+// and dragging them used to fight the swipe rather than scroll them.
+function _horizScrollerAt(node,dir){
+  let el=node;
+  while(el&&el.nodeType===1&&el!==document.body){
+    try{
+      if(el.scrollWidth>el.clientWidth+2){
+        const ov=(getComputedStyle(el).overflowX||'');
+        if(ov==='auto'||ov==='scroll'){
+          const max=el.scrollWidth-el.clientWidth;
+          // Only if it can still move THAT way; a scroller pinned at its end
+          // should not swallow the gesture.
+          if(dir<0?el.scrollLeft<max-1:el.scrollLeft>1)return el;
+        }
+      }
+    }catch(e){}
+    el=el.parentElement;
+  }
+  return null;
+}
 (function(){
-  let tx=0,ty=0,live=false;
+  let tx=0,ty=0,t0=0,live=false,axis='',multi=false;
   const skip=e=>!!e.target.closest('#map,.modal,.modal-overlay,textarea,input,select,.card-controls,[data-no-swipe]');
   document.addEventListener('touchstart',e=>{
+    live=false;axis='';multi=false;
+    if(e.touches.length>1){multi=true;return;}    // pinch/zoom is never a page turn
     if(skip(e))return;
-    tx=e.touches[0].clientX;ty=e.touches[0].clientY;live=true;
+    tx=e.touches[0].clientX;ty=e.touches[0].clientY;t0=Date.now();live=true;
   },{passive:true});
   document.addEventListener('touchmove',e=>{
-    if(!live||skip(e))return;
-    const dx=Math.abs(e.touches[0].clientX-tx),dy=Math.abs(e.touches[0].clientY-ty);
-    if(dx>dy&&dx>30)e.preventDefault();
+    if(e.touches.length>1)multi=true;
+    if(!live||multi)return;
+    const dx=e.touches[0].clientX-tx,dy=e.touches[0].clientY-ty;
+    if(!axis){
+      axis=_swipeAxis(dx,dy);
+      // Hand the gesture to a sideways scroller rather than paging over it.
+      if(axis==='h'&&_horizScrollerAt(e.target,dx<0?-1:1)){ live=false; return; }
+    }
+    // ONLY once the axis is known to be horizontal. Cancelling the browser's
+    // scroll before that is what made the page freeze mid-gesture.
+    if(axis==='h'&&Math.abs(dx)>_SWIPE.DEADZONE)e.preventDefault();
   },{passive:false});
   document.addEventListener('touchend',e=>{
-    if(!live)return;live=false;
+    if(!live||multi){live=false;return;}
+    live=false;
     if(skip(e))return;
-    const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
-    if(Math.abs(dx)<30||Math.abs(dx)<=Math.abs(dy))return;
+    const dir=_swipeDecision({dx:e.changedTouches[0].clientX-tx,
+                              dy:e.changedTouches[0].clientY-ty,
+                              ms:Date.now()-t0, axis:axis});
+    if(!dir)return;
     if(currentDayIdx===-1)return;
-    if(dx<0&&currentDayIdx<state.days.length-1)switchDay(currentDayIdx+1);
-    else if(dx>0&&currentDayIdx>0)switchDay(currentDayIdx-1);
-    else if(dx>0&&currentDayIdx===0)switchDay(-1);
+    if(dir>0&&currentDayIdx<state.days.length-1)switchDay(currentDayIdx+1);
+    else if(dir<0&&currentDayIdx>0)switchDay(currentDayIdx-1);
+    else if(dir<0&&currentDayIdx===0)switchDay(-1);
   },{passive:true});
   const SWIPE_KEY='seasons_swipe_v1';
   if(!localStorage.getItem(SWIPE_KEY)){

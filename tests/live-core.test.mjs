@@ -1572,3 +1572,59 @@ test('a booked stop is dropped even when the review insists', () => {
   assert.ok(data._unprovenConflicts.some((x) => /booking/.test(x)),
     'and says why: ' + JSON.stringify(data._unprovenConflicts));
 });
+
+// ===========================================================================
+// SWIPE-TO-CHANGE-DAY. The old rule paged on 30px of sideways movement with no
+// test but |dx|>|dy|, judged from start-to-end displacement — so reading a stop
+// card and scrolling with the slightest drift threw you onto the next day.
+// ===========================================================================
+test('a small sideways move over a stop card does NOT change the day', () => {
+  const decide = fn('_swipeDecision');
+  // THE REPORTED BUG: moving the finger across to the side of a stop card —
+  // 35px, barely 4mm — used to page the itinerary, because the old rule asked
+  // only for 30px and |dx| > |dy|.
+  assert.equal(decide({ dx: -35, dy: 5, ms: 200, axis: 'h' }), 0);
+  assert.equal(decide({ dx: 45, dy: 12, ms: 250, axis: 'h' }), 0);
+  assert.equal(decide({ dx: -70, dy: 10, ms: 200, axis: 'h' }), 0, 'still short of intent');
+});
+
+test('a vertical scroll that drifts sideways does NOT change the day', () => {
+  const decide = fn('_swipeDecision');
+  assert.equal(decide({ dx: -35, dy: 240, ms: 400, axis: 'v' }), 0);
+  assert.equal(decide({ dx: -35, dy: 240, ms: 400, axis: 'h' }), 0);
+});
+
+test('a deliberate flick does change the day, both ways', () => {
+  const decide = fn('_swipeDecision');
+  assert.equal(decide({ dx: -120, dy: 8, ms: 220, axis: 'h' }), 1, 'left = next day');
+  assert.equal(decide({ dx: 120, dy: 8, ms: 220, axis: 'h' }), -1, 'right = previous day');
+});
+
+test('a diagonal drag is not a swipe', () => {
+  const decide = fn('_swipeDecision');
+  // 100 across, 90 down: the old rule paged on this because 100 > 90.
+  assert.equal(decide({ dx: -100, dy: 90, ms: 300, axis: 'h' }), 0);
+});
+
+test('a slow drag while reading is not a flick', () => {
+  const decide = fn('_swipeDecision');
+  assert.equal(decide({ dx: -150, dy: 5, ms: 2000, axis: 'h' }), 0);
+  assert.equal(decide({ dx: -150, dy: 5, ms: 250, axis: 'h' }), 1, 'the same distance, flicked');
+});
+
+test('once the gesture locks vertical it can never page, however it ends', () => {
+  const decide = fn('_swipeDecision');
+  // Started as a scroll, ended 200px to the left. Still a scroll.
+  assert.equal(decide({ dx: -200, dy: 300, ms: 500, axis: 'v' }), 0);
+  assert.equal(decide({ dx: -200, dy: 4, ms: 300, axis: 'v' }), 0,
+    'the lock holds even when the numbers alone would qualify');
+  assert.equal(decide({ dx: -200, dy: 4, ms: 300, axis: '' }), 0, 'and an unmoved touch pages nothing');
+});
+
+test('the axis is decided by which way the finger actually went', () => {
+  const axis = fn('_swipeAxis');
+  assert.equal(axis(3, 4), '', 'inside the deadzone nothing is decided yet');
+  assert.equal(axis(40, 12), 'h');
+  assert.equal(axis(12, 40), 'v');
+  assert.equal(axis(-40, 12), 'h', 'direction does not affect the axis');
+});

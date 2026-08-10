@@ -573,6 +573,12 @@ body.offline #audio-discover-btn{display:none!important}
 .live-wx-time{font-family:var(--font-ui);font-size:var(--text-xs);font-weight:600;color:var(--muted);letter-spacing:0.04em}
 .live-wx-icon{font-size:var(--text-lg);line-height:1.3}
 .live-wx-temp{font-family:var(--font-ui);font-size:var(--text-xs);font-weight:700;color:var(--ink)}
+.live-wx-temp2{font-family:var(--font-ui);font-size:var(--text-2xs);font-weight:600;color:var(--muted)}
+/* The weather line in the briefing. Rendered from data on every view — never
+   part of the cached briefing text, and never written by the model. */
+.day-narr-wx{font-family:var(--font-ui);font-size:var(--text-sm);color:var(--ink);margin-bottom:var(--space-2);line-height:1.5}
+.day-narr-wx-at{color:var(--muted)}
+.day-narr-wx-none{color:var(--muted);font-style:italic}
 /* === Guidebook === */
 .guidebook-btn{display:inline-flex;align-items:center;gap:var(--space-1);margin-top:var(--space-2);padding:var(--space-1) var(--space-3);background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:20px;font-family:var(--font-ui);font-size:var(--text-xs);font-weight:500;cursor:pointer;transition:all 0.2s}
 .guidebook-btn:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-tint)}
@@ -709,7 +715,7 @@ body.offline #audio-discover-btn{display:none!important}
     // build has been downloaded, the app UPDATES ITSELF (see the controllerchange
     // handler below) rather than displaying two version numbers at once.
     if(window.APP_CODE_VERSION){el.textContent=window.APP_CODE_VERSION;return;}
-    if(!el.textContent)el.textContent='v219'; // fallback before trip.js loads
+    if(!el.textContent)el.textContent='v220'; // fallback before trip.js loads
     if(!('caches' in window))return;
     caches.keys().then(function(keys){
       var vs=keys.map(function(k){var m=/^seasons-v(\d+)$/.exec(k);return m?parseInt(m[1],10):null;}).filter(function(n){return n!==null;});
@@ -956,7 +962,7 @@ body.offline #audio-discover-btn{display:none!important}
     <div id="pc-content"></div>
   </div>
 </div>
-<script src="trip.js?v=219"></script>
+<script src="trip.js?v=220"></script>
 <!-- The inline _parseTripDate shim that used to live here was deleted: it ran AFTER
      trip.js and silently REPLACED trip.js's _parseTripDate with a near-duplicate
      that had different year bounds, giving date parsing two sources of truth.

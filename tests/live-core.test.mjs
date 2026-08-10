@@ -320,18 +320,46 @@ test('_scrubRemovedStop strips the removed stop from heading and other notes', (
   assert.ok(/blenheim/i.test(d.title), 'kept Blenheim: ' + d.title);
 });
 
-test('fetchDayWeather never shows 0°F when the API has no reading', async () => {
+test('a missing reading is reported as unavailable, never invented', async () => {
   const fdw = fn('fetchDayWeather');
-  // Simulate the forecast API returning a row with NO temperature (the 0°F bug).
+  // The API answers with no hourly series at all.
   ctx.fetch = async () => ({ ok: true, json: async () => ({ daily: {
     temperature_2m_max: [null], temperature_2m_min: [null], weathercode: [null],
-    precipitation_probability_max: [null], precipitation_sum: [null],
   } }) });
   const day = { subtitle: 'Mon, Aug 10, 2026 · Glenfinnan', stops: [{ name: 'Glenfinnan', lat: 56.8758, lng: -5.431 }] };
   const wx = await fdw(day);
-  assert.ok(wx, 'should return a weather object');
-  assert.notEqual(wx.hi, 0, 'must never display 0°F');
-  assert.equal(wx.wxType, 'climateAvg', 'a missing reading falls back to the climate-avg estimate');
+  assert.ok(wx, 'should still return an object');
+  assert.equal(wx.unavailable, true, 'and say plainly that there is no reading');
+  // The old code fell back to asking the model to "estimate typical weather",
+  // which is where a twenty-degree error came from. There is no estimate now.
+  assert.equal(wx.hiC, undefined);
+  assert.equal(wx.hiF, undefined);
+});
+
+test('weather is read at the hour you are there, on the DESTINATION clock', async () => {
+  const hourly = fn('_wxHourly');
+  const at = fn('_wxAtHour');
+  const destNow = fn('_destNowMins');
+  const times = [], temps = [];
+  for (let h = 0; h < 24; h++) {
+    times.push('2026-08-10T' + String(h).padStart(2, '0') + ':00');
+    temps.push(h);                       // temperature == hour, so an off-by-N is obvious
+  }
+  ctx.fetch = async () => ({ ok: true, json: async () => ({
+    hourly: { time: times, temperature_2m: temps, weathercode: times.map(() => 0),
+      precipitation_probability: times.map(() => 0) },
+    daily: { temperature_2m_max: [23], temperature_2m_min: [12], weathercode: [0] },
+    utc_offset_seconds: 3600,            // Britain in summer
+  }) });
+  const s = await hourly(56.87, -5.43, '2026-08-10');
+  assert.equal(at(s, 18 * 60).c, 18, 'the 6pm reading is the 6pm reading');
+  assert.equal(at(s, 18 * 60).f, 64, 'and converts to Fahrenheit');
+  assert.equal(at(s, 8 * 60).c, 8, 'not one number for the whole day');
+  // The destination hour must come from the API offset, not from this machine.
+  const mins = destNow(s);
+  const expect = new Date(Date.now() + 3600 * 1000);
+  assert.equal(Math.floor(mins / 60), expect.getUTCHours(),
+    'the clock that matters is the destination\'s');
 });
 
 test('moving a stop never sends the first stop past midnight (untimed first stop)', () => {

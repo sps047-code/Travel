@@ -92,8 +92,12 @@ function serve() {
 
 // Open a trip page with a known itinerary injected, so tests do not depend on
 // the shared cloud database (which the browser here cannot reach anyway).
-async function openTrip(days, { tripId = 'london-scotland', day = 0, family = false } = {}) {
-  const page = await browser.newPage();
+async function openTrip(days, { tripId = 'london-scotland', day = 0, family = false, timezoneId = null } = {}) {
+  // A page in a specific timezone needs its own context — used to prove the
+  // weather reads the DESTINATION's clock rather than the device's.
+  const page = timezoneId
+    ? await (await browser.newContext({ timezoneId, serviceWorkers: 'block' })).newPage()
+    : await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -5035,3 +5039,161 @@ test('the gesture is judged on how it started, not where it ended', async () => 
   await page.close();
 });
 
+
+// ===========================================================================
+// v220 — WEATHER. It was wrong by ~20°: the hourly strip picked which hours to
+// show using the iPad's clock against Britain's hours, and the briefing's
+// weather was frozen inside a cached AI narrative that the model was told to
+// invent when no reading was available.
+// ===========================================================================
+const WX_DAY = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+  { name: 'Glenfinnan', type: 'hike', time: '6:00 PM', endTime: '7:00 PM', lat: 56.8758, lng: -5.431 },
+] }];
+
+// Answer Open-Meteo with temperature == hour, so reading the wrong hour is
+// unmistakable in the assertion rather than merely "a bit off".
+async function stubWeather(page, { offset = 3600, base = 0, fail = false } = {}) {
+  await page.evaluate(({ offset, base, fail }) => {
+    window.__wxCalls = [];
+    const real = window.fetch;
+    window.fetch = async (u, o) => {
+      const url = String(u && u.url ? u.url : u);
+      if (!/open-meteo/.test(url)) return real ? real(u, o) : { ok: true, json: async () => ({}) };
+      window.__wxCalls.push(url);
+      if (fail) return { ok: false, status: 500, json: async () => ({}) };
+      const times = [], temps = [];
+      for (let h = 0; h < 24; h++) {
+        times.push('2026-08-05T' + String(h).padStart(2, '0') + ':00');
+        temps.push(base + h);
+      }
+      return { ok: true, json: async () => ({
+        hourly: { time: times, temperature_2m: temps, weathercode: times.map(() => 0),
+          precipitation_probability: times.map(() => 0) },
+        daily: { temperature_2m_max: [23], temperature_2m_min: [12], weathercode: [0] },
+        utc_offset_seconds: offset,
+      }) };
+    };
+  }, { offset, base, fail });
+}
+
+test('the hourly strip uses the destination clock, not the device clock', async () => {
+  // Device pinned to New York; the destination is Britain, hours ahead.
+  const { page } = await openTrip(WX_DAY, { day: null, timezoneId: 'America/New_York' });
+  await stubWeather(page, { offset: 3600 });
+  const out = await page.evaluate(async () => {
+    const series = await _wxHourly(56.8758, -5.431, '2026-08-05');
+    return { destH: Math.floor(_destNowMins(series) / 60),
+      deviceH: new Date().getHours(),
+      expectH: new Date(Date.now() + 3600 * 1000).getUTCHours() };
+  });
+  assert.equal(out.destH, out.expectH, 'the hour comes from the API offset');
+  assert.notEqual(out.destH, out.deviceH,
+    'and genuinely differs from this device, so the test can prove something');
+  await page.close();
+});
+
+test('the reading is the one for the hour you are at that stop', async () => {
+  const { page } = await openTrip(WX_DAY, { day: null });
+  await stubWeather(page);
+  const out = await page.evaluate(async () => {
+    const s = await _wxHourly(56.8758, -5.431, '2026-08-05');
+    return { six: _wxAtHour(s, 18 * 60), eight: _wxAtHour(s, 8 * 60) };
+  });
+  assert.equal(out.six.c, 18, 'the 6pm stop gets the 6pm temperature');
+  assert.equal(out.six.f, 64, 'in both units');
+  assert.equal(out.eight.c, 8, 'not one figure smeared over the whole day');
+  await page.close();
+});
+
+test('the briefing weather is refetched, never served from the cached text', async () => {
+  const { page } = await openTrip(WX_DAY, { day: null });
+  await stubWeather(page, { base: 0 });
+  const first = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 700));
+    return document.getElementById('day-narr-wx-0').textContent;
+  });
+  assert.match(first, /23°C/, 'the real high is shown, got: ' + first);
+  // The world changes; the cached prose must not carry yesterday's numbers.
+  const second = await page.evaluate(async () => {
+    window.__wxCalls = [];
+    const real = window.fetch;
+    window.fetch = async (u, o) => {
+      const url = String(u && u.url ? u.url : u);
+      if (!/open-meteo/.test(url)) return real(u, o);
+      const times = [], temps = [];
+      for (let h = 0; h < 24; h++) { times.push('2026-08-05T' + String(h).padStart(2, '0') + ':00'); temps.push(h); }
+      return { ok: true, json: async () => ({
+        hourly: { time: times, temperature_2m: temps, weathercode: times.map(() => 0),
+          precipitation_probability: times.map(() => 0) },
+        daily: { temperature_2m_max: [4], temperature_2m_min: [1], weathercode: [0] },
+        utc_offset_seconds: 3600 }) };
+    };
+    Object.keys(_WX_CACHE).forEach((k) => delete _WX_CACHE[k]);   // as a later day would
+    await _paintDayWeather(0);
+    return document.getElementById('day-narr-wx-0').textContent;
+  });
+  assert.match(second, /4°C/, 'the new reading replaces the old one, got: ' + second);
+  assert.doesNotMatch(second, /23°C/, 'nothing stale survives');
+  await page.close();
+});
+
+test('nothing sent to the model asks it for weather', async () => {
+  const { page } = await openTrip(WX_DAY, { day: null });
+  await stubWeather(page);
+  // captureAiRequest deliberately ignores the briefing call as background noise,
+  // so watch the wire directly — this test is precisely about that call.
+  await page.evaluate(() => {
+    window.__ai = [];
+    const real = window.fetch;
+    window.fetch = async (u, o) => {
+      const url = String(u && u.url ? u.url : u);
+      let parsed = null;
+      try { parsed = JSON.parse(o && o.body); } catch (e) { /* not JSON */ }
+      if (parsed && typeof parsed.system === 'string') {
+        window.__ai.push(parsed);
+        return { ok: true, json: async () => ({ content: [{ text: 'A fine day in the glen.' }] }) };
+      }
+      return real(u, o);
+    };
+  });
+  const sent = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 900));
+    return window.__ai;
+  });
+  assert.ok(sent.length, 'the briefing was requested');
+  for (const b of sent) {
+    assert.doesNotMatch(b.system + ' ' + b.user, /estimate typical weather/i,
+      'the model is never asked to make up the weather');
+    assert.doesNotMatch(b.user, /°F|°C/, 'and is given no temperature to echo');
+  }
+  await page.close();
+});
+
+test('when the weather cannot be loaded it says so rather than vanishing', async () => {
+  const { page } = await openTrip(WX_DAY, { day: null });
+  await stubWeather(page, { fail: true });
+  const out = await page.evaluate(async () => {
+    switchDay(0);
+    await new Promise((r) => setTimeout(r, 700));
+    const el = document.getElementById('day-narr-wx-0');
+    return { text: el.textContent, wx: _wxDayCache[0] };
+  });
+  assert.match(out.text, /unavailable/i, 'got: ' + out.text);
+  assert.doesNotMatch(out.text, /\d+°/, 'and invents no number to fill the gap');
+  assert.equal(out.wx.unavailable, true);
+  await page.close();
+});
+
+test('a briefing cached with a weather line baked in is stripped of it', async () => {
+  const { page } = await openTrip(WX_DAY, { day: null });
+  const out = await page.evaluate(() => {
+    narrData['x|2026-08-05'] = '⛅ Partly cloudy · High 23°C / 74°F · Climate Avg\nToday you walk the glen.';
+    localStorage.setItem(NARR_LS, JSON.stringify(narrData));
+    _purgeStaleWeatherNarratives();
+    return narrData['x|2026-08-05'];
+  });
+  assert.equal(out, 'Today you walk the glen.', 'the prose is kept, the invented weather is not');
+  await page.close();
+});

@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v219';
+window.APP_CODE_VERSION='v220';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -1567,7 +1567,7 @@ function renderPanel(idx){
     '</div>'+
     (jnlMode?_jnlDayHtml(idx):'')+
     renderDaySummary(day,idx)+
-    (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
+    (day.stops.length>0?'<div class="day-narr" id="day-narr-'+idx+'"><div class="day-narr-label">&#127918; Today\'s Briefing<button class="day-narr-refresh" onclick="refreshDayNarrative('+idx+')">&#8635; Refresh</button></div><div class="day-narr-wx" id="day-narr-wx-'+idx+'"></div><div class="day-narr-body narr-loading" id="day-narr-body-'+idx+'">Preparing your day briefing…</div></div>':'')+
     (_todayDayIdx===idx?'<div class="live-wx-strip" id="live-wx-'+idx+'"></div>':'')+
     (day.nearby?'<div class="day-nearby"><div class="day-nearby-lbl">&#128205; Nearby Worth Knowing</div><div class="day-nearby-text">'+_escHtml(day.nearby)+'</div></div>':'')+
     '<div class="timeline">'+cards+(showEnd&&!_tonightIsLastStop&&todayLastStop?(()=>{const rawMode=todayLastStop.transitMode||_defaultTransitMode(todayLastStop,todayHotel);const tmode=rawMode;const leg=legLabel(todayLastStop,todayHotel,tmode,todayHotel);const modePill='<span class="leg-mode-pill '+(TM_CLS[tmode]||TM_CLS.drive)+'">'+(TM_ICON[tmode]||'🚗')+' '+(TM_LABEL[tmode]||'Drive')+'</span>';return'<div class="leg-connector"><span class="leg-connector-arrow">&#8595;</span>'+(leg||'')+modePill+'</div>';})():'')+
@@ -1764,13 +1764,26 @@ async function downloadTripOffline(){
 const NARR_LS='day_narr_v1';
 let narrData={};
 try{narrData=JSON.parse(localStorage.getItem(NARR_LS)||'{}')}catch(e){}
-// Purge any briefing cached with the old "0°F" weather artifact (the forecast-null
-// bug baked "High 0°F / Low 0°F" into the cached text). Deleting it forces a fresh
-// briefing with the corrected weather on next view. Runs once at load.
+// WEATHER MUST NEVER BE CACHED INSIDE THE BRIEFING TEXT. The prose does not
+// change; the weather does, hour by hour. They used to be concatenated into one
+// string and stored, so a reading fetched days earlier was served as today's.
+// This strips any weather line out of a cached briefing — the prose is kept, the
+// weather is refetched every view. (Supersedes the older purge, which only
+// caught the "High 0°F" artifact.)
 function _purgeStaleWeatherNarratives(){
   try{
     let changed=false;
-    for(const k in narrData){ if(/0°F/.test(narrData[k]||'')){ delete narrData[k]; changed=true; } }
+    for(const k in narrData){
+      const t=narrData[k]||'';
+      // A baked-in weather line is the first line and carries a temperature.
+      const nl=t.indexOf('\n');
+      const first=nl<0?t:t.slice(0,nl);
+      if(/°[FC]/.test(first)||/Climate Avg/i.test(first)){
+        const rest=nl<0?'':t.slice(nl+1).trim();
+        if(rest)narrData[k]=rest; else delete narrData[k];
+        changed=true;
+      }else if(/0°F/.test(t)){ delete narrData[k]; changed=true; }
+    }
     if(changed)localStorage.setItem(NARR_LS,JSON.stringify(narrData));
     return changed;
   }catch(e){ return false; }
@@ -1819,6 +1832,85 @@ function _parseTripDate(str){
   }
   return best;
 }
+/* ===========================================================================
+   HOURLY WEATHER, FOR THE PLACE YOU ARE, AT THE HOUR YOU ARE THERE.
+   A single daily high/low taken from whichever stop happened to be first in the
+   day is not the weather at 8pm in the Highlands. Readings are fetched per
+   distinct location (coordinates rounded so nearby stops share one request) and
+   indexed by the stop's own scheduled hour — in the DESTINATION's local time,
+   which comes from the API's utc_offset_seconds, never from the device clock.
+   =========================================================================== */
+const _WX_CACHE={};                       // "lat,lng|YYYY-MM-DD" -> parsed hourly
+const _WX_TTL=30*60*1000;                 // half an hour is plenty for a forecast
+function _wxKeyFor(lat,lng,iso){ return Number(lat).toFixed(2)+','+Number(lng).toFixed(2)+'|'+iso; }
+// One hourly series for one place on one date. Never throws; returns null so the
+// caller can say "unavailable" rather than show a number that is not real.
+async function _wxHourly(lat,lng,iso){
+  const key=_wxKeyFor(lat,lng,iso);
+  const hit=_WX_CACHE[key];
+  if(hit&&(Date.now()-hit.at)<_WX_TTL)return hit.data;
+  if(hit&&hit.inflight)return hit.inflight;
+  const today=_localISO(new Date());
+  const past=iso<today;
+  // Recent past days are NOT in the archive — it runs about five days behind, so
+  // a trip in progress fell straight through to an invented estimate. The
+  // forecast endpoint serves them via past_days.
+  const base=past?'https://api.open-meteo.com/v1/forecast':'https://api.open-meteo.com/v1/forecast';
+  // start_date/end_date and forecast_days are mutually exclusive — sending both
+  // (as this used to) does not mean what the code assumed.
+  const url=base+'?latitude='+lat+'&longitude='+lng+
+    '&hourly=temperature_2m,weathercode,precipitation_probability'+
+    '&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max'+
+    '&timezone=auto&temperature_unit=celsius'+(past?'&past_days=92':'')+
+    '&start_date='+iso+'&end_date='+iso;
+  const p=(async()=>{
+    try{
+      const r=await fetch(url);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      const times=d.hourly&&d.hourly.time;
+      if(!times||!times.length)throw new Error('no hourly data');
+      const data={
+        times:times,
+        temps:(d.hourly.temperature_2m)||[],
+        codes:(d.hourly.weathercode)||[],
+        pop:(d.hourly.precipitation_probability)||[],
+        offset:Number(d.utc_offset_seconds)||0,
+        hi:d.daily&&d.daily.temperature_2m_max&&d.daily.temperature_2m_max[0],
+        lo:d.daily&&d.daily.temperature_2m_min&&d.daily.temperature_2m_min[0],
+        dayCode:d.daily&&d.daily.weathercode&&d.daily.weathercode[0],
+      };
+      _WX_CACHE[key]={at:Date.now(),data:data};
+      return data;
+    }catch(e){
+      _WX_CACHE[key]={at:Date.now(),data:null,err:(e&&e.message)||'failed'};
+      return null;
+    }
+  })();
+  _WX_CACHE[key]={at:Date.now(),data:null,inflight:p};
+  return p;
+}
+// The reading at a given hour of that day. `mins` is minutes since local midnight.
+function _wxAtHour(series,mins){
+  if(!series||!series.times||!series.times.length)return null;
+  const want=Math.max(0,Math.min(23,Math.floor((Number(mins)||0)/60)));
+  let idx=series.times.findIndex(t=>parseInt(String(t).slice(11,13),10)===want);
+  if(idx<0)idx=0;
+  const c=series.temps[idx];
+  if(c==null)return null;
+  return {c:Math.round(c),f:Math.round(c*9/5+32),code:series.codes[idx],
+          pop:series.pop?series.pop[idx]:null,hour:String(series.times[idx]).slice(11,16)};
+}
+// What time is it WHERE THE WEATHER IS? Derived from the API's own UTC offset,
+// so an iPad still set to a home timezone cannot shift the readings.
+function _destNowMins(series){
+  if(!series)return null;
+  const t=new Date(Date.now()+(Number(series.offset)||0)*1000);
+  return t.getUTCHours()*60+t.getUTCMinutes();
+}
+// "18°C / 64°F" — the trip is in Britain; every sign there is in Celsius.
+function _wxTempText(r){ return r?(r.c+'°C / '+r.f+'°F'):''; }
+
 async function fetchDayWeather(day){
   const sub=day.subtitle||'';
   const datePart=sub.split(/\s*[·•]\s*/)[0].trim();
@@ -1827,38 +1919,32 @@ async function fetchDayWeather(day){
   if(!date)return null;
   const coords=day.stops.find(s=>s.lat&&s.lng);
   if(!coords)return null;
-  const today=new Date();today.setHours(0,0,0,0);
-  const diffDays=Math.round((date-today)/86400000);
-  // Climate-average estimate fallback — used when a date is beyond the forecast
-  // horizon OR the API returns a row with no real temperature (which used to be
-  // rounded to a nonsensical 0°F).
-  const climateAvg=()=>({tooFarOut:true,wxType:'climateAvg',month:date.toLocaleString('en-US',{month:'long'}),lat:coords.lat,lng:coords.lng});
-  if(diffDays>16)return climateAvg();
   const ds=_localISO(date);
-  if(diffDays<0){
-    try{
-      const r=await fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&temperature_unit=fahrenheit&start_date='+ds+'&end_date='+ds);
-      if(!r.ok)return climateAvg();
-      const d=await r.json();
-      const hi=d.daily?.temperature_2m_max?.[0], lo=d.daily?.temperature_2m_min?.[0];
-      if(hi==null||lo==null)return climateAvg();   // no real reading → estimate, NEVER 0°F
-      const precip=d.daily.precipitation_sum?.[0];
-      return{hi:Math.round(hi),lo:Math.round(lo),precip:precip!=null?Math.round(precip*10)/10:null,precipUnit:'mm',code:d.daily.weathercode?.[0],wxType:'historical',tooFarOut:false};
-    }catch(e){return climateAvg();}
-  }
-  try{
-    // forecast_days=16 so dates up to ~2 weeks out actually return data.
-    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+coords.lat+'&longitude='+coords.lng+'&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&temperature_unit=fahrenheit&forecast_days=16&start_date='+ds+'&end_date='+ds);
-    if(!r.ok)return climateAvg();
-    const d=await r.json();
-    const hi=d.daily?.temperature_2m_max?.[0], lo=d.daily?.temperature_2m_min?.[0];
-    if(hi==null||lo==null)return climateAvg();   // forecast has no reading for this date → estimate, NEVER 0°F
-    return{hi:Math.round(hi),lo:Math.round(lo),precip:d.daily.precipitation_probability_max?.[0],code:d.daily.weathercode?.[0],wxType:'forecast',tooFarOut:false};
-  }catch(e){return climateAvg();}
+  const series=await _wxHourly(coords.lat,coords.lng,ds);
+  // NO ESTIMATE, EVER. If there is no reading, that is what gets said. An
+  // invented number in the same slot as a measured one is worse than a blank.
+  if(!series)return {unavailable:true};
+  // Anchored to the hour you are actually there, not to the day as a whole.
+  const anchor=_parseTimeMins((coords&&coords.time))!=null?_parseTimeMins(coords.time):12*60;
+  const now=_wxAtHour(series,anchor);
+  const hiC=series.hi,loC=series.lo;
+  return {
+    at:now,
+    hiC:hiC!=null?Math.round(hiC):null, hiF:hiC!=null?Math.round(hiC*9/5+32):null,
+    loC:loC!=null?Math.round(loC):null, loF:loC!=null?Math.round(loC*9/5+32):null,
+    code:(now&&now.code!=null)?now.code:series.dayCode,
+    place:coords.name||'', unavailable:false,
+  };
 }
 
-const NARR_SYSTEM='You are a charismatic tour guide delivering the morning briefing to your group over breakfast. Format your response in exactly two parts separated by a single newline: (1) A weather line starting with a weather emoji, e.g. "☀️ Clear sky · High 82°F / Low 58°F · Climate Avg". End the weather line with the label "Climate Avg". Estimate typical weather for this location and time of year. (2) Two to three flowing, engaging sentences about what the group will experience today, written in second person. Specific, evocative, exciting. Pure prose — no bullets, no headers.';
-const NARR_PROSE_SYSTEM='You are a charismatic tour guide delivering the morning briefing over breakfast. Write exactly 2-3 flowing, engaging sentences about what the group will experience today. Second person, specific, evocative, exciting. Pure prose only — no weather line (weather is shown separately), no bullets, no headers.';
+// THE MODEL NEVER PRODUCES WEATHER. NARR_SYSTEM used to instruct it to "estimate
+// typical weather for this location and time of year", and whatever it answered
+// was pasted into the briefing in the same slot and styling as a measured
+// reading — a guess wearing the costume of a measurement, and the reason the
+// temperature could be twenty degrees out. There is now one prompt, prose only,
+// so there is no path by which a made-up number can come back.
+const NARR_PROSE_SYSTEM='You are a charismatic tour guide delivering the morning briefing over breakfast. Write exactly 2-3 flowing, engaging sentences about what the group will experience today. Second person, specific, evocative, exciting. Pure prose only — no weather line (weather is shown separately), no bullets, no headers. Never state a temperature or a forecast.';
+const NARR_SYSTEM=NARR_PROSE_SYSTEM;   // one prompt, so a guess has nowhere to come from
 
 function _escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // Only allow safe link schemes (http/https/mailto/tel) — blocks javascript: URLs.
@@ -1890,33 +1976,48 @@ function dayNarrKey(dayIdx){
   return tripId+'_'+dayIdx+'_'+h.toString(36);
 }
 
+// The weather line, painted from data every single view. Separate from the
+// briefing prose on purpose: prose is cached, weather is not.
+async function _paintDayWeather(dayIdx){
+  const put=(html)=>{ const n=document.getElementById('day-narr-wx-'+dayIdx); if(n)n.innerHTML=html; };
+  const day=state.days&&state.days[dayIdx];
+  if(!day||!(day.stops||[]).length)return;
+  let wx=null;
+  try{ wx=await fetchDayWeather(day); }catch(e){ wx=null; }
+  _wxDayCache[dayIdx]=wx;
+  // A missing reading is said out loud. It is never replaced with an estimate:
+  // a made-up number in the slot where a measured one belongs is worse than a
+  // blank, because it cannot be told apart.
+  if(!wx||wx.unavailable){
+    put('<span class="day-narr-wx-none">Weather unavailable right now &mdash; not estimating it.</span>');
+    return;
+  }
+  const icon=WX_ICONS[wx.code]||'🌡️';
+  const cond=WX_LABELS[wx.code]||'';
+  const now=wx.at?('<strong>'+_wxTempText(wx.at)+'</strong> at '+wx.at.hour+
+      (wx.at.pop!=null&&wx.at.pop>=15?' &middot; '+wx.at.pop+'% rain':'')):'';
+  const range=(wx.hiC!=null&&wx.loC!=null)
+    ? ' &middot; High '+wx.hiC+'&deg;C / '+wx.hiF+'&deg;F &middot; Low '+wx.loC+'&deg;C / '+wx.loF+'&deg;F' : '';
+  put(icon+(cond?' '+_escHtml(cond):'')+(now?' &middot; '+now:'')+range+
+      (wx.place?' <span class="day-narr-wx-at">at '+_escHtml(wx.place)+'</span>':''));
+}
 async function loadDayNarrative(dayIdx){
   const el=document.getElementById('day-narr-body-'+dayIdx);
   if(!el)return;
   const day=state.days[dayIdx];if(!day||!day.stops.length)return;
   const key=dayNarrKey(dayIdx);if(!key)return;
+  // WEATHER IS NEVER PART OF THE CACHED TEXT. The prose is cached (it does not
+  // change); the weather is fetched on every view and painted separately, so a
+  // reading pulled days ago can never be shown as today's.
+  _paintDayWeather(dayIdx);
   if(narrData[key]){el.innerHTML=renderNarrHtml(narrData[key]);el.classList.remove('narr-loading');return;}
   el.classList.add('narr-loading');el.textContent='Preparing your day briefing…';
   try{
-    const wx=await fetchDayWeather(day);
-    if(wx&&!(dayIdx in _wxDayCache)){_wxDayCache[dayIdx]=wx;}
     const stopList=day.stops.map(s=>s.name+(s.notes?' ('+s.notes+')':'')).join(', ');
-    let userPrompt='Day: '+day.title+'\nStops: '+stopList;
-    let wxLine=null;
-    if(wx&&!wx.tooFarOut){
-      const icon=WX_ICONS[wx.code]||'🌡️';
-      const cond=WX_LABELS[wx.code]||'';
-      const typeLabel=wx.wxType==='historical'?'Historical':'Forecast';
-      let precipNote='';
-      if(wx.wxType==='historical'){if(wx.precip!=null&&wx.precip>0)precipNote=' · '+wx.precip+'mm rain';}
-      else{if(wx.precip>=15)precipNote=' · '+wx.precip+'% rain chance';}
-      wxLine=icon+(cond?' '+cond:'')+' · High '+wx.hi+'°F / Low '+wx.lo+'°F'+precipNote+' · '+typeLabel;
-      userPrompt+='\nWeather: '+cond+', High '+wx.hi+'°F, Low '+wx.lo+'°F. Reference if relevant to outdoor stops.';
-    }else if(wx?.tooFarOut){
-      userPrompt+='\nLocation: lat '+Number(wx.lat).toFixed(2)+', lon '+Number(wx.lng).toFixed(2)+'\nMonth: '+wx.month+'\nWeather label: Climate Avg\n(No forecast available — please estimate typical weather for this location in '+wx.month+')';
-    }
-    const text=await callClaude(wxLine?NARR_PROSE_SYSTEM:NARR_SYSTEM,userPrompt);
-    narrData[key]=(wxLine?wxLine+'\n':'')+text.trim();
+    // Deliberately NO weather in the prompt — nothing to echo, nothing to invent.
+    const userPrompt='Day: '+day.title+'\nStops: '+stopList;
+    const text=await callClaude(NARR_PROSE_SYSTEM,userPrompt);
+    narrData[key]=text.trim();
     try{localStorage.setItem(NARR_LS,JSON.stringify(narrData))}catch(e){}
     const fresh=document.getElementById('day-narr-body-'+dayIdx);
     if(fresh){fresh.innerHTML=renderNarrHtml(narrData[key]);fresh.classList.remove('narr-loading');}
@@ -5651,15 +5752,16 @@ function detectConflicts(dayIdx){
 /* --- Weather Cache for Inline Warnings --- */
 let _wxDayCache={};
 function _wxWarnHtml(wx){
-  if(!wx||wx.tooFarOut)return'';
+  if(!wx||wx.unavailable)return'';
   const rainy=[55,61,63,65,80,81,82,95,96,99];
-  const isRain=rainy.includes(wx.code)||(wx.precip>=40);
-  const isHot=wx.hi>=95,isCold=wx.lo<=20;
+  const pop=(wx.at&&wx.at.pop!=null)?wx.at.pop:null;
+  const isRain=rainy.includes(wx.code)||(pop!=null&&pop>=40);
+  const isHot=wx.hiF!=null&&wx.hiF>=95, isCold=wx.loF!=null&&wx.loF<=20;
   if(!isRain&&!isHot&&!isCold)return'';
   const w=[];
   if(isRain)w.push('&#127783; Rain');
-  if(isHot)w.push('&#127777; '+wx.hi+'&#176;F');
-  if(isCold)w.push('&#10052; '+wx.lo+'&#176;F');
+  if(isHot)w.push('&#127777; '+wx.hiC+'&#176;C / '+wx.hiF+'&#176;F');
+  if(isCold)w.push('&#10052; '+wx.loC+'&#176;C / '+wx.loF+'&#176;F');
   return'<span class="wx-warn">'+w.join(' &middot; ')+'</span>';
 }
 
@@ -7266,36 +7368,41 @@ async function loadLiveWeather(dayIdx){
   let lat=null,lng=null;
   for(const s of day.stops){if(s.lat&&s.lng){lat=parseFloat(s.lat);lng=parseFloat(s.lng);break;}}
   if(lat===null){strip.style.display='none';return;}
+  strip.style.display='';
   strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:var(--space-2) var(--space-2)">Loading weather...</span>';
-  try{
-    const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+
-      '&hourly=temperature_2m,weathercode&temperature_unit=fahrenheit&forecast_days=1&timezone=auto';
-    const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    const hours=data.hourly?.time||[];
-    const temps=data.hourly?.temperature_2m||[];
-    const codes=data.hourly?.weathercode||[];
-    const nowH=(new Date()).getHours();
-    const items=[];
-    for(let i=0;i<hours.length&&items.length<3;i++){
-      const h=parseInt(hours[i].slice(11,13));
-      if(h>=nowH)items.push({time:hours[i].slice(11,16),temp:Math.round(temps[i]),code:codes[i]});
+  const series=await _wxHourly(lat,lng,_localISO(new Date()));
+  // A failed fetch used to hide the strip, which looks exactly like a day with
+  // no weather. Say it instead.
+  if(!series){
+    strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:var(--space-2)">Couldn’t load the weather.</span>';
+    return;
+  }
+  // THE HOUR COMES FROM THE DESTINATION, NOT THE DEVICE. hourly.time[] is local
+  // to the place (timezone=auto), but this used to pick hours with the iPad's
+  // own clock — so a device left on a home timezone showed the wrong part of the
+  // day entirely, which is where "off by twenty degrees" came from.
+  const nowMins=_destNowMins(series);
+  const nowH=nowMins!=null?Math.floor(nowMins/60):(new Date()).getHours();
+  const items=[];
+  for(let i=0;i<series.times.length&&items.length<4;i++){
+    const h=parseInt(String(series.times[i]).slice(11,13),10);
+    if(h>=nowH&&series.temps[i]!=null){
+      const c=Math.round(series.temps[i]);
+      items.push({time:String(series.times[i]).slice(11,16),c:c,f:Math.round(c*9/5+32),code:series.codes[i]});
     }
-    if(!items.length){strip.style.display='none';return;}
-    const _wxIcon=code=>{
-      if(code===0)return'☀️';if(code<=2)return'⛅';if(code<=3)return'☁️';
-      if(code<=49)return'🌫️';if(code<=59)return'🌦️';if(code<=69)return'🌧️';
-      if(code<=79)return'🌨️';if(code<=82)return'🌧️';if(code<=86)return'❄️';
-      if(code<=99)return'⛈️';return'🌡️';
-    };
-    strip.innerHTML=items.map(it=>
-      '<div class="live-wx-item">'+
-      '<div class="live-wx-time">'+it.time+'</div>'+
-      '<div class="live-wx-icon">'+_wxIcon(it.code)+'</div>'+
-      '<div class="live-wx-temp">'+it.temp+'°F</div>'+
-      '</div>'
-    ).join('');
-  }catch(e){strip.style.display='none';}
+  }
+  if(!items.length){
+    strip.innerHTML='<span style="font-family:var(--font-ui);font-size:var(--text-xs);color:var(--muted);padding:var(--space-2)">No more readings for today.</span>';
+    return;
+  }
+  strip.innerHTML=items.map(it=>
+    '<div class="live-wx-item">'+
+    '<div class="live-wx-time">'+it.time+'</div>'+
+    '<div class="live-wx-icon">'+(WX_ICONS[it.code]||'🌡️')+'</div>'+
+    '<div class="live-wx-temp">'+it.c+'°C</div>'+
+    '<div class="live-wx-temp2">'+it.f+'°F</div>'+
+    '</div>'
+  ).join('');
 }
 
 /* ============================================================

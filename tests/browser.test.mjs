@@ -5197,3 +5197,82 @@ test('a briefing cached with a weather line baked in is stripped of it', async (
   assert.equal(out, 'Today you walk the glen.', 'the prose is kept, the invented weather is not');
   await page.close();
 });
+
+// ===========================================================================
+// v221 — LOCKED MEANS LOCKED. Ask AI's Object.assign wrote time/endTime/duration
+// straight onto a locked stop (coordinates were protected here years ago; times
+// never were), and could set locked:false. The optimizer reordered through
+// reservations.
+// ===========================================================================
+const LOCKED_DAY = [{ title: 'Day 1', subtitle: 'Wed, Aug 5, 2026', stops: [
+  { name: 'Morning Walk', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.50, lng: -0.12 },
+  { name: 'Windsor Castle', type: 'hike', time: '11:00 AM', endTime: '1:00 PM', lat: 51.4843, lng: -0.6048, locked: true },
+  { name: 'Dinner', type: 'food', time: '7:00 PM', endTime: '8:15 PM', lat: 51.51, lng: -0.13 },
+] }];
+
+test('Ask AI cannot move a locked time, and says which stop it skipped', async () => {
+  const { page } = await openTrip(LOCKED_DAY);
+  const out = await page.evaluate(() => {
+    _applyChanges([
+      { action: 'update_stop', dayIdx: 0, dayName: 'Day 1', stopIdx: 1, stopName: 'Windsor Castle',
+        updates: { time: '2:00 PM', endTime: '4:00 PM', duration: '2h' } },
+      { action: 'update_stop', dayIdx: 0, dayName: 'Day 1', stopIdx: 0, stopName: 'Morning Walk',
+        updates: { notes: 'bring a coat' } },
+    ]);
+    const s = state.days[0].stops.find((x) => x.name === 'Windsor Castle');
+    return { time: s.time, end: s.endTime,
+      notes: state.days[0].stops.find((x) => x.name === 'Morning Walk').notes,
+      toast: (document.getElementById('share-toast') || {}).textContent || '' };
+  });
+  assert.equal(out.time, '11:00 AM', 'the reservation held');
+  assert.equal(out.end, '1:00 PM', 'end time too — that is part of the booking');
+  assert.equal(out.notes, 'bring a coat', 'the unrelated change still applied');
+  assert.match(out.toast, /Windsor Castle/, 'and it names what it skipped: ' + out.toast);
+  assert.match(out.toast, /locked/i);
+  await page.close();
+});
+
+test('Ask AI cannot quietly unlock a reservation', async () => {
+  const { page } = await openTrip(LOCKED_DAY);
+  const locked = await page.evaluate(() => {
+    _applyChanges([{ action: 'update_stop', dayIdx: 0, dayName: 'Day 1', stopIdx: 1,
+      stopName: 'Windsor Castle', updates: { locked: false, time: '4:00 PM' } }]);
+    const s = state.days[0].stops.find((x) => x.name === 'Windsor Castle');
+    return { locked: !!s.locked, time: s.time };
+  });
+  assert.equal(locked.locked, true, 'unlocking is the user’s call, not the model’s');
+  assert.equal(locked.time, '11:00 AM');
+  await page.close();
+});
+
+test('the AI is told the rule, so it stops proposing locked-time changes', async () => {
+  const { page } = await openTrip(LOCKED_DAY);
+  await captureAiRequest(page);
+  await openChat(page);
+  await page.evaluate(async () => {
+    document.getElementById('pc-input').value = 'Move Windsor later';
+    await _planSendMessage();
+  });
+  const body = await aiRequestBody(page);
+  assert.match(body.system, /LOCKED TIMES ARE RESERVATIONS/,
+    'the rule is actually transmitted, not just enforced after the fact');
+  await page.close();
+});
+
+test('the optimizer reorders around a locked stop, never through it', async () => {
+  const { page } = await openTrip(LOCKED_DAY);
+  const out = await page.evaluate(() => {
+    _optDayIdx = 0;
+    _optLastData = { optimized_order: ['Dinner', 'Windsor Castle', 'Morning Walk'] };
+    applyOptimizedOrder();
+    const s = state.days[0].stops;
+    return { order: s.map((x) => x.name), lockedAt: s.findIndex((x) => x.locked),
+      time: s.find((x) => x.locked).time, end: s.find((x) => x.locked).endTime };
+  });
+  assert.equal(out.lockedAt, 1, 'the reservation kept its position: ' + JSON.stringify(out.order));
+  assert.equal(out.time, '11:00 AM', 'and its time');
+  assert.equal(out.end, '1:00 PM');
+  assert.deepEqual([...out.order], ['Dinner', 'Windsor Castle', 'Morning Walk'],
+    'the free stops did reorder around it');
+  await page.close();
+});

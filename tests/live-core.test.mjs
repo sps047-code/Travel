@@ -1656,3 +1656,123 @@ test('the axis is decided by which way the finger actually went', () => {
   assert.equal(axis(12, 40), 'v');
   assert.equal(axis(-40, 12), 'h', 'direction does not affect the axis');
 });
+
+// ===========================================================================
+// LOCKED MEANS LOCKED, and MOVING CHANGES DURATION ONLY.
+// Every writer used to carry its own if(locked) line, so the guarantee held
+// only where somebody remembered. These pin the two rules stated outright:
+// a locked time never changes, and moving a stop never changes a time.
+// ===========================================================================
+const LOCK_DAY = () => ({ tripType: 'solo', days: [{ title: 'D1', stops: [
+  { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.50, lng: -0.12 },
+  { name: 'Booked Tour', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', lat: 51.52, lng: -0.16, locked: true },
+  { name: 'C', type: 'hike', time: '2:00 PM', endTime: '3:00 PM', lat: 51.48, lng: -0.20 },
+] }] });
+
+test('the auto-fix passes never move a locked stop', () => {
+  const shift = fn('_shiftStopsAfterArrival');
+  const push = fn('_pushUnreachableLater');
+  const relax = fn('_relaxDurationsToFit');
+  const st = LOCK_DAY();
+  shift(st); push(st); relax(st);
+  const lockedStop = st.days[0].stops[1];
+  assert.equal(lockedStop.time, '11:00 AM');
+  assert.equal(lockedStop.endTime, '12:00 PM');
+});
+
+test('_setStopSlot refuses outright for a locked stop', () => {
+  const set = fn('_setStopSlot');
+  const s = { name: 'Booked', type: 'hike', time: '11:00 AM', endTime: '12:00 PM', locked: true };
+  set(s, 15 * 60, 60);
+  assert.equal(s.time, '11:00 AM', 'the write path itself is the backstop');
+  assert.equal(s.endTime, '12:00 PM');
+});
+
+test('_recalcDayTimes leaves a locked stop entirely alone, end time included', () => {
+  const recalc = fn('_recalcDayTimes');
+  ctx.state = LOCK_DAY();
+  ctx.state.days[0].stops[1].duration = '1h';
+  recalc(0, 9 * 60);
+  const s = ctx.state.days[0].stops[1];
+  assert.equal(s.time, '11:00 AM');
+  // It used to hold the start and then rewrite endTime/duration anyway — a
+  // booking's end time is part of the booking.
+  assert.equal(s.endTime, '12:00 PM');
+  assert.equal(s.duration, '1h');
+});
+
+test('a commit that moves a locked time is rolled back whole', () => {
+  const commit = fn('commit');
+  ctx.state = LOCK_DAY();
+  ctx.localStorage.setItem = () => {};
+  fn('_markCommitted')();
+  // A deliberately rogue mutation — no hand-written check would catch this,
+  // which is the point: the guard lives where every write must pass.
+  const okd = commit('rogue', () => {
+    ctx.state.days[0].stops[1].time = '3:00 PM';
+    ctx.state.days[0].stops[0].name = 'Renamed';
+  }, 'user');
+  assert.equal(okd, false, 'the commit is refused');
+  assert.equal(ctx.state.days[0].stops[1].time, '11:00 AM', 'the locked time holds');
+  assert.equal(ctx.state.days[0].stops[0].name, 'A',
+    'and the rest of the commit is rolled back too — never half-applied');
+});
+
+test('the stop’s own edit form may still change a locked time', () => {
+  const commit = fn('commit');
+  ctx.state = LOCK_DAY();
+  ctx.localStorage.setItem = () => {};
+  fn('_markCommitted')();
+  const okd = commit('Edited Booked Tour', () => {
+    ctx.state.days[0].stops[1].time = '11:30 AM';
+    ctx.state.days[0].stops[1].endTime = '12:30 PM';
+  }, 'user', { allowLocked: true });
+  assert.equal(okd, true);
+  assert.equal(ctx.state.days[0].stops[1].time, '11:30 AM', 'typing it yourself works');
+});
+
+test('unlocking a stop in the same commit lets it move', () => {
+  const commit = fn('commit');
+  ctx.state = LOCK_DAY();
+  ctx.localStorage.setItem = () => {};
+  fn('_markCommitted')();
+  const okd = commit('unlock and move', () => {
+    delete ctx.state.days[0].stops[1].locked;
+    ctx.state.days[0].stops[1].time = '1:00 PM';
+  }, 'user');
+  assert.equal(okd, true, 'unlocking is the sanctioned way to move a reservation');
+  assert.equal(ctx.state.days[0].stops[1].time, '1:00 PM');
+});
+
+test('moving a stop changes NO start time on the day — duration only', () => {
+  const move = fn('moveStop');
+  ctx.state = { tripType: 'solo', days: [{ title: 'D1', stops: [
+    { name: 'A', type: 'hike', time: '9:00 AM', endTime: '10:00 AM', lat: 51.50, lng: -0.12 },
+    { name: 'B', type: 'hike', time: '11:00 AM', endTime: '11:30 AM', lat: 55.95, lng: -3.19 },
+    { name: 'C', type: 'hike', time: '2:00 PM', endTime: '3:00 PM', lat: 51.48, lng: -0.20 },
+  ] }] };
+  ctx.renderAll = () => {}; ctx.renderDayMap = () => {}; ctx.localStorage.setItem = () => {};
+  fn('_markCommitted')();
+  const before = ctx.state.days[0].stops.map((s) => s.time);
+  move(0, 0, 1);                                   // swap A and B
+  const after = ctx.state.days[0].stops.map((s) => s.time);
+  assert.deepEqual([...after], [...before],
+    'the slots are the frame; only who occupies them changes: ' + JSON.stringify(after));
+  assert.equal(ctx.state.days[0].stops[0].name, 'B', 'they really did swap');
+  assert.equal(ctx.state.days[0].stops[1].name, 'A');
+  // B now occupies the 9:00–10:00 slot, so B's duration is what changed.
+  assert.equal(ctx.state.days[0].stops[0].time, '9:00 AM');
+  assert.equal(ctx.state.days[0].stops[0].endTime, '10:00 AM');
+});
+
+test('a locked stop cannot be moved up or down at all', () => {
+  const move = fn('moveStop');
+  ctx.state = LOCK_DAY();
+  ctx.renderAll = () => {}; ctx.renderDayMap = () => {}; ctx.localStorage.setItem = () => {};
+  let said = '';
+  ctx.showToast = (m) => { said = String(m); };
+  fn('_markCommitted')();
+  move(0, 1, 1);                                   // try to drag the reservation later
+  assert.equal(ctx.state.days[0].stops[1].name, 'Booked Tour', 'it did not move');
+  assert.match(said, /locked/i, 'and it says why: ' + said);
+});

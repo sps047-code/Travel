@@ -45,8 +45,23 @@ node --test tests/live-core.test.mjs >/dev/null 2>&1 \
 # are the gate that actually reflects what the user sees.
 if [ -f tests/browser.test.mjs ]; then
   echo "==> running browser tests (real Chromium)"
-  timeout 300 node --test tests/browser.test.mjs >/tmp/browser-test.log 2>&1 \
-    || { tail -40 /tmp/browser-test.log; echo "BROWSER TESTS FAILED — not releasing"; exit 1; }
+  # The timeout was 300s. The suite grew past it, so a complete run was being
+  # KILLED MID-TEST and reported as "BROWSER TESTS FAILED" with no failing test
+  # in the log — sending me hunting a flake that did not exist. A timeout and a
+  # failure are different things and must not print the same message.
+  timeout 900 node --test tests/browser.test.mjs >/tmp/browser-test.log 2>&1
+  RC=$?
+  if [ $RC -eq 124 ]; then
+    echo "BROWSER TESTS TIMED OUT after 900s (no test necessarily failed) — not releasing"
+    tail -5 /tmp/browser-test.log; exit 1
+  fi
+  if [ $RC -ne 0 ]; then
+    grep -B2 -A12 "^not ok" /tmp/browser-test.log | head -60
+    echo "BROWSER TESTS FAILED — not releasing"; exit 1
+  fi
+  # A run that ends without the summary line never finished; never treat that as a pass.
+  grep -qE "^# fail 0$" /tmp/browser-test.log \
+    || { echo "BROWSER TESTS DID NOT COMPLETE — not releasing"; tail -5 /tmp/browser-test.log; exit 1; }
   grep -E "^# (pass|fail)" /tmp/browser-test.log | sed "s/^/    /"
 fi
 

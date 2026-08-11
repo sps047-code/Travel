@@ -1,7 +1,7 @@
 // The version of the CODE actually running. The header badge reads this (not the
 // service-worker cache name), so a stale build can never masquerade as a new one.
 // Bump this together with the CACHE in sw.js on every deploy.
-window.APP_CODE_VERSION='v220';
+window.APP_CODE_VERSION='v221';
 try{var _vEl=document.getElementById('app-version');if(_vEl)_vEl.textContent=window.APP_CODE_VERSION;}catch(e){}
 const tripId=new URLSearchParams(location.search).get('id')||'utah';
 const LS_KEY='tripState_'+tripId;
@@ -188,6 +188,32 @@ function commitApplied(desc,source,opts){
   const before=(_lastCommitted!==null)?_lastCommitted:JSON.stringify(state);
   return _finishCommit(before,desc,source||WRITE.SYSTEM,opts);
 }
+// LOCKED MEANS LOCKED. Every writer used to carry its own `if(stop.locked)`
+// line, so the guarantee held only where somebody remembered — and the two that
+// forgot (Ask AI's Object.assign, and moveStop) are the two that moved a
+// reservation. A rule scoped to individual callers cannot hold. This runs at the
+// one point every write must pass, so a path nobody has found yet is caught too.
+// Keyed by day+name because array indices shift under reordering.
+function _lockedTimes(st){
+  const out={};
+  try{
+    (st.days||[]).forEach((d,di)=>(d.stops||[]).forEach(s=>{
+      if(s&&s.locked)out[di+'|'+(s.name||'')]=(s.time||'')+'→'+(s.endTime||'');
+    }));
+  }catch(e){}
+  return out;
+}
+// Which locked stops had their time changed by this commit. A stop that was
+// unlocked in the same commit is not reported: unlocking is the sanctioned way
+// to move a reservation.
+function _lockViolations(before,after){
+  const b=_lockedTimes(before), a=_lockedTimes(after), bad=[];
+  for(const k in b){
+    if(!(k in a))continue;                 // deleted or unlocked — both deliberate
+    if(a[k]!==b[k])bad.push(k.split('|')[1]||'a stop');
+  }
+  return bad;
+}
 function _finishCommit(before,desc,source,opts){
   const fatal=_fatalStateErrors(state);
   if(fatal.length){
@@ -211,6 +237,21 @@ function _finishCommit(before,desc,source,opts){
     try{_recordChange({source:source,desc:desc,refused:'would have removed most of the itinerary'});}catch(e){}
     try{showToast('Change refused: that would have deleted most of the trip.',6000);}catch(e){}
     return false;
+  }
+  // A locked time is a reservation. Only the stop's own edit form may change one
+  // (opts.allowLocked), and only after the user typed it there. Anything else is
+  // rolled back WHOLE — a half-applied change is how the itinerary drifts.
+  if(!(opts&&opts.allowLocked)){
+    let moved=[];
+    try{ moved=_lockViolations(JSON.parse(before),state); }catch(e){ moved=[]; }
+    if(moved.length){
+      try{state=JSON.parse(before);}catch(e){}
+      _lastCommitted=before;
+      const names=[...new Set(moved)].slice(0,3).join(', ');
+      try{_recordChange({source:source,desc:desc,refused:'would have moved a locked time: '+names});}catch(e){}
+      try{showToast('Not changed — '+_escHtml(names)+(moved.length>1?' are':' is')+' locked.',6000);}catch(e){}
+      return false;
+    }
   }
   const after=JSON.stringify(state);
   if(after===before&&!repaired.length){ _lastCommitted=after; return true; }   // nothing to do
@@ -3531,8 +3572,11 @@ function _recalcDayTimes(dayIdx,anchorMins){
     const oldSt=_parseTimeMins(s.time),oldEt=_parseTimeMins(s.endTime);
     let start;
     if(s.locked&&oldSt!=null){
-      // LOCKED (a reservation): this time is fixed. Nothing automatic may move it.
-      start=oldSt;
+      // LOCKED (a reservation): start, END and duration are all fixed. This used
+      // to hold the start and then fall through and rewrite endTime/duration
+      // below — a booking's end time is part of the booking.
+      cur=oldSt;
+      continue;
     }else if(i===0){
       // Keep the first stop's own real time; only fall back if it has none.
       start=(oldSt!=null&&oldSt>=240)?oldSt:fallback;
@@ -3576,20 +3620,82 @@ function moveStop(dayIdx,stopIdx,dir){
   const newIdx=stopIdx+dir;
   if(newIdx<0||newIdx>=stops0.length)return;
   const _moved=stops0[stopIdx]&&stops0[stopIdx].name||'a stop';
+  // A LOCKED stop is a reservation. It does not move, and nothing may be moved
+  // into or out of its slot.
+  if(stops0[stopIdx]&&stops0[stopIdx].locked){
+    try{showToast('“'+_escHtml(stops0[stopIdx].name||'That stop')+'” is locked — unlock it first to move it.',5000);}catch(e){}
+    return;
+  }
+  if(stops0[newIdx]&&stops0[newIdx].locked){
+    try{showToast('“'+_escHtml(stops0[newIdx].name||'That stop')+'” is locked, so nothing can take its slot.',5000);}catch(e){}
+    return;
+  }
   commit('Moved '+_moved+(dir<0?' earlier':' later')+' on Day '+(dayIdx+1),()=>{
   const stops=state.days[dayIdx].stops;
+  // DURATION IS THE ONLY VARIABLE. The day's start times are a fixed frame: the
+  // two stops exchange SLOTS, each keeping the start time that belongs to the
+  // position it lands in, and each duration becomes that slot's length. No start
+  // time anywhere on the day changes.
+  //
+  // This used to call _retimeFromPrev on both positions, which threw the slots
+  // away and recomputed start = previous end + travel — so moving a stop
+  // rewrote the clock. That is the bug; the comment claiming it swapped slots
+  // was describing something the code never did.
+  const slotA=_parseTimeMins(stops[stopIdx].time), slotB=_parseTimeMins(stops[newIdx].time);
+  const spanA=_slotSpanAt(stops,stopIdx), spanB=_slotSpanAt(stops,newIdx);
   [stops[stopIdx],stops[newIdx]]=[stops[newIdx],stops[stopIdx]];
-  // Re-time ONLY the two positions that changed. Each now starts when you could
-  // actually get there: the previous stop's end time plus the travel between them.
-  // Nothing else in the day is touched, so a later dinner or hotel stays put.
-  const lo=Math.min(stopIdx,newIdx),hi=Math.max(stopIdx,newIdx);
-  for(let i=lo;i<=hi;i++)_retimeFromPrev(stops,i);
-  // Fill in any stop still missing a usable time (untimed stops carry forward).
-  if(stops.some(s=>{const m=_parseTimeMins(s.time);return m==null||m<240;})){
-    _recalcDayTimes(dayIdx,_dayStartAnchor(stops));
-  }
+  // Each position keeps ITS OWN original start; only the occupant changed.
+  if(slotA!=null)_placeInSlot(stops[stopIdx],slotA,spanA);
+  if(slotB!=null)_placeInSlot(stops[newIdx],slotB,spanB);
+  _fillUntimedOnly(stops);
   },WRITE.USER);
   renderAll();
+}
+// Give a time ONLY to stops that have none. A stop with no start time has no
+// slot to inherit when it is moved, so it is placed after the previous one.
+// Anything that already has a time is left exactly as it is — that is the whole
+// point: moving a stop changes durations, never a time that exists.
+function _fillUntimedOnly(stops){
+  if(!stops||!stops.length)return;
+  let prevEnd=null;
+  for(let i=0;i<stops.length;i++){
+    const s=stops[i];
+    const st=_parseTimeMins(s.time);
+    if(st!=null&&st>=240){
+      const en=_parseTimeMins(s.endTime);
+      prevEnd=(en!=null&&en>st)?en:st+Math.min(_stopVisitMins(s),_MAX_VISIT_CASCADE);
+      continue;
+    }
+    if(s.locked)continue;                       // never invent over a reservation
+    const start=Math.min(Math.max(prevEnd!=null?prevEnd:_dayStartAnchor(stops),240),_DAY_END_CAP);
+    _placeInSlot(s,start,Math.min(_stopVisitMins(s),_MAX_VISIT_CASCADE));
+    const en2=_parseTimeMins(s.endTime);
+    prevEnd=(en2!=null&&en2>start)?en2:start;
+  }
+}
+// How long the slot at position i lasts: its own start→end where that is known,
+// otherwise up to the next stop's start, otherwise the stop's stated visit.
+function _slotSpanAt(stops,i){
+  const s=stops[i];if(!s)return 0;
+  const st=_parseTimeMins(s.time),en=_parseTimeMins(s.endTime);
+  if(st!=null&&en!=null&&en>st)return en-st;
+  const nx=stops[i+1]?_parseTimeMins(stops[i+1].time):null;
+  if(st!=null&&nx!=null&&nx>st)return nx-st;
+  return _stopVisitMins(s);
+}
+// Put a stop in a slot: the start is the slot's, and the DURATION absorbs the
+// difference. Deliberately not _setStopSlot — this is the one operation where a
+// stop's length is meant to change and its time is not.
+function _placeInSlot(s,start,span){
+  if(!s||start==null)return;
+  s.time=_formatTimeMins(start);
+  const end=Math.min(start+Math.max(1,span),_DAY_END_CAP);
+  if(['flight','train','bus'].includes(s.type)){
+    if(_parseTimeMins(s.endTime)!=null)s.endTime=_formatTimeMins(end);
+  }else{
+    s.endTime=_formatTimeMins(end);
+    s.duration=_fmtDur(end-start);
+  }
 }
 // Start a stop when it can actually be reached: the PREVIOUS stop's end time plus
 // the travel time between the two. Its own visit length is preserved. The first
@@ -3610,6 +3716,9 @@ function _retimeFromPrev(stops,i){
 // Place a stop at `start`, preserving its own visit length. Transit keeps its
 // arrival span; an activity's duration mirrors start→end.
 function _setStopSlot(s,start,span){
+  // The write path itself refuses. Callers still carry their own locked checks,
+  // but this is the backstop for the one that forgets.
+  if(s&&s.locked)return;
   start=Math.min(Math.max(start,240),_DAY_END_CAP);
   s.time=_formatTimeMins(start);
   const end=Math.min(start+span,_DAY_END_CAP);
@@ -3916,6 +4025,9 @@ function saveStop(){
   // precious field (reservation, ticket, notes, coordinates) that vanished
   // between the old stop and the rebuilt one — the exact failure that used to
   // wipe confirmation numbers with no trace.
+  // allowLocked: this is the ONE sanctioned way to change a locked time — the
+  // user typing it into that stop's own form. Every other route is refused at
+  // the commit.
   commit((editingStop?'Edited ':'Added ')+(stop.name||'a stop')+' on Day '+(destDayIdx+1),()=>{
     if(editingStop){
       if(destDayIdx===srcDayIdx){
@@ -3928,7 +4040,7 @@ function saveStop(){
       state.days[destDayIdx].stops.push(stop);
     }
     if(stop.time)_sortDayByTime(destDayIdx);
-  },WRITE.USER);
+  },WRITE.USER,{allowLocked:true});
   closeModal();
   if(destDayIdx!==currentDayIdx&&destDayIdx>=0){switchDay(destDayIdx);}
   else{renderAll();}
@@ -6505,14 +6617,27 @@ function applyOptimizedOrder(){
   const day=state.days[idx];if(!day)return;
   const savedStops=day.stops.map(s=>({...s}));
   const order=(_optLastData.optimized_order||[]).map(o=>typeof o==='string'?o:(o.name||''));
+  // A LOCKED stop is a fixed point: the day may be reordered AROUND it, never
+  // through it. Its index is reserved before anything else is placed.
+  const locks=new Map();
+  day.stops.forEach((s,i)=>{ if(s&&s.locked)locks.set(i,s); });
   const newStops=[];const used=new Set();
+  locks.forEach((s,i)=>used.add(i));
+  const free=[];
   order.forEach(name=>{
     const key=(name||'').toLowerCase().trim();
     if(!key)return; // an empty name would match the first stop — skip it
     const si=day.stops.findIndex((s,i)=>!used.has(i)&&s.name.toLowerCase().includes(key.slice(0,18)));
-    if(si>=0){newStops.push(day.stops[si]);used.add(si);}
+    if(si>=0){free.push(day.stops[si]);used.add(si);}
   });
-  day.stops.forEach((s,i)=>{if(!used.has(i))newStops.push(s);});
+  day.stops.forEach((s,i)=>{if(!used.has(i))free.push(s);});
+  // Rebuild with the locked stops back in the positions they held.
+  let f=0;
+  for(let i=0;i<day.stops.length;i++){
+    if(locks.has(i))newStops.push(locks.get(i));
+    else if(f<free.length)newStops.push(free[f++]);
+  }
+  while(f<free.length)newStops.push(free[f++]);
   day.stops=newStops;
   // Rewrite times to match the new order — otherwise the render-time chrono sort
   // immediately reverts this reorder (times still imply the old sequence).
@@ -8292,7 +8417,7 @@ function _itinMap(){
   }catch(e){ return ''; }
 }
 
-const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, dayName, stopIdx, stopName, updates:{field:value} (fields: name, type, time, endTime, duration, notes, dayHours)\n- add_stop: dayIdx, dayName, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, dayName, stopIdx, stopName\n- move_stop: fromDayIdx, fromDayName, fromStopIdx, stopName, toDayIdx, toDayName, toStopIdx\n\nALWAYS include "stopName" (the stop\'s EXACT current name from the index map) and "dayName" (the day\'s title) on every update_stop/remove_stop/move_stop — they are used to target the correct stop even if positions shifted. Use the 0-based dayIdx/stopIdx too, but the names are the source of truth.\n\nNEVER change a stop\'s coordinates (lat/lng) in update_stop — you cannot see the true location and would move the map pin to the wrong place. Location changes are done by the user, not you.\n\nTo correct a stop\'s opening hours, use update_stop with updates:{"dayHours":"9:30 AM - 5:00 PM"} (the displayed opening-hours line is the "dayHours" field). Use "Closed <weekday>" if closed that day.\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.\n\nFEASIBILITY, NOT PACE: Do NOT judge or assume pace. Never call a day too rushed, too packed, too ambitious, too slow, or too empty, and never add or remove stops merely to change the pace or to give the traveler downtime. Whether a plan works is decided ONLY by concrete facts: (1) is each stop OPEN at the planned time (opening hours and days closed), (2) the mode of travel between stops, (3) realistic travel time including typical traffic, and (4) distance. Only flag a stop as a problem when it would be closed at that time, or when travel time plus visit time makes the next stop impossible to reach while it is open. When the user asks whether a day works, answer the concrete question: can it be done? For each concern, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time.\n\nDESCRIBE CHANGES IN PLAIN LANGUAGE: In your prose to the user, describe every suggested change in plain English (for example: "Move York Minster before the museum so you arrive at opening time"). NEVER write the internal action names add_stop, remove_stop, update_stop, or move_stop in your prose. Always fill each change\'s "description" field with a clear human sentence that names the stop and says what changes.\n\nSCHEDULING RULES -- follow every time you add, move, or set the time of a stop:\n1. OPENING HOURS: Never place or recommend a stop at a time it is closed. Use the [open: ...] hours shown for each stop in the itinerary map. If hours are not shown, use typical hours: most museums and attractions open about 9-10am and close about 5pm (some close one weekday); shops about 9am-6pm. If a place would be closed at the chosen time, pick a time when it is open, or do not add it. Never recommend a place that is closed that day.\n2. MEALS -- one breakfast, one lunch, one dinner per day, never a second one. Use these EXACT DURATIONS unless the user asks otherwise: breakfast 30 minutes, lunch 45 minutes, dinner 1 hour 15 minutes. A quick coffee, bakery, gelato or snack stop is 30 minutes. NEVER give a meal a 2-hour block -- that is dead time, not dining. Windows: breakfast 7:00-9:00am, lunch 12:00-1:30pm (never before 11:30am or after 2:30pm), dinner 6:00-8:00pm (never before 5:30pm). Always set BOTH a start time and an end time that match the duration above.\n3. CHRONOLOGICAL ORDER + TRAVEL TIME: Every stop must have a time, and times must increase through the day. CRITICALLY, a stop cannot start before you could physically get there: its start time must be AT LEAST the previous stop\'s end time PLUS the travel time between them. If lunch ends at 12:45 PM and the drive to the next stop is 1 hour 46 minutes, that next stop cannot start before ~2:31 PM — never 1:30 PM. Account for the real drive/walk/train time on every leg; when unsure, leave a generous buffer. It is a hard error to schedule a stop earlier than its earliest possible arrival.\n4. FEASIBILITY / DENSITY: A stop takes time to travel to and to visit. The visit times plus the travel between stops must fit the waking day. Do NOT overpack -- an impossible day like 11 stops in 12 hours is wrong. A realistic full day is roughly 4-6 substantial stops plus meals. If the user wants more than fits, say so and offer to move some to another day rather than cramming them in.\n5. NO DEAD TIME: never leave unexplained gaps. A stop should begin about when you could actually arrive from the previous one -- the previous stop\'s end time plus travel. A gap longer than ~45 minutes is only acceptable when there is a REASON: a booked time, an opening-hour constraint, or a meal window. Otherwise close the gap by starting the next stop earlier, or fill it with something worth doing. Equally, never overlap two stops or schedule one before you could reach it -- both are hard errors. Before you output any change, re-check every stop you touched: start >= previous end + travel, and end = start + the stated duration.\n\nATTACHMENTS: The user may attach documents (booking confirmations, tickets, spreadsheets, emails, calendar files). Their text is given to you between ATTACHED FILE markers. Read them carefully and use the real confirmation numbers, times, addresses and prices they contain rather than inventing any. If an attachment is truncated you will see a truncation notice; say so rather than guessing at the missing part.';
+const _PLAN_SYS='You are an expert travel planning assistant embedded in a live itinerary app. You CAN make direct changes to the itinerary.\n\nThe full itinerary is already in this conversation. NEVER claim you cannot see it or ask the user to paste it.\n\nCRITICAL: Your prose alone does NOT change anything. A change is applied ONLY when you output an <ITINERARY_CHANGES> block. Never say a change was made unless that block is present in the same reply.\n\nWhen the user asks to add, remove, move, or modify anything: (1) confirm briefly in one sentence, (2) output an <ITINERARY_CHANGES>[ ...JSON array... ]</ITINERARY_CHANGES> block.\n\nEach JSON entry needs "action" and "description", plus:\n- update_stop: dayIdx, dayName, stopIdx, stopName, updates:{field:value} (fields: name, type, time, endTime, duration, notes, dayHours)\n- add_stop: dayIdx, dayName, insertIdx(optional), stop:{name, type, time?, endTime?, duration?, notes?, lat?, lng?}\n- remove_stop: dayIdx, dayName, stopIdx, stopName\n- move_stop: fromDayIdx, fromDayName, fromStopIdx, stopName, toDayIdx, toDayName, toStopIdx\n\nALWAYS include "stopName" (the stop\'s EXACT current name from the index map) and "dayName" (the day\'s title) on every update_stop/remove_stop/move_stop — they are used to target the correct stop even if positions shifted. Use the 0-based dayIdx/stopIdx too, but the names are the source of truth.\n\nLOCKED TIMES ARE RESERVATIONS: a stop marked locked has a booked time. NEVER propose a change to its time, endTime or duration, and never set locked to false. Plan around it as a fixed point. If the day only works by moving a locked stop, say so and let the user decide.\n\nNEVER change a stop\'s coordinates (lat/lng) in update_stop — you cannot see the true location and would move the map pin to the wrong place. Location changes are done by the user, not you.\n\nTo correct a stop\'s opening hours, use update_stop with updates:{"dayHours":"9:30 AM - 5:00 PM"} (the displayed opening-hours line is the "dayHours" field). Use "Closed <weekday>" if closed that day.\n\nStop type is one of: hike, food, lodge, drive, flight, train, bus. Provide lat/lng for new places when you know them. Use the EXACT 0-based dayIdx/stopIdx from the LIVE ITINERARY index map. For pure questions/advice, answer normally with no block.\n\nPRESERVE LODGING (very important): The overnight hotel (type "lodge") is where the traveler sleeps. NEVER remove, delete, or drop a lodging stop, and never change a lodging stop to a different type, even when reordering or optimizing a day. Every day that ends with an overnight stay must keep its hotel as the last stop. Only touch a hotel if the user EXPLICITLY asks to change or remove that hotel. When you reorder a day, leave the end-of-day hotel exactly where it is.\n\nTYPE "lodge" IS ONLY FOR REAL ACCOMMODATION: Assign type "lodge" ONLY to an actual place the traveler sleeps overnight (a hotel, motel, hostel, inn, B&B, guesthouse, or resort). It is a hard error to label a walk, tour, hike, museum, castle, palace, cathedral, market, park, restaurant, cafe, or any sightseeing activity as "lodge". Those are "hike" or "food". The traveler does not sleep on the city walls, in a museum, or at a restaurant. If a day has no hotel because they are continuing a multi-night stay, do NOT invent one or relabel an activity as the hotel; leave the day without a lodge stop.\n\nFEASIBILITY, NOT PACE: Do NOT judge or assume pace. Never call a day too rushed, too packed, too ambitious, too slow, or too empty, and never add or remove stops merely to change the pace or to give the traveler downtime. Whether a plan works is decided ONLY by concrete facts: (1) is each stop OPEN at the planned time (opening hours and days closed), (2) the mode of travel between stops, (3) realistic travel time including typical traffic, and (4) distance. Only flag a stop as a problem when it would be closed at that time, or when travel time plus visit time makes the next stop impossible to reach while it is open. When the user asks whether a day works, answer the concrete question: can it be done? For each concern, name the stop, whether it is open, the travel mode, the distance, and the approximate travel time.\n\nDESCRIBE CHANGES IN PLAIN LANGUAGE: In your prose to the user, describe every suggested change in plain English (for example: "Move York Minster before the museum so you arrive at opening time"). NEVER write the internal action names add_stop, remove_stop, update_stop, or move_stop in your prose. Always fill each change\'s "description" field with a clear human sentence that names the stop and says what changes.\n\nSCHEDULING RULES -- follow every time you add, move, or set the time of a stop:\n1. OPENING HOURS: Never place or recommend a stop at a time it is closed. Use the [open: ...] hours shown for each stop in the itinerary map. If hours are not shown, use typical hours: most museums and attractions open about 9-10am and close about 5pm (some close one weekday); shops about 9am-6pm. If a place would be closed at the chosen time, pick a time when it is open, or do not add it. Never recommend a place that is closed that day.\n2. MEALS -- one breakfast, one lunch, one dinner per day, never a second one. Use these EXACT DURATIONS unless the user asks otherwise: breakfast 30 minutes, lunch 45 minutes, dinner 1 hour 15 minutes. A quick coffee, bakery, gelato or snack stop is 30 minutes. NEVER give a meal a 2-hour block -- that is dead time, not dining. Windows: breakfast 7:00-9:00am, lunch 12:00-1:30pm (never before 11:30am or after 2:30pm), dinner 6:00-8:00pm (never before 5:30pm). Always set BOTH a start time and an end time that match the duration above.\n3. CHRONOLOGICAL ORDER + TRAVEL TIME: Every stop must have a time, and times must increase through the day. CRITICALLY, a stop cannot start before you could physically get there: its start time must be AT LEAST the previous stop\'s end time PLUS the travel time between them. If lunch ends at 12:45 PM and the drive to the next stop is 1 hour 46 minutes, that next stop cannot start before ~2:31 PM — never 1:30 PM. Account for the real drive/walk/train time on every leg; when unsure, leave a generous buffer. It is a hard error to schedule a stop earlier than its earliest possible arrival.\n4. FEASIBILITY / DENSITY: A stop takes time to travel to and to visit. The visit times plus the travel between stops must fit the waking day. Do NOT overpack -- an impossible day like 11 stops in 12 hours is wrong. A realistic full day is roughly 4-6 substantial stops plus meals. If the user wants more than fits, say so and offer to move some to another day rather than cramming them in.\n5. NO DEAD TIME: never leave unexplained gaps. A stop should begin about when you could actually arrive from the previous one -- the previous stop\'s end time plus travel. A gap longer than ~45 minutes is only acceptable when there is a REASON: a booked time, an opening-hour constraint, or a meal window. Otherwise close the gap by starting the next stop earlier, or fill it with something worth doing. Equally, never overlap two stops or schedule one before you could reach it -- both are hard errors. Before you output any change, re-check every stop you touched: start >= previous end + travel, and end = start + the stated duration.\n\nATTACHMENTS: The user may attach documents (booking confirmations, tickets, spreadsheets, emails, calendar files). Their text is given to you between ATTACHED FILE markers. Read them carefully and use the real confirmation numbers, times, addresses and prices they contain rather than inventing any. If an attachment is truncated you will see a truncation notice; say so rather than guessing at the missing part.';
 
 // Detect when the AI claims a change without emitting the block (so we can
 // silently fetch the structured block instead of leaving the user confused).
@@ -8461,6 +8586,7 @@ function _sortDayChrono(day){
 
 function _applyChanges(changes){
   let ok=0, fail=[], protectedN=0;
+  const lockedSkipped=[];   // named in the result, so a silent skip is never mistaken for done
   changes.forEach(c => {
     try{
       if(c.action==='update_stop'){
@@ -8471,6 +8597,14 @@ function _applyChanges(changes){
         // NEVER let an AI edit move a stop's location — hallucinated coordinates
         // silently corrupt the map. Coordinates change only via search / Fix pin.
         delete upd.lat; delete upd.lng;
+        // NOR A LOCKED TIME. Coordinates were protected here after an earlier
+        // incident and times never were, so Ask AI could reschedule a booked
+        // reservation. It also may not quietly unlock one.
+        if(day.stops[si]&&day.stops[si].locked){
+          const hadTime=('time' in upd)||('endTime' in upd)||('duration' in upd)||('locked' in upd);
+          delete upd.time; delete upd.endTime; delete upd.duration; delete upd.locked;
+          if(hadTime){ protectedN++; lockedSkipped.push(day.stops[si].name||'a stop'); }
+        }
         // Only accept a valid stop type.
         if(upd.type && !_VALID_STOP_TYPES.includes(upd.type)) delete upd.type;
         // Never let the AI turn the overnight hotel into a non-lodging stop.
@@ -8530,8 +8664,12 @@ function _applyChanges(changes){
   // tell an AI edit apart from one you made.
   try{ commitApplied(ok+' change'+(ok!==1?'s':'')+' from Ask AI',WRITE.AI); }catch(e){ console.warn('commit failed:', e); }
   try{ renderAll(); }catch(e){ console.warn('renderAll failed:', e); }
+  const _locked=[...new Set(lockedSkipped)];
   const msg = ok+' change'+(ok!==1?'s':'')+' applied'+
-    (protectedN?' ('+protectedN+' hotel'+(protectedN!==1?'s':'')+' kept)':'')+
+    // Name the locked stops. "1 skipped" without saying which reads as done.
+    (_locked.length?' — '+_locked.length+' skipped, '+_locked.slice(0,3).join(', ')+
+       (_locked.length>3?' and others':'')+(_locked.length===1?' is':' are')+' locked':'')+
+    (protectedN>_locked.length?' ('+(protectedN-_locked.length)+' hotel'+((protectedN-_locked.length)!==1?'s':'')+' kept)':'')+
     (fail.length?' ('+fail.length+' failed)':'')+'!';
   const toast=document.getElementById('share-toast');
   if(toast){ toast.textContent=msg; toast.classList.add('visible'); setTimeout(()=>toast.classList.remove('visible'),3500); }
